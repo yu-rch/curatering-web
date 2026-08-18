@@ -38,6 +38,7 @@ import '../widgets/cms_sections.dart';
 import '../widgets/customer_site_footer.dart';
 import '../widgets/customer_website_topbar.dart';
 import '../widgets/home_etd_sampler.dart';
+import '../widgets/customer_antd_page_hero.dart';
 import '../theme/website_header_font.dart';
 import '../constants/catering_meal_types.dart';
 import '../constants/home_default_assets.dart';
@@ -1438,7 +1439,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   String _staffHomeRoute() {
     final r = AuthSession.instance.currentUser.value?.role;
     return switch (r) {
-      Role.superAdmin => '/manage-accounts',
+      Role.superAdmin => '/dashboard',
       Role.supervisor => '/manage-events',
       _ => '/manage-events',
     };
@@ -2394,23 +2395,29 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
-            "Macrina's Kitchen",
-            style: TextStyle(
+          Text(
+            w.kitchenPanelTitle.trim().isEmpty
+                ? "Macrina's Kitchen"
+                : w.kitchenPanelTitle,
+            style: const TextStyle(
               color: Color(0xFFFFC024),
               fontWeight: FontWeight.w800,
               fontSize: 16,
             ),
           ),
           const SizedBox(height: 6),
-          const Text(
-            'Restaurant favorites ready for dine-in and pickup.',
-            style: TextStyle(color: Colors.white70, fontSize: 12),
+          Text(
+            w.kitchenPanelSubtitle.trim().isEmpty
+                ? 'Restaurant favorites ready for dine-in and pickup.'
+                : w.kitchenPanelSubtitle,
+            style: const TextStyle(color: Colors.white70, fontSize: 12),
           ),
           const SizedBox(height: 10),
           _buildKitchenDishSlideshow(),
           const SizedBox(height: 10),
-          OutlinedButton(
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton(
             onPressed:
                 () => Navigator.pushReplacementNamed(
                   context,
@@ -2419,27 +2426,36 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
             style: OutlinedButton.styleFrom(
               foregroundColor: const Color(0xFFFFC024),
               side: const BorderSide(color: Color(0xFFFFC024)),
+              minimumSize: const Size(0, 40),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
             ),
             child: const Text('Go to Restaurant'),
+            ),
           ),
           const SizedBox(height: 20),
-          const Text(
-            "Macrina's Catering",
-            style: TextStyle(
+          Text(
+            w.cateringPanelTitle.trim().isEmpty
+                ? "Macrina's Catering"
+                : w.cateringPanelTitle,
+            style: const TextStyle(
               color: Color(0xFFFFC024),
               fontWeight: FontWeight.w800,
               fontSize: 16,
             ),
           ),
           const SizedBox(height: 6),
-          const Text(
-            'Full-service catering with event theme designs.',
-            style: TextStyle(color: Colors.white70, fontSize: 12),
+          Text(
+            w.cateringPanelSubtitle.trim().isEmpty
+                ? 'Full-service catering with event theme designs.'
+                : w.cateringPanelSubtitle,
+            style: const TextStyle(color: Colors.white70, fontSize: 12),
           ),
           const SizedBox(height: 10),
           _buildEtdAdvertCard(compact: true),
           const SizedBox(height: 8),
-          OutlinedButton(
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton(
             onPressed:
                 () => Navigator.pushReplacementNamed(
                   context,
@@ -2448,10 +2464,13 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
             style: OutlinedButton.styleFrom(
               foregroundColor: const Color(0xFFFFC024),
               side: const BorderSide(color: Color(0xFFFFC024)),
+              minimumSize: const Size(0, 40),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
             ),
             child: const Text(
               'Inquire Now',
               style: TextStyle(fontWeight: FontWeight.w700),
+            ),
             ),
           ),
         ],
@@ -2569,37 +2588,78 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     return ListenableBuilder(
       listenable: w,
       builder: (context, _) {
+        final blocks = w.homeLayout.isEmpty
+            ? [
+                CmsPageBlock(id: 'hero', label: 'Hero'),
+                CmsPageBlock(id: 'banner', label: 'Banner'),
+                CmsPageBlock(id: 'latestEvent', label: 'Latest event'),
+                CmsPageBlock(id: 'eventDesigns', label: 'Event designs'),
+                CmsPageBlock(id: 'extras', label: 'Extra sections'),
+              ]
+            : w.homeLayout;
+        Widget blockFor(CmsPageBlock block) {
+          if (!block.visible) return const SizedBox.shrink();
+          switch (block.id) {
+            case 'hero':
+              return _buildHomeHero(w);
+            case 'banner':
+              return _buildRedBannerStrip(w);
+            case 'latestEvent':
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 32),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: websiteContentMaxWidth(context),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (_isCustomerLoggedIn) ...[
+                          _buildOrderAgainStrip(),
+                          const SizedBox(height: 28),
+                        ],
+                        _buildLatestEventSection(w),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            case 'eventDesigns':
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: websiteContentMaxWidth(context),
+                    ),
+                    child: _eventDesignsSection(w),
+                  ),
+                ),
+              );
+            case 'extras':
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: websiteContentMaxWidth(context),
+                    ),
+                    child: CmsSectionsView(
+                      sections: w.pageExtraSections['home'] ?? const [],
+                    ),
+                  ),
+                ),
+              );
+            default:
+              return const SizedBox.shrink();
+          }
+        }
+
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _buildHomeHero(w),
-            _buildRedBannerStrip(w),
-            Container(
-              color: const Color(0xFFF5F5F5),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 32),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth: websiteContentMaxWidth(context),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (_isCustomerLoggedIn) ...[
-                        _buildOrderAgainStrip(),
-                        const SizedBox(height: 28),
-                      ],
-                      _buildLatestEventSection(w),
-                      const SizedBox(height: 40),
-                      _eventDesignsSection(w),
-                      CmsSectionsView(
-                        sections: w.pageExtraSections['home'] ?? const [],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
+            for (final block in blocks) blockFor(block),
           ],
         );
       },
@@ -2619,6 +2679,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
       height: 200,
       margin: const EdgeInsets.only(right: 10),
       placeholderIcon: Icons.fastfood,
+      onTap: () => Navigator.pushReplacementNamed(
+        context,
+        customerRoute('/catering-menu'),
+      ),
     );
   }
 
@@ -2877,24 +2941,49 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     required double height,
     String? fallbackAsset,
   }) {
-    return SizedBox(
-      width: width,
-      height: height,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(14),
-        child: _b64Image(
-          b64,
-          fit: BoxFit.cover,
-          placeholder:
-              fallbackAsset == null
-                  ? null
-                  : Image.asset(
-                    fallbackAsset,
-                    fit: BoxFit.cover,
-                    width: width,
-                    height: height,
-                    filterQuality: FilterQuality.medium,
-                  ),
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: () {
+          final src = b64?.trim() ?? '';
+          if (src.isNotEmpty) {
+            showImageFocusDialog(
+              context,
+              imageBase64: src,
+              title: 'Latest event',
+            );
+            return;
+          }
+          if (fallbackAsset != null) {
+            showDialog<void>(
+              context: context,
+              builder: (ctx) => Dialog(
+                backgroundColor: Colors.black,
+                child: Image.asset(fallbackAsset, fit: BoxFit.contain),
+              ),
+            );
+          }
+        },
+        child: SizedBox(
+          width: width,
+          height: height,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: _b64Image(
+              b64,
+              fit: BoxFit.cover,
+              placeholder:
+                  fallbackAsset == null
+                      ? null
+                      : Image.asset(
+                        fallbackAsset,
+                        fit: BoxFit.cover,
+                        width: width,
+                        height: height,
+                        filterQuality: FilterQuality.medium,
+                      ),
+            ),
+          ),
         ),
       ),
     );
@@ -3869,6 +3958,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     final selectedType = _selectedRestaurantType.trim().toLowerCase();
     final dishes =
         restaurantDishes.where((d) {
+          if (selectedType.isEmpty || selectedType == 'all') return true;
           final dishType = restaurantTypeForDish(d);
           return dishType == selectedType;
         }).toList();
@@ -3891,26 +3981,28 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
         child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Title and Login button
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Expanded(
-                    child: Center(
-                      child: Text(
-                        'Restaurant',
-                        style: websiteHeaderStyle(
-                          fontSize: responsiveValue(context, mobile: 28.0, desktop: 42.0),
-                          color: Colors.red.shade400,
-                        ),
-                      ),
-                    ),
-                  ),
-                  if (!_isCustomerLoggedIn && !mobile)
-                    ElevatedButton(
+              CustomerAntdPageHero(
+                title: 'Restaurant',
+                subtitle: WebsiteContentStore.instance.restaurantPageSubtitle
+                        .trim()
+                        .isEmpty
+                    ? 'Order from our delicious restaurant menu'
+                    : WebsiteContentStore.instance.restaurantPageSubtitle,
+                titleFontSize: responsiveValue(
+                  context,
+                  mobile: 28.0,
+                  desktop: 36.0,
+                ),
+                filters: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (!_isCustomerLoggedIn) ...[
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: ElevatedButton(
                           onPressed: _handleLogin,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFFFC024),
+                            backgroundColor: CustomerAntdPageHero.accentYellow,
                             foregroundColor: Colors.black,
                             padding: const EdgeInsets.symmetric(
                               horizontal: 20,
@@ -3928,99 +4020,75 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                             ),
                           ),
                         ),
-                ],
-              ),
-              if (mobile && !_isCustomerLoggedIn) ...[
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: _handleLogin,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFFFC024),
-                      foregroundColor: Colors.black,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 12,
                       ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    child: const Text(
-                      'LOG IN TO ORDER',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 16),
-                  // Loyalty Points Banner
-                  _buildLoyaltyBanner(),
-                  const SizedBox(height: 16),
-                  // Search and Filter
-                  Row(
-                    children: [
-                      Expanded(
-                        flex: 3,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            border: Border.all(color: const Color(0xFFFFC024)),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const TextField(
+                      const SizedBox(height: 12),
+                    ],
+                    _buildLoyaltyBanner(),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
                             decoration: InputDecoration(
                               hintText: 'SEARCH',
-                              hintStyle: TextStyle(color: Colors.grey),
-                              prefixIcon: Icon(
+                              hintStyle: const TextStyle(color: Colors.grey),
+                              prefixIcon: const Icon(
                                 Icons.search,
                                 color: Colors.grey,
                               ),
-                              border: InputBorder.none,
-                              contentPadding: EdgeInsets.symmetric(
+                              filled: true,
+                              fillColor: Colors.white,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide:
+                                    BorderSide(color: Colors.grey.shade300),
+                              ),
+                              focusedBorder: const OutlineInputBorder(
+                                borderRadius:
+                                    BorderRadius.all(Radius.circular(8)),
+                                borderSide: BorderSide(
+                                  color: CustomerAntdPageHero.accentYellow,
+                                  width: 1.5,
+                                ),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
                                 horizontal: 16,
                                 vertical: 12,
                               ),
                             ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        flex: 1,
-                        child: OutlinedButton(
-                          onPressed: () {},
-                          style: OutlinedButton.styleFrom(
-                            side: const BorderSide(color: Colors.grey),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          child: const Text('FILTER'),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  // Category tabs
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        _buildCategoryTab('RICE MEALS'),
-                        _buildCategoryTab('SILOG MEALS'),
-                        _buildCategoryTab('PASTA'),
-                        _buildCategoryTab('SANDWICHES'),
-                        _buildCategoryTab('OTHERS'),
-                        _buildCategoryTab('DRINKS'),
                       ],
                     ),
-                  ),
-                  const SizedBox(height: 24),
+                    const SizedBox(height: 12),
+                    CustomerAntdFilterChips(
+                      options: const {
+                        'RICE MEALS': 'Rice Meals',
+                        'SILOG MEALS': 'Silog Meals',
+                        'PASTA': 'Pasta',
+                        'SANDWICHES': 'Sandwiches',
+                        'OTHERS': 'Others',
+                        'DRINKS': 'Drinks',
+                      },
+                      selected: _selectedRestaurantType.trim().toUpperCase() ==
+                                  'ALL' ||
+                              _selectedRestaurantType.trim().isEmpty
+                          ? ''
+                          : _selectedRestaurantType.trim().toUpperCase(),
+                      onSelected: (value) {
+                        setState(() {
+                          _selectedRestaurantType =
+                              value.isEmpty ? 'ALL' : value;
+                        });
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
                   // Dishes grid
                   if (dishes.isEmpty)
                     const Center(
@@ -5191,6 +5259,7 @@ class _HoverZoomPhotoTile extends StatelessWidget {
     required this.height,
     required this.margin,
     required this.placeholderIcon,
+    this.onTap,
   });
 
   final String? imageB64;
@@ -5200,6 +5269,7 @@ class _HoverZoomPhotoTile extends StatelessWidget {
   final double height;
   final EdgeInsets margin;
   final IconData placeholderIcon;
+  final VoidCallback? onTap;
 
   Widget _image({BoxFit fit = BoxFit.cover}) {
     final image = imageB64;
@@ -5229,6 +5299,10 @@ class _HoverZoomPhotoTile extends StatelessWidget {
   }
 
   void _openFocus(BuildContext context) {
+    if (onTap != null) {
+      onTap!();
+      return;
+    }
     if (imageB64 == null || imageB64!.isEmpty) return;
     showImageFocusDialog(
       context,

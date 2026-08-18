@@ -10,6 +10,7 @@ import '../models/menu_dish.dart';
 import '../utils/image_cache.dart';
 import '../widgets/antd_message.dart';
 import '../widgets/customer_website_topbar.dart';
+import '../widgets/customer_antd_page_hero.dart';
 import 'checkout_page.dart';
 
 // Font constants
@@ -198,48 +199,57 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  content.restaurantPageTitle,
-                  style: GoogleFonts.getFont(
-                    _primaryFont,
-                    fontSize: 36,
-                    fontWeight: FontWeight.bold,
-                    color: const Color(0xFF1E1E1E),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  content.restaurantPageSubtitle,
-                  style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
-                ),
-                const SizedBox(height: 24),
-                TextField(
-                  controller: _searchController,
-                  decoration: InputDecoration(
-                    hintText: 'Search restaurant menu',
-                    prefixIcon: const Icon(Icons.search),
-                    suffixIcon:
-                        _searchQuery.isEmpty
-                            ? null
-                            : IconButton(
-                              icon: const Icon(Icons.close),
-                              onPressed:
-                                  () => setState(() {
+                CustomerAntdPageHero(
+                  title: content.restaurantPageTitle.trim().isEmpty
+                      ? 'RESTAURANT'
+                      : content.restaurantPageTitle,
+                  subtitle: content.restaurantPageSubtitle.trim().isEmpty
+                      ? 'Order from our delicious restaurant menu'
+                      : content.restaurantPageSubtitle,
+                  titleFontSize: isMobile(context) ? 28 : 36,
+                  filters: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      TextField(
+                        controller: _searchController,
+                        decoration: InputDecoration(
+                          hintText: 'Search restaurant menu',
+                          prefixIcon: const Icon(Icons.search),
+                          suffixIcon: _searchQuery.isEmpty
+                              ? null
+                              : IconButton(
+                                  icon: const Icon(Icons.close),
+                                  onPressed: () => setState(() {
                                     _searchController.clear();
                                     _searchQuery = '';
                                   }),
+                                ),
+                          filled: true,
+                          fillColor: Colors.white,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: Colors.grey.shade300),
+                          ),
+                          focusedBorder: const OutlineInputBorder(
+                            borderRadius: BorderRadius.all(Radius.circular(8)),
+                            borderSide: BorderSide(
+                              color: CustomerAntdPageHero.accentYellow,
+                              width: 1.5,
                             ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  onChanged:
-                      (value) => setState(
-                        () => _searchQuery = value.trim().toLowerCase(),
+                          ),
+                        ),
+                        onChanged: (value) => setState(
+                          () => _searchQuery = value.trim().toLowerCase(),
+                        ),
                       ),
+                      const SizedBox(height: 12),
+                      _buildCategoryTabs(restaurantDishes),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 16),
-                _buildCategoryTabs(restaurantDishes),
                 const SizedBox(height: 24),
                 Expanded(
                   child:
@@ -417,38 +427,22 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
     typeList.remove('ALL');
     typeList.insert(0, 'ALL');
 
-    return Container(
-      height: 50,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        itemCount: typeList.length,
-        itemBuilder: (context, index) {
-          final type = typeList[index];
-          final isSelected =
-              type.toLowerCase() == _selectedRestaurantType.toLowerCase();
+    final options = <String, String>{
+      for (final t in typeList)
+        if (t != 'ALL') t: t,
+    };
 
-          return Container(
-            margin: const EdgeInsets.only(right: 8),
-            child: FilterChip(
-              label: Text(type),
-              selected: isSelected,
-              onSelected: (selected) {
-                if (selected) {
-                  setState(() {
-                    _selectedRestaurantType = type;
-                  });
-                }
-              },
-              backgroundColor: Colors.grey.shade200,
-              selectedColor: const Color(0xFF1E1E1E),
-              labelStyle: TextStyle(
-                color: isSelected ? Colors.white : Colors.black87,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-              ),
-            ),
-          );
-        },
-      ),
+    return CustomerAntdFilterChips(
+      options: options,
+      selected: _selectedRestaurantType.toUpperCase() == 'ALL'
+          ? ''
+          : _selectedRestaurantType,
+      allLabel: 'All',
+      onSelected: (value) {
+        setState(() {
+          _selectedRestaurantType = value.isEmpty ? 'ALL' : value;
+        });
+      },
     );
   }
 

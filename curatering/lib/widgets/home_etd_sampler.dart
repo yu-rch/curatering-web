@@ -3,9 +3,11 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../constants/home_default_assets.dart';
 import '../services/runpod_service.dart';
 
 /// Compact interactive Event Theme Design sampler for the homepage Catering panel.
@@ -23,9 +25,10 @@ class _HomeEtdSamplerState extends State<HomeEtdSampler> {
   static const _styles = ['Elegant', 'Rustic', 'Modern', 'Garden'];
   static const _moods = ['Romantic', 'Bright', 'Dramatic', 'Cozy'];
 
-  String? _selectedStyle = 'Elegant';
-  String? _selectedMood = 'Romantic';
+  String? _selectedStyle;
+  String? _selectedMood;
   String? _venuePhotoBase64;
+  int? _selectedSampleIndex;
   String? _generatedImageUrl;
   String? _error;
   bool _generating = false;
@@ -124,6 +127,24 @@ class _HomeEtdSamplerState extends State<HomeEtdSampler> {
     };
   }
 
+  Future<void> _selectSampleVenue(int index) async {
+    setState(() => _error = null);
+    try {
+      final data = await rootBundle.load(HomeDefaultAssets.collage[index]);
+      final bytes = data.buffer.asUint8List();
+      final b64 = await _encodeVenueForRunpod(bytes);
+      if (!mounted || b64 == null) return;
+      setState(() {
+        _selectedSampleIndex = index;
+        _venuePhotoBase64 = b64;
+        _generatedImageUrl = null;
+        _error = null;
+      });
+    } catch (e) {
+      if (mounted) setState(() => _error = 'Could not load sample venue.');
+    }
+  }
+
   Future<void> _pickVenuePhoto() async {
     setState(() => _error = null);
     try {
@@ -143,6 +164,7 @@ class _HomeEtdSamplerState extends State<HomeEtdSampler> {
       final b64 = await _encodeVenueForRunpod(bytes);
       if (!mounted || b64 == null) return;
       setState(() {
+        _selectedSampleIndex = null;
         _venuePhotoBase64 = b64;
         _generatedImageUrl = null;
         _error = null;
@@ -153,8 +175,8 @@ class _HomeEtdSamplerState extends State<HomeEtdSampler> {
   }
 
   Future<void> _generate() async {
-    if (_selectedStyle == null && _selectedMood == null) {
-      setState(() => _error = 'Pick a style or mood first.');
+    if (_selectedStyle == null || _selectedMood == null) {
+      setState(() => _error = 'Select a style and mood first.');
       return;
     }
     final venueRaw = _venuePhotoBase64?.trim();
@@ -265,7 +287,7 @@ class _HomeEtdSamplerState extends State<HomeEtdSampler> {
                     fit: BoxFit.cover,
                     gaplessPlayback: true,
                   )
-                : _previewPlaceholder('Upload a venue photo to start'),
+                : _previewPlaceholder('Select a venue photo to start'),
       ),
     );
   }
@@ -293,6 +315,9 @@ class _HomeEtdSamplerState extends State<HomeEtdSampler> {
   @override
   Widget build(BuildContext context) {
     final inputsEnabled = !_generating;
+    final canGenerate = !_generating &&
+        _selectedStyle != null &&
+        _selectedMood != null;
     final pad = widget.compact ? 12.0 : 16.0;
 
     return Container(
@@ -361,13 +386,58 @@ class _HomeEtdSamplerState extends State<HomeEtdSampler> {
                     onSelected: (v) => setState(() => _selectedMood = v),
                   ),
                   const SizedBox(height: 8),
+                  const Text(
+                    'Select venue photo',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      for (var i = 0; i < 3; i++) ...[
+                        if (i > 0) const SizedBox(width: 6),
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: inputsEnabled
+                                ? () => _selectSampleVenue(i)
+                                : null,
+                            child: AspectRatio(
+                              aspectRatio: 1.2,
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: _selectedSampleIndex == i
+                                        ? _accentYellow
+                                        : Colors.white24,
+                                    width: _selectedSampleIndex == i ? 2 : 1,
+                                  ),
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(7),
+                                  child: Image.asset(
+                                    HomeDefaultAssets.collage[i],
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 8),
                   OutlinedButton.icon(
                     onPressed: inputsEnabled ? _pickVenuePhoto : null,
-                    icon: const Icon(Icons.upload_file, size: 16),
+                    icon: const Icon(Icons.photo_library_outlined, size: 16),
                     label: Text(
-                      _venuePhotoBase64 != null
+                      _venuePhotoBase64 != null && _selectedSampleIndex == null
                           ? 'Change venue photo'
-                          : 'Upload venue photo',
+                          : 'Or choose from device',
                       style: const TextStyle(fontSize: 12),
                     ),
                     style: OutlinedButton.styleFrom(
@@ -393,7 +463,7 @@ class _HomeEtdSamplerState extends State<HomeEtdSampler> {
           ],
           const SizedBox(height: 10),
           FilledButton.icon(
-            onPressed: _generating ? null : _generate,
+            onPressed: canGenerate ? _generate : null,
             icon: _generating
                 ? const SizedBox(
                     width: 16,

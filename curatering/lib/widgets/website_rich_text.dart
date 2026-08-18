@@ -400,6 +400,55 @@ class _WebsiteRichTextEditorDialogState
     );
   }
 
+  String _stripCssSpans(String html, String cssProperty) {
+    return html.replaceAllMapped(
+      RegExp(
+        r'''<span\s+style="([^"]*)">(.*?)</span>''',
+        caseSensitive: false,
+        dotAll: true,
+      ),
+      (m) {
+        final style = m.group(1) ?? '';
+        final inner = m.group(2) ?? '';
+        final parts = style
+            .split(';')
+            .map((p) => p.trim())
+            .where((p) => p.isNotEmpty)
+            .where((p) => !p.toLowerCase().startsWith('${cssProperty.toLowerCase()}:'))
+            .toList();
+        if (parts.isEmpty) return inner;
+        return '<span style="${parts.join('; ')}">$inner</span>';
+      },
+    );
+  }
+
+  void _applyCssSpan(String cssProperty, String cssValue) {
+    final sel = _ctrl.selection;
+    if (!sel.isValid) return;
+    final start = sel.start;
+    final end = sel.end < start ? start : sel.end;
+    final text = _ctrl.text;
+    final selected = start < end ? text.substring(start, end) : text;
+    final cleaned = _stripCssSpans(selected, cssProperty);
+    final open = '<span style="$cssProperty:$cssValue">';
+    const close = '</span>';
+    if (start < end) {
+      _ctrl.value = TextEditingValue(
+        text: '${text.substring(0, start)}$open$cleaned$close${text.substring(end)}',
+        selection: TextSelection.collapsed(
+          offset: start + open.length + cleaned.length + close.length,
+        ),
+      );
+    } else {
+      _ctrl.value = TextEditingValue(
+        text: '$open$cleaned$close',
+        selection: TextSelection.collapsed(
+          offset: open.length + cleaned.length + close.length,
+        ),
+      );
+    }
+  }
+
   Future<void> _addLink() async {
     final urlCtrl = TextEditingController();
     final url = await showDialog<String>(
@@ -530,10 +579,7 @@ class _WebsiteRichTextEditorDialogState
                 onChanged: (s) {
                   if (s == null) return;
                   setState(() => _previewSize = s);
-                  _wrap(
-                    '<span style="font-size:${s.toInt()}px">',
-                    '</span>',
-                  );
+                  _applyCssSpan('font-size', '${s.toInt()}px');
                 },
               ),
             ),
@@ -550,8 +596,25 @@ class _WebsiteRichTextEditorDialogState
                 onChanged: (f) {
                   if (f == null) return;
                   setState(() => _previewFont = f);
-                  if (f == 'Default') return;
-                  _wrap('<span style="font-family:$f">', '</span>');
+                  if (f == 'Default') {
+                    final sel = _ctrl.selection;
+                    if (sel.isValid && sel.start < sel.end) {
+                      final cleaned = _stripCssSpans(
+                        _ctrl.text.substring(sel.start, sel.end),
+                        'font-family',
+                      );
+                      final text = _ctrl.text;
+                      _ctrl.value = TextEditingValue(
+                        text:
+                            '${text.substring(0, sel.start)}$cleaned${text.substring(sel.end)}',
+                        selection: TextSelection.collapsed(
+                          offset: sel.start + cleaned.length,
+                        ),
+                      );
+                    }
+                    return;
+                  }
+                  _applyCssSpan('font-family', f);
                 },
               ),
             ),
@@ -600,7 +663,7 @@ class _WebsiteRichTextEditorDialogState
               onSelected: (c) {
                 final hex =
                     '#${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}';
-                _wrap('<span style="color:$hex">', '</span>');
+                _applyCssSpan('color', hex);
               },
             ),
           ],

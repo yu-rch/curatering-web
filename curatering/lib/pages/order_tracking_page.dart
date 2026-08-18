@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/menu_store.dart';
 import '../theme/website_header_font.dart';
 import '../utils/order_display_utils.dart';
+import '../utils/order_item_display.dart';
+import '../utils/image_cache.dart';
 import '../utils/responsive_layout.dart';
 
 class OrderTrackingPage extends StatefulWidget {
@@ -14,9 +17,19 @@ class OrderTrackingPage extends StatefulWidget {
 
 class _OrderTrackingPageState extends State<OrderTrackingPage> {
   @override
+  void initState() {
+    super.initState();
+    MenuStore.instance.loadDishesWithImages(silent: true).then((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final status = widget.orderData['status'] ?? 'pending';
-    final items = widget.orderData['items'] as List<dynamic>? ?? [];
+    final items = orderLineItemsFrom(
+      Map<String, dynamic>.from(widget.orderData),
+    );
     final totalAmount = widget.orderData['total_amount'] ?? '0.00';
     final displayOrderNo = formatRestaurantOrderNo(widget.orderData);
     final fullName = widget.orderData['full_name'] ?? '';
@@ -255,23 +268,14 @@ class _OrderTrackingPageState extends State<OrderTrackingPage> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Item image placeholder
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade300,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Icon(Icons.fastfood, size: 20, color: Colors.grey),
-                  ),
+                  orderItemThumb(item['imageBase64']?.toString(), size: 40),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          (item['name'] ?? 'Unknown Item').toUpperCase(),
+                          (item['name'] ?? 'Unknown item').toString().toUpperCase(),
                           style: const TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.w500,

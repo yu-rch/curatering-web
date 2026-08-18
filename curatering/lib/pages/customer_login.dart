@@ -8,6 +8,7 @@ import '../config.dart';
 import '../services/api_client.dart';
 import '../services/cart_sync_service.dart';
 import '../utils/responsive_layout.dart';
+import '../widgets/antd_dialog.dart';
 
 Uri _apiUri(String path) {
   final base = apiBaseUrl.endsWith('/')
@@ -167,18 +168,10 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
         });
         _setError(null);
         if (mounted) {
-          await showDialog<void>(
+          await showCurateringSuccessDialog(
             context: context,
-            builder: (ctx) => AlertDialog(
-              title: const Text('Success'),
-              content: const Text('Password reset successful. Please log in.'),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(ctx).pop(),
-                  child: const Text('OK'),
-                ),
-              ],
-            ),
+            title: 'Password reset successful',
+            body: 'Please log in.',
           );
         }
       } else {
@@ -242,19 +235,9 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
 
         if (!mounted) return;
         setState(() => _isLoading = false);
-        await showDialog<void>(
+        await showCurateringSuccessDialog(
           context: context,
-          barrierDismissible: false,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Success'),
-            content: const Text('login successful'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('OK'),
-              ),
-            ],
-          ),
+          title: 'Successful login',
         );
         if (mounted) {
           Navigator.of(context).pop(data);
@@ -289,6 +272,8 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
           _errorMessage = null;
         });
       } else {
+        _emailController.clear();
+        _passwordController.clear();
         setState(() => _isLoading = false);
         _setError(
           data['error']?.toString() ??

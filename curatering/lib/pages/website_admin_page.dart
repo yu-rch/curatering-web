@@ -638,6 +638,76 @@ class _HomepageEditor extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          _sectionTitle('Page layout'),
+          Text(
+            'Reorder, hide, or show homepage sections. Extra CMS sections stay in Extra sections.',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+          ),
+          const SizedBox(height: 8),
+          ReorderableListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: w.homeLayout.length,
+            onReorder: (oldIndex, newIndex) {
+              if (newIndex > oldIndex) newIndex -= 1;
+              final item = w.homeLayout.removeAt(oldIndex);
+              w.homeLayout.insert(newIndex, item);
+              onChanged();
+            },
+            itemBuilder: (context, index) {
+              final block = w.homeLayout[index];
+              return ListTile(
+                key: ValueKey(block.id),
+                leading: const Icon(Icons.drag_handle),
+                title: Text(block.label.isEmpty ? block.id : block.label),
+                trailing: Switch(
+                  value: block.visible,
+                  onChanged: (v) {
+                    block.visible = v;
+                    onChanged();
+                  },
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 16),
+          _sectionTitle('Side panel copy'),
+          _CmsTextField(
+            label: 'Kitchen panel title',
+            value: w.kitchenPanelTitle,
+            onChanged: (v) {
+              w.kitchenPanelTitle = v;
+              onChanged();
+            },
+          ),
+          const SizedBox(height: 8),
+          _CmsTextField(
+            label: 'Kitchen panel subtitle',
+            value: w.kitchenPanelSubtitle,
+            onChanged: (v) {
+              w.kitchenPanelSubtitle = v;
+              onChanged();
+            },
+          ),
+          const SizedBox(height: 8),
+          _CmsTextField(
+            label: 'Catering panel title',
+            value: w.cateringPanelTitle,
+            onChanged: (v) {
+              w.cateringPanelTitle = v;
+              onChanged();
+            },
+          ),
+          const SizedBox(height: 8),
+          _CmsTextField(
+            label: 'Catering panel subtitle',
+            value: w.cateringPanelSubtitle,
+            onChanged: (v) {
+              w.cateringPanelSubtitle = v;
+              onChanged();
+            },
+          ),
+          const SizedBox(height: 16),
           _sectionTitle('Hero'),
           websiteBase64Thumbnail(w.homeHeroImageBase64, height: 160),
           const SizedBox(height: 8),

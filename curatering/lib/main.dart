@@ -69,6 +69,8 @@ Future<void> main() async {
 
   if (bootstrapWebRouting()) return;
 
+  await DataStore.loadTheme();
+
   runApp(const MyApp());
 }
 

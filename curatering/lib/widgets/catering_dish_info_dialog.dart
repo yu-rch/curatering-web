@@ -24,7 +24,7 @@ void showCateringDishInfoDialog(
           constraints: const BoxConstraints(maxWidth: 820, maxHeight: 520),
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final wide = constraints.maxWidth >= 700;
+              final wide = constraints.maxWidth >= 520;
               final hasImage = dish.imageBase64?.isNotEmpty == true;
               final image =
                   hasImage

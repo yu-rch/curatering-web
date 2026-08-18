@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config.dart';
 import '../utils/order_display_utils.dart';
 import '../services/customer_orders_cache.dart';
+import '../widgets/customer_account_shell.dart';
 import '../widgets/customer_pages_top_bar.dart';
 import 'customer_login.dart';
 import 'customer_website.dart';
@@ -412,12 +413,10 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
           ),
         ],
       ),
-      body: Column(
+      body: CustomerAccountShell(
+        currentTab: CustomerPageTab.tracking,
+        body: Column(
         children: [
-          CustomerPagesTopBar(
-            currentTab: CustomerPageTab.tracking,
-            onTabSelected: _navigateFromTopBar,
-          ),
           Expanded(
             child:
                 _isLoading
@@ -851,6 +850,7 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
                     ),
           ),
         ],
+      ),
       ),
     );
   }

@@ -472,7 +472,7 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
         Padding(
           padding: const EdgeInsets.only(bottom: 4),
           child: Text(
-            'Pick dishes from the catering menu (${_customIds.length} selected).',
+            'Pick dishes from the catering menu. Minimum of ${widget.minCustomDishes}, Maximum of ${widget.maxCustomDishes} (${_customIds.length} selected).',
             style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
           ),
         ),
@@ -498,7 +498,7 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
         else
           ConstrainedBox(
             constraints: BoxConstraints(
-              maxHeight: widget.visibleRowCount * 52.0,
+              maxHeight: widget.visibleRowCount * 72.0,
             ),
             child: ListView.builder(
               shrinkWrap: !widget.embedded,
@@ -851,16 +851,28 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
 
   Widget _dishThumb(MenuDish dish) {
     if (dish.imageBase64?.isNotEmpty != true) {
-      return const CircleAvatar(child: Icon(Icons.restaurant, size: 18));
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          width: 56,
+          height: 56,
+          color: Colors.grey.shade200,
+          child: const Icon(Icons.restaurant, size: 22),
+        ),
+      );
     }
     final bytes = _imageCache.putIfAbsent(
       dish.id,
       () => base64Decode(dish.imageBase64!),
     );
-    return RepaintBoundary(
-      key: ValueKey('thumb_${dish.id}'),
-      child: CircleAvatar(
-        backgroundImage: MemoryImage(bytes),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Image.memory(
+        bytes,
+        width: 56,
+        height: 56,
+        fit: BoxFit.cover,
+        gaplessPlayback: true,
       ),
     );
   }

@@ -98,12 +98,24 @@ class CmsSectionsEditor extends StatelessWidget {
                 margin: const EdgeInsets.only(bottom: 8),
                 child: ExpansionTile(
                   title: Text('${_typeLabel(s.type)} · ${s.heading.isEmpty ? s.id : s.heading}'),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.delete_outline, color: Colors.red),
-                    onPressed: () {
-                      sections.removeAt(index);
-                      onChanged();
-                    },
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Switch(
+                        value: s.visible,
+                        onChanged: (v) {
+                          s.visible = v;
+                          onChanged();
+                        },
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline, color: Colors.red),
+                        onPressed: () {
+                          sections.removeAt(index);
+                          onChanged();
+                        },
+                      ),
+                    ],
                   ),
                   children: [
                     Padding(
@@ -168,6 +180,20 @@ class CmsSectionsEditor extends StatelessWidget {
                                 onChanged();
                               },
                             ),
+                            const SizedBox(height: 8),
+                            TextFormField(
+                              initialValue: s.buttonWidth?.toStringAsFixed(0) ?? '',
+                              decoration: const InputDecoration(
+                                labelText: 'Button width (px, optional)',
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                              ),
+                              keyboardType: TextInputType.number,
+                              onChanged: (v) {
+                                s.buttonWidth = double.tryParse(v.trim());
+                                onChanged();
+                              },
+                            ),
                           ],
                           if (s.type == CmsSectionType.image ||
                               s.type == CmsSectionType.imageRow)
@@ -208,7 +234,8 @@ class CmsSectionsView extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          for (final s in sections) ...[
+          for (final s in sections)
+            if (s.visible) ...[
             _section(s),
             const SizedBox(height: 16),
           ],
@@ -246,12 +273,16 @@ class CmsSectionsView extends StatelessWidget {
           ],
         );
       case CmsSectionType.cta:
-        return Align(
-          alignment: Alignment.centerLeft,
-          child: FilledButton(
+        final width = s.buttonWidth;
+        final button = FilledButton(
             onPressed: () {},
             child: Text(s.ctaLabel.isEmpty ? 'Learn more' : s.ctaLabel),
-          ),
+          );
+        return Align(
+          alignment: Alignment.centerLeft,
+          child: width == null
+              ? button
+              : SizedBox(width: width, child: button),
         );
       case CmsSectionType.image:
       case CmsSectionType.imageRow:

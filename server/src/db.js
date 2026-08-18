@@ -1,4 +1,5 @@
 import { Pool } from "pg";
+import { backfillCateringDishIngredients } from "./cateringIngredientsSeed.js";
 
 function buildPgPoolConfig() {
   const cs = process.env.DATABASE_URL?.trim();
@@ -1336,6 +1337,12 @@ export async function initDb() {
     console.log(
       "[initDb] menu_dishes is empty — add dishes via staff Menu admin (default CSV seed disabled).",
     );
+  }
+
+  try {
+    await backfillCateringDishIngredients(pool);
+  } catch (err) {
+    console.log("[initDb] catering ingredients backfill:", err.message);
   }
 }
 

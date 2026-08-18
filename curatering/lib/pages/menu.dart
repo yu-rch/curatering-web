@@ -184,6 +184,7 @@ class _MenuState extends State<Menu> {
   final TextEditingController _paxController = TextEditingController();
   final TextEditingController _newPaxController = TextEditingController();
   final TextEditingController _newSauceController = TextEditingController();
+  final TextEditingController _newIngredientController = TextEditingController();
   final TextEditingController _setMenuNameController = TextEditingController();
   final TextEditingController _typeController = TextEditingController();
   final TextEditingController _publicDescriptionController =
@@ -200,6 +201,7 @@ class _MenuState extends State<Menu> {
   bool _isRestaurantGridView = false;
   List<String> _editingPaxOptions = ['1 pax'];
   List<String> _editingSauces = [];
+  List<String> _editingIngredients = [];
   bool _editingSupportsAddOns = false;
   bool _editingAvailable = true;
   List<String> _selectedSetDishIds = [];
@@ -336,6 +338,7 @@ class _MenuState extends State<Menu> {
     _paxController.dispose();
     _newPaxController.dispose();
     _newSauceController.dispose();
+    _newIngredientController.dispose();
     _setMenuNameController.dispose();
     _typeController.dispose();
     _publicDescriptionController.dispose();
@@ -368,9 +371,11 @@ class _MenuState extends State<Menu> {
       _typeController.text = 'others';
     }
     _editingSauces = [];
+    _editingIngredients = [];
     _editingSupportsAddOns = false;
     _newPaxController.clear();
     _newSauceController.clear();
+    _newIngredientController.clear();
     _publicDescriptionController.clear();
     _allergensController.clear();
   }
@@ -394,9 +399,11 @@ class _MenuState extends State<Menu> {
     _paxController.text = '';
     _editingPaxOptions = dish.paxOptions.toList();
     _editingSauces = dish.sauces.toList();
+    _editingIngredients = dish.ingredients.toList();
     _editingSupportsAddOns = dish.supportsAddOns || dish.sauces.isNotEmpty;
     _newPaxController.clear();
     _newSauceController.clear();
+    _newIngredientController.clear();
     _publicDescriptionController.text = dish.publicDescription;
     _allergensController.text = dish.allergens;
     if (dish.category == 'catering') {
@@ -416,6 +423,20 @@ class _MenuState extends State<Menu> {
     setState(() {
       _editingSauces.add(value);
       _newSauceController.clear();
+    });
+  }
+
+  void _addIngredientOption() {
+    final value = _newIngredientController.text.trim();
+    if (value.isEmpty ||
+        _editingIngredients.any(
+          (item) => item.toLowerCase() == value.toLowerCase(),
+        )) {
+      return;
+    }
+    setState(() {
+      _editingIngredients.add(value);
+      _newIngredientController.clear();
     });
   }
 
@@ -730,20 +751,64 @@ class _MenuState extends State<Menu> {
                       ),
                       if (category == 'catering') ...[
                         const SizedBox(height: 12),
-                        if (dish != null)
-                          OutlinedButton.icon(
-                            onPressed: () => _showIngredientsDialog(dish),
-                            icon: const Icon(Icons.list_alt, size: 18),
-                            label: const Text('Manage ingredients'),
-                          )
-                        else
-                          Text(
-                            'Save this dish first, then use Ingredients to add checklist items.',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey.shade700,
-                            ),
+                        Text(
+                          'Ingredients',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey.shade800,
                           ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Shown on the catering menu and added to order checklists.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: [
+                            for (final ingredient in _editingIngredients)
+                              Chip(
+                                label: Text(ingredient),
+                                onDeleted:
+                                    () => dialogSetState(
+                                      () => _editingIngredients.remove(
+                                        ingredient,
+                                      ),
+                                    ),
+                              ),
+                          ],
+                        ),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _newIngredientController,
+                                decoration: const InputDecoration(
+                                  labelText: 'Add ingredient',
+                                  hintText: 'e.g. Beef, Rice',
+                                ),
+                                onSubmitted: (_) {
+                                  _addIngredientOption();
+                                  dialogSetState(() {});
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            OutlinedButton.icon(
+                              onPressed: () {
+                                _addIngredientOption();
+                                dialogSetState(() {});
+                              },
+                              icon: const Icon(Icons.add),
+                              label: const Text('Add'),
+                            ),
+                          ],
+                        ),
                       ],
                       const SizedBox(height: 8),
                       if (formError != null) ...[
@@ -851,6 +916,7 @@ class _MenuState extends State<Menu> {
                                   publicDescription:
                                       _publicDescriptionController.text,
                                   allergens: _allergensController.text,
+                                  ingredients: _editingIngredients,
                                 );
                               } else {
                                 await MenuStore.instance.updateDish(
@@ -884,6 +950,7 @@ class _MenuState extends State<Menu> {
                                   publicDescription:
                                       _publicDescriptionController.text,
                                   allergens: _allergensController.text,
+                                  ingredients: _editingIngredients,
                                 );
                               }
                               if (context.mounted) {
@@ -2580,12 +2647,7 @@ class _MenuState extends State<Menu> {
                                               ? () =>
                                                   _addDishToCurrentSet(dish.id)
                                               : null,
-                                      onRemove:
-                                          isModifyingSelectedSet &&
-                                                  isInCurrentSelection
-                                              ? () =>
-                                                  _removeDishFromSet(dish.id)
-                                              : null,
+                                      onRemove: null,
                                     );
                                   },
                                 ),
@@ -2674,6 +2736,10 @@ class _MenuState extends State<Menu> {
     final setMenus = SetMenuStore.instance.activeSetMenus;
     final setMenu = setMenus.firstWhere((s) => s.id == setMenuId);
     _applySetMenu(setMenu);
+    final listed = _dishesForSelectedSetMenu(MenuStore.instance.activeDishes);
+    setState(() {
+      _selectedSetDishIds = listed.map((d) => d.id).toList();
+    });
   }
 
   void _removeDishFromSet(String dishId) {

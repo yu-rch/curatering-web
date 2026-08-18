@@ -1,5 +1,6 @@
 // simple shared data repository for demo purposes
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// A lightweight data model used in sample pages.
 class InventoryItem {
@@ -58,4 +59,20 @@ class DataStore {
 
   /// simple theme control
   static final ValueNotifier<bool> isDarkMode = ValueNotifier(false);
+  static const _darkModeKey = 'curatering_is_dark_mode';
+
+  static Future<void> loadTheme() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      isDarkMode.value = prefs.getBool(_darkModeKey) ?? false;
+    } catch (_) {}
+  }
+
+  static Future<void> setDarkMode(bool value) async {
+    isDarkMode.value = value;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_darkModeKey, value);
+    } catch (_) {}
+  }
 }

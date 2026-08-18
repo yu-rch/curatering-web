@@ -307,7 +307,7 @@ class MenuStore extends ChangeNotifier {
           'sauces': sauces ?? [],
           'supportsAddOns':
               supportsAddOns ?? existingDish?.supportsAddOns ?? false,
-          'ingredients': ingredients ?? [],
+          'ingredients': ingredients ?? existingDish?.ingredients ?? [],
           'imageBase64': imageBase64,
           'type': type ?? '',
           'mealType': mealType ?? '',

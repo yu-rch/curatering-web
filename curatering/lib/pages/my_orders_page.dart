@@ -10,8 +10,11 @@ import '../config.dart';
 import '../utils/order_display_utils.dart';
 import '../utils/payment_proof_image.dart';
 import '../services/customer_orders_cache.dart';
+import '../services/menu_store.dart';
 import '../widgets/customer_order_feedback_dialog.dart';
+import '../widgets/customer_account_shell.dart';
 import '../widgets/customer_pages_top_bar.dart';
+import '../utils/order_item_display.dart';
 import 'customer_website.dart';
 import 'my_caterings_page.dart';
 import 'my_order_tracking_page.dart';
@@ -28,7 +31,7 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
   List<dynamic> _orders = [];
   bool _isLoading = true;
   String? _error;
-  bool _gridView = false;
+  bool _gridView = true;
   final Set<String> _sendingFollowUps = {};
   final _searchCtrl = TextEditingController();
   String _statusFilter = 'all';
@@ -44,6 +47,7 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
   void initState() {
     super.initState();
     _loadOrders();
+    unawaited(MenuStore.instance.loadDishesWithImages(silent: true));
   }
 
   @override
@@ -574,26 +578,14 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                ...items.map((item) {
-                  final name =
-                      item['name'] ?? item['dishName'] ?? 'Unknown item';
+                ...orderLineItemsFrom(Map<String, dynamic>.from(order)).map((item) {
+                  final name = item['name'] ?? 'Unknown item';
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 10),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Container(
-                          width: 48,
-                          height: 48,
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade200,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Icon(
-                            Icons.restaurant,
-                            color: Colors.grey.shade600,
-                          ),
-                        ),
+                        orderItemThumb(item['imageBase64']?.toString()),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Column(
@@ -1180,15 +1172,9 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          CustomerPagesTopBar(
-            currentTab: CustomerPageTab.orders,
-            onTabSelected: _navigateFromTopBar,
-          ),
-          Expanded(
-            child:
-                _isLoading
+      body: CustomerAccountShell(
+        currentTab: CustomerPageTab.orders,
+        body: _isLoading
                     ? const Center(child: CircularProgressIndicator())
                     : _error != null
                     ? Center(
@@ -1316,7 +1302,7 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
                                       final grid = _gridView;
                                       final cardW =
                                           grid
-                                              ? (c.maxWidth - 44) / 2
+                                              ? (c.maxWidth - 56) / 3
                                               : c.maxWidth - 32;
                                       final segs = <Widget>[];
 
@@ -1410,8 +1396,6 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
                         ),
                       ],
                     ),
-          ),
-        ],
       ),
     );
   }

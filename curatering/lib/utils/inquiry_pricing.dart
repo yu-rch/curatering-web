@@ -1,6 +1,9 @@
 /// Default per-guest rate for catering inquiry estimates (PHP).
 const double kCateringInquiryPricePerGuest = 500;
 
+/// Extra dish beyond a set menu: ₱100 per guest.
+const double kExtraSetMenuDishFeePerPax = 100;
+
 /// Alias used by mobile handoff / wizard copy.
 const double kPesosPerPax = kCateringInquiryPricePerGuest;
 
@@ -99,6 +102,7 @@ List<Map<String, dynamic>> buildInquiryCostBreakdownLines({
   required int guestCount,
   int paxBuffer = 0,
   double menuModificationsExtra = 0,
+  int extraSetMenuDishCount = 0,
   required String inquiryType,
   required String serviceIncluded,
 }) {
@@ -125,6 +129,14 @@ List<Map<String, dynamic>> buildInquiryCostBreakdownLines({
       'label': 'Menu modifications',
       'detail': 'Extra charges from set-menu changes',
       'amount': menuModificationsExtra,
+    });
+  }
+  if (extraSetMenuDishCount > 0 && guestCount > 0) {
+    lines.add({
+      'label': 'Extra set-menu dish fee',
+      'detail':
+          '₱${kExtraSetMenuDishFeePerPax.toStringAsFixed(0)} × $guestCount guests × $extraSetMenuDishCount extra dish(es)',
+      'amount': extraSetMenuDishCount * guestCount * kExtraSetMenuDishFeePerPax,
     });
   }
   final surcharge = estimateInquiryStylingSurcharge(

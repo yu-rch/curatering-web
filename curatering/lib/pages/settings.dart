@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/antd_message.dart';
 import '../services/user_api.dart';
-import '../auth/auth_session.dart';
-import '../auth/roles.dart';
+import '../data_store.dart';
 
 class Settings extends StatefulWidget {
   const Settings({super.key});
@@ -29,7 +28,6 @@ class _SettingsState extends State<Settings> {
 
   @override
   Widget build(BuildContext context) {
-    final role = AuthSession.instance.currentUser.value?.role;
     return AppScaffold(
       showSearch: true,
       child: Padding(
@@ -48,27 +46,44 @@ class _SettingsState extends State<Settings> {
             ),
             const SizedBox(height: 16),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: ListView(
                 children: [
-                  if (role == Role.superAdmin)
-                    Card(
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(
-                          color: Colors.black.withValues(alpha: 0.08),
-                        ),
+                  Card(
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      side: BorderSide(
+                        color: Colors.black.withValues(alpha: 0.08),
                       ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Request Help',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
+                    ),
+                    child: SwitchListTile(
+                      title: const Text('Dark mode'),
+                      subtitle: const Text('Switch between light and dark theme'),
+                      value: DataStore.isDarkMode.value,
+                      onChanged: (v) {
+                        DataStore.setDarkMode(v);
+                        setState(() {});
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Card(
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      side: BorderSide(
+                        color: Colors.black.withValues(alpha: 0.08),
+                      ),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Request Help',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
                             const SizedBox(height: 16),
                             Row(
                               children: [
@@ -142,23 +157,6 @@ class _SettingsState extends State<Settings> {
                               ],
                             ),
                           ],
-                        ),
-                      ),
-                    )
-                  else
-                    Card(
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(
-                          color: Colors.black.withValues(alpha: 0.08),
-                        ),
-                      ),
-                      child: const Padding(
-                        padding: EdgeInsets.all(16.0),
-                        child: Text(
-                          'Content Management (prototype)',
-                          style: TextStyle(fontWeight: FontWeight.bold),
                         ),
                       ),
                     ),

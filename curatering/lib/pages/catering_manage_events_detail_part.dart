@@ -18,31 +18,54 @@ extension _ManageEventsDetailExt on _ManageEventsState {
     return 'event';
   }
 
-  List<Map<String, dynamic>> _checklistRowsFromOrder(EventOrderDto order) {
-    if (order.checklist.isNotEmpty) {
-      return order.checklist
-          .map(
-            (c) => {
-              'item': c.title,
-              'description': c.description,
-              'quantity': c.quantity,
-              'cost': c.price,
-              'status': c.isCompleted ? 'done' : 'not done',
-            },
-          )
-          .toList();
+  String _paymentMethodLabel(EventOrderDto order) {
+    final raw = order.postAnalysisRaw;
+    for (final key in [
+      'paymentMethod',
+      'payment_method',
+      'down_payment_method',
+      'modeOfPayment',
+      'mode_of_payment',
+    ]) {
+      final v = '${raw[key] ?? ''}'.trim();
+      if (v.isNotEmpty) return v;
     }
-    return _buildChecklistFromMenuWithIngredients(order.menu)
+    return '—';
+  }
+
+  List<Map<String, dynamic>> _checklistRowsFromOrder(EventOrderDto order) {
+    final fromMenu =
+        _buildChecklistFromMenuWithIngredients(order.menu)
+            .map(
+              (c) => {
+                'item': c.item,
+                'description': c.description,
+                'quantity': c.quantity,
+                'cost': c.cost,
+                'status': c.isCompleted ? 'done' : 'not done',
+              },
+            )
+            .toList();
+    if (order.checklist.isEmpty) return fromMenu;
+    final saved = order.checklist
         .map(
           (c) => {
-            'item': c.item,
+            'item': c.title.trim().isEmpty ? c.description : c.title,
             'description': c.description,
             'quantity': c.quantity,
-            'cost': c.cost,
+            'cost': c.price,
             'status': c.isCompleted ? 'done' : 'not done',
           },
         )
+        .where((row) => '${row['item']}'.trim().isNotEmpty)
         .toList();
+    if (saved.isEmpty) return fromMenu;
+    final savedNames = saved.map((r) => '${r['item']}'.toLowerCase()).toSet();
+    final extras = fromMenu.where((row) {
+      final name = '${row['item']}'.toLowerCase();
+      return name.contains('ingredient') || !savedNames.contains(name);
+    });
+    return [...saved, ...extras];
   }
 
   List<Map<String, dynamic>> _taskRowsFromOrder(EventOrderDto order) {
@@ -83,7 +106,54 @@ extension _ManageEventsDetailExt on _ManageEventsState {
   }
 
   Future<void> _printPdfBytes(Uint8List bytes, {String name = 'document.pdf'}) async {
-    await Printing.layoutPdf(onLayout: (_) async => bytes, name: name);
+    await _previewPdfBytes(bytes, title: name.replaceAll('.pdf', '').replaceAll('-', ' '));
+  }
+
+  Future<void> _previewPdfBytes(
+    Uint8List bytes, {
+    required String title,
+  }) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        final size = MediaQuery.sizeOf(ctx);
+        return Dialog(
+          insetPadding: const EdgeInsets.all(12),
+          child: SizedBox(
+            width: size.width * 0.94,
+            height: size.height * 0.88,
+            child: Column(
+              children: [
+                Material(
+                  color: const Color(0xFF1E1E1E),
+                  child: ListTile(
+                    title: Text(
+                      title,
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      onPressed: () => Navigator.of(ctx).pop(),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: PdfPreview(
+                    build: (_) async => bytes,
+                    canChangeOrientation: false,
+                    canChangePageFormat: false,
+                    canDebug: false,
+                    allowPrinting: true,
+                    allowSharing: true,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _generateOrderSummaryPdf(
@@ -216,6 +286,11 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                         children: [
                           Text('Amount due (50%): ${formatPesos(total / 2)}'),
                           const SizedBox(height: 8),
+                          Text(
+                            'Mode of payment: ${_paymentMethodLabel(order)}',
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                          const SizedBox(height: 8),
                           if (order.downPaymentStatus == 'paid')
                             Container(
                               padding: const EdgeInsets.all(10),
@@ -315,6 +390,10 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                         _detailInfoRow('Event type', order.eventType),
                         if (!_isSupervisor)
                           _detailInfoRow('Guests', '${order.guestCount}'),
+                        _detailInfoRow(
+                          'Mode of payment',
+                          _paymentMethodLabel(order),
+                        ),
                         _detailInfoRow(
                           'Venue',
                           order.address,
@@ -973,8 +1052,6 @@ extension _ManageEventsDetailExt on _ManageEventsState {
           const SizedBox(height: 8),
         ],
         ...order.menu.map((m) {
-          final parts = <String>[m.dishName];
-          if (m.paxOption.trim().isNotEmpty) parts.add(m.paxOption);
           return Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Column(
@@ -990,7 +1067,7 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                     ),
                   ),
                 Text(
-                  parts.join(' · '),
+                  m.dishName,
                   style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
                 ),
                 if (m.additionalChargeAmount > 0)

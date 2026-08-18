@@ -510,6 +510,7 @@ class _ManageEventsState extends State<ManageEvents>
     });
     _allDishes = MenuStore.instance.activeDishes;
     MenuStore.instance.addListener(_onMenuStoreChanged);
+    unawaited(MenuStore.instance.loadDishes());
     SetMenuStore.instance.loadSetMenus();
     _foodTabController = TabController(length: 2, vsync: this);
     _loadThemeTemplates();
@@ -4015,8 +4016,15 @@ class _ManageEventsState extends State<ManageEvents>
                       : resolvedFullPaymentAmount();
               return AlertDialog(
                 title: Text(title),
-                content: SizedBox(
-                  width: 440,
+                insetPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 20,
+                ),
+                content: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: 480,
+                    maxHeight: MediaQuery.sizeOf(context).height * 0.78,
+                  ),
                   child: SingleChildScrollView(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
@@ -4180,9 +4188,9 @@ class _ManageEventsState extends State<ManageEvents>
                             color: Color(0xFFF4511E),
                           ),
                         ),
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 16),
                         const Text(
-                          'Payment method',
+                          'Mode of payment',
                           style: TextStyle(fontWeight: FontWeight.w600),
                         ),
                         const SizedBox(height: 8),
@@ -4377,101 +4385,13 @@ class _ManageEventsState extends State<ManageEvents>
   ) => _showDownpaymentConfirmationDialog(order, mode: mode);
 
   Future<void> _showOrderSummaryDialog(EventOrderDto order) async {
-    final orderTotal = computeOrderTotalCost(order);
-    await showDialog<void>(
-      context: context,
-      builder: (context) {
-        final size = MediaQuery.sizeOf(context);
-        return AlertDialog(
-          title: const Text('Order Summary'),
-          content: SizedBox(
-            width: size.width * 0.92,
-            height: size.height * 0.78,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: PagedDataTable(
-                    title: 'Order Summary Items',
-                    headingRowColor: WidgetStateProperty.all(
-                      Colors.grey.shade200,
-                    ),
-                    columns: const [
-                      DataColumn(
-                        label: Text('Set / Category'),
-                        columnWidth: FixedColumnWidth(168),
-                      ),
-                      DataColumn(
-                        label: Text('Item'),
-                        columnWidth: FlexColumnWidth(2.2),
-                      ),
-                      DataColumn(
-                        label: Text('Pax / Qty'),
-                        columnWidth: FixedColumnWidth(88),
-                      ),
-                      DataColumn(
-                        label: Text('Details'),
-                        columnWidth: FlexColumnWidth(1.6),
-                      ),
-                      DataColumn(
-                        label: Text('Unit Cost'),
-                        columnWidth: FixedColumnWidth(100),
-                      ),
-                      DataColumn(
-                        label: Text('Total'),
-                        columnWidth: FixedColumnWidth(100),
-                      ),
-                    ],
-                    rows:
-                        order.menu.map((m) {
-                          final price = double.tryParse(m.price.trim()) ?? 0.0;
-                          final details = <String>[
-                            if (m.dishAllergens.trim().isNotEmpty)
-                              'Allergens: ${m.dishAllergens.trim()}',
-                          ].join('\n');
-                          return DataRow(
-                            cells: [
-                              DataCell(
-                                Text(
-                                  m.setMenuName.trim().isEmpty
-                                      ? 'A la carte'
-                                      : m.setMenuName.trim(),
-                                ),
-                              ),
-                              DataCell(Text(m.dishName.trim())),
-                              DataCell(Text(m.paxOption.trim())),
-                              DataCell(Text(details.isEmpty ? '—' : details)),
-                              DataCell(Text(formatPesos(price))),
-                              DataCell(Text(formatPesos(price))),
-                            ],
-                          );
-                        }).toList(),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                _buildCostBlock(
-                  'Cost Estimation',
-                  formatPesos(orderTotal),
-                  Colors.orange,
-                ),
-                const SizedBox(height: 8),
-                _buildCostBlock(
-                  'Downpayment',
-                  formatPesos(orderTotal / 2),
-                  Colors.blue,
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Close'),
-            ),
-          ],
-        );
-      },
+    final bytes = await buildManagerOrderSummaryPdf(
+      order: order,
+      variant: order.downPaymentStatus == 'paid'
+          ? OrderSummaryPdfVariant.afterDownPayment
+          : OrderSummaryPdfVariant.beforeDownPayment,
     );
+    await _previewPdfBytes(bytes, title: 'Order Summary');
   }
 
   List<ChecklistItem> _buildChecklistFromMenuWithIngredients(
@@ -4484,7 +4404,9 @@ class _ManageEventsState extends State<ManageEvents>
       items.add(
         ChecklistItem(
           item: menuItem.dishName,
-          description: menuItem.paxOption,
+          description: menuItem.setMenuName.trim().isEmpty
+              ? 'Menu dish'
+              : 'Set: ${menuItem.setMenuName.trim()}',
           quantity: 1,
           cost: double.tryParse(menuItem.price) ?? 0.0,
         ),

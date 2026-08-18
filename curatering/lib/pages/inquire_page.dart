@@ -173,7 +173,7 @@ class _InquirePageState extends State<InquirePage> {
   bool _curateOwn = false;
   bool _menuChoicePicked = false;
   bool _attemptedSubmit = false;
-  static const int _minSelectedDishesRequired = 4;
+  static const int _minSelectedDishesRequired = 8;
   static const int _maxSelectedDishesRequired = 10;
   static const int _visibleDishRows = 8;
   static const int _maxMainDishSelections = 3;
@@ -487,8 +487,11 @@ class _InquirePageState extends State<InquirePage> {
     return g < min ? min : g;
   }
 
-  double _estimatedCost() =>
-      (_billableGuestCountForPricing() + _paxBufferForPricing()) * kPesosPerPax;
+  double _estimatedCost() {
+    final guests = _billableGuestCountForPricing();
+    final buffer = _paxBufferForPricing();
+    return (guests + buffer) * kPesosPerPax + _menuAdditionalChargeTotal();
+  }
 
   Map<String, MenuDish> get _activeDishById => {
     for (final dish in MenuStore.instance.activeDishes) dish.id: dish,
@@ -515,7 +518,8 @@ class _InquirePageState extends State<InquirePage> {
         selectedIds.where((id) => !originalIds.contains(id)).take(overage);
     return addedIds.map((id) {
       final dish = dishById[id];
-      final amount = dish?.additionalChargeAmount ?? 0;
+      final guests = _billableGuestCountForPricing();
+      final amount = guests * kExtraSetMenuDishFeePerPax;
       return {'dishId': id, 'dishName': dish?.name ?? id, 'amount': amount};
     }).toList();
   }
@@ -2540,11 +2544,16 @@ class _InquirePageState extends State<InquirePage> {
                 '₱${(buffer * kPesosPerPax).toStringAsFixed(0)}',
               ),
             ],
-            if (additionalTotal > 0) ...[
+            if (_menuPrefTabIndex == 1 && guests > 0) ...[
               const SizedBox(height: 4),
               _costPanelRow(
-                'Extra set-menu fees',
+                'Extra set-menu dish fee',
                 '₱${additionalTotal.toStringAsFixed(0)}',
+              ),
+              _costPanelRow(
+                '  ₱${kExtraSetMenuDishFeePerPax.toStringAsFixed(0)} per PAX',
+                '',
+                isSubtle: true,
               ),
             ],
           ],
@@ -2769,22 +2778,7 @@ class _InquirePageState extends State<InquirePage> {
                   onChanged: (_) => setState(() {}),
                 ),
               ),
-              AntdFieldShell(
-                label: 'Formality level',
-                child: SegmentedButton<String>(
-                  segments: const [
-                    ButtonSegment(value: 'casual', label: Text('Casual')),
-                    ButtonSegment(
-                      value: 'semiformal',
-                      label: Text('Semiformal'),
-                    ),
-                    ButtonSegment(value: 'formal', label: Text('Formal')),
-                  ],
-                  selected: {_formalityLevel},
-                  onSelectionChanged: (s) =>
-                      setState(() => _formalityLevel = s.first),
-                ),
-              ),
+              const SizedBox.shrink(),
             ),
 
             // Event schedule
@@ -3036,52 +3030,85 @@ class _InquirePageState extends State<InquirePage> {
               ),
             ],
 
-            // Setting
             const SizedBox(height: 16),
-            Text(
-              'Setting of event',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleSmall
-                  ?.copyWith(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                Expanded(
-                  child: RadioListTile<String>(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Indoor'),
-                    value: 'Indoor',
-                    groupValue: _eventSetting,
-                    onChanged: (v) =>
-                        setState(() => _eventSetting = v ?? 'Indoor'),
+            _responsiveTwoCol(
+              context,
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Formality level',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w700),
                   ),
-                ),
-                Expanded(
-                  child: RadioListTile<String>(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Outdoor'),
-                    value: 'Outdoor',
-                    groupValue: _eventSetting,
-                    onChanged: (v) =>
-                        setState(() => _eventSetting = v ?? 'Outdoor'),
+                  const SizedBox(height: 6),
+                  SegmentedButton<String>(
+                    segments: const [
+                      ButtonSegment(value: 'casual', label: Text('Casual')),
+                      ButtonSegment(
+                        value: 'semiformal',
+                        label: Text('Semi'),
+                      ),
+                      ButtonSegment(value: 'formal', label: Text('Formal')),
+                    ],
+                    selected: {_formalityLevel},
+                    onSelectionChanged: (s) =>
+                        setState(() => _formalityLevel = s.first),
                   ),
-                ),
-                Expanded(
-                  child: RadioListTile<String>(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Mixed'),
-                    value: 'Mixed',
-                    groupValue: _eventSetting,
-                    onChanged: (v) =>
-                        setState(() => _eventSetting = v ?? 'Mixed'),
+                ],
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Setting of event',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w700),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: RadioListTile<String>(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Indoor'),
+                          value: 'Indoor',
+                          groupValue: _eventSetting,
+                          onChanged: (v) =>
+                              setState(() => _eventSetting = v ?? 'Indoor'),
+                        ),
+                      ),
+                      Expanded(
+                        child: RadioListTile<String>(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Outdoor'),
+                          value: 'Outdoor',
+                          groupValue: _eventSetting,
+                          onChanged: (v) =>
+                              setState(() => _eventSetting = v ?? 'Outdoor'),
+                        ),
+                      ),
+                      Expanded(
+                        child: RadioListTile<String>(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Mixed'),
+                          value: 'Mixed',
+                          groupValue: _eventSetting,
+                          onChanged: (v) =>
+                              setState(() => _eventSetting = v ?? 'Mixed'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
 
             // Guests
@@ -3236,6 +3263,28 @@ class _InquirePageState extends State<InquirePage> {
     );
   }
 
+  Widget _otherUnderlineField(
+    TextEditingController controller,
+    String hint, {
+    ValueChanged<String>? onChanged,
+  }) {
+    return TextField(
+      controller: controller,
+      onChanged: onChanged ?? (_) => setState(() {}),
+      decoration: InputDecoration(
+        hintText: hint,
+        isDense: true,
+        border: const UnderlineInputBorder(),
+        enabledBorder: const UnderlineInputBorder(
+          borderSide: BorderSide(color: Color(0xFF1E1E1E)),
+        ),
+        focusedBorder: const UnderlineInputBorder(
+          borderSide: BorderSide(color: Color(0xFFFFC024), width: 2),
+        ),
+      ),
+    );
+  }
+
   Widget _buildEventTypePicker() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -3266,10 +3315,9 @@ class _InquirePageState extends State<InquirePage> {
             errorText: _attemptedSubmit && _eventTypeOtherInvalid
                 ? 'Required'
                 : null,
-            child: AntdOutlineInput(
-              controller: _eventTypeOther,
-              hintText: 'Describe event type',
-              onChanged: (_) => setState(() {}),
+            child: _otherUnderlineField(
+              _eventTypeOther,
+              'Describe event type',
             ),
           ),
         ],
@@ -3413,6 +3461,13 @@ class _InquirePageState extends State<InquirePage> {
                   ),
                 ],
               ),
+              const SizedBox(height: 8),
+              Text(
+                _menuPrefTabIndex == 0
+                    ? 'Pick dishes from the catering menu. Minimum of $_minSelectedDishesRequired, Maximum of $_maxSelectedDishesRequired.'
+                    : 'Choose from Set Menu. You may add extra dishes (Minimum of $_minSelectedDishesRequired, Maximum of $_maxSelectedDishesRequired). Extra set-menu dish fee: ₱${kExtraSetMenuDishFeePerPax.toStringAsFixed(0)} per PAX.',
+                style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+              ),
               const SizedBox(height: 12),
               ListenableBuilder(
                 listenable: Listenable.merge([
@@ -3452,7 +3507,7 @@ class _InquirePageState extends State<InquirePage> {
                       if (additionalTotal > 0) ...[
                         const SizedBox(height: 8),
                         Text(
-                          'Extra set-menu dish fees: ₱${additionalTotal.toStringAsFixed(2)}',
+                          'Extra set-menu dish fee: ₱${kExtraSetMenuDishFeePerPax.toStringAsFixed(0)} per PAX',
                           style: const TextStyle(
                             color: AntdTokens.warning,
                             fontSize: 13,
@@ -3788,9 +3843,9 @@ class _InquirePageState extends State<InquirePage> {
               ),
               if (_selectedStyle == 'Other') ...[
                 const SizedBox(height: 8),
-                AntdOutlineInput(
-                  controller: _styleOtherController,
-                  hintText: 'Describe your style',
+                _otherUnderlineField(
+                  _styleOtherController,
+                  'Describe your style',
                 ),
               ],
             ],
@@ -3807,9 +3862,9 @@ class _InquirePageState extends State<InquirePage> {
         ),
         if (_selectedMood == 'Other') ...[
           const SizedBox(height: 8),
-          AntdOutlineInput(
-            controller: _moodOtherController,
-            hintText: 'Describe mood / lighting',
+          _otherUnderlineField(
+            _moodOtherController,
+            'Describe mood / lighting',
           ),
         ],
         const SizedBox(height: 16),
@@ -3826,9 +3881,9 @@ class _InquirePageState extends State<InquirePage> {
               ),
               if (_selectedColors.contains('Other')) ...[
                 const SizedBox(height: 8),
-                AntdOutlineInput(
-                  controller: _colorOtherController,
-                  hintText: 'Describe your color palette',
+                _otherUnderlineField(
+                  _colorOtherController,
+                  'Describe your color palette',
                 ),
               ],
             ],
@@ -3844,9 +3899,9 @@ class _InquirePageState extends State<InquirePage> {
               ),
               if (_selectedDecor.contains('Other')) ...[
                 const SizedBox(height: 8),
-                AntdOutlineInput(
-                  controller: _decorOtherController,
-                  hintText: 'Describe decor elements',
+                _otherUnderlineField(
+                  _decorOtherController,
+                  'Describe decor elements',
                 ),
               ],
             ],

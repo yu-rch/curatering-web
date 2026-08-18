@@ -15,6 +15,7 @@ import '../widgets/antd_descriptions.dart';
 import '../widgets/antd_dialog.dart';
 import '../widgets/app_snackbar.dart';
 import '../widgets/customer_order_feedback_dialog.dart';
+import '../widgets/customer_account_shell.dart';
 import '../widgets/customer_pages_top_bar.dart';
 import '../utils/order_type_utils.dart';
 import '../widgets/seating_plan_canvas.dart';
@@ -2112,12 +2113,10 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
           ),
         ],
       ),
-      body: Column(
+      body: CustomerAccountShell(
+        currentTab: CustomerPageTab.caterings,
+        body: Column(
         children: [
-          CustomerPagesTopBar(
-            currentTab: CustomerPageTab.caterings,
-            onTabSelected: _navigateFromTopBar,
-          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
             child: Column(
@@ -2305,6 +2304,7 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
                     ),
           ),
         ],
+      ),
       ),
     );
   }

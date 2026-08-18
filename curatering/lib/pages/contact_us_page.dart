@@ -52,6 +52,9 @@ class ContactUsPage extends StatefulWidget {
 
 class _ContactUsPageState extends State<ContactUsPage> {
   final _feedbackFormKey = GlobalKey<FormState>();
+  final _emailSectionKey = GlobalKey();
+  final _feedbackSectionKey = GlobalKey();
+  final _faqSectionKey = GlobalKey();
   final _feedbackNameController = TextEditingController();
   final _feedbackEmailController = TextEditingController();
   final _feedbackMessageController = TextEditingController();
@@ -69,6 +72,17 @@ class _ContactUsPageState extends State<ContactUsPage> {
 
   void _onContent() {
     if (mounted) setState(() {});
+  }
+
+  void _scrollTo(GlobalKey key) {
+    final ctx = key.currentContext;
+    if (ctx == null) return;
+    Scrollable.ensureVisible(
+      ctx,
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeInOut,
+      alignment: 0.08,
+    );
   }
 
   @override
@@ -187,11 +201,42 @@ class _ContactUsPageState extends State<ContactUsPage> {
                                   ),
                                 ),
                                 const SizedBox(height: 12),
-                                _buildEmailUsHero(w),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    ActionChip(
+                                      avatar: const Icon(Icons.email_outlined, size: 16),
+                                      label: const Text('Email us'),
+                                      onPressed: () => _scrollTo(_emailSectionKey),
+                                    ),
+                                    ActionChip(
+                                      avatar: const Icon(Icons.rate_review_outlined, size: 16),
+                                      label: const Text('Feedback'),
+                                      onPressed: () => _scrollTo(_feedbackSectionKey),
+                                    ),
+                                    ActionChip(
+                                      avatar: const Icon(Icons.help_outline, size: 16),
+                                      label: const Text('FAQ'),
+                                      onPressed: () => _scrollTo(_faqSectionKey),
+                                    ),
+                                  ],
+                                ),
                                 const SizedBox(height: 12),
-                                _buildFeedbackModule(),
+                                KeyedSubtree(
+                                  key: _emailSectionKey,
+                                  child: _buildEmailUsHero(w),
+                                ),
+                                const SizedBox(height: 12),
+                                KeyedSubtree(
+                                  key: _feedbackSectionKey,
+                                  child: _buildFeedbackModule(),
+                                ),
                                 const SizedBox(height: 20),
-                                _buildFaqSection(w),
+                                KeyedSubtree(
+                                  key: _faqSectionKey,
+                                  child: _buildFaqSection(w),
+                                ),
                               ],
                             ),
                           ),
@@ -221,13 +266,44 @@ class _ContactUsPageState extends State<ContactUsPage> {
                             ),
                           ),
                           const SizedBox(height: 12),
-                          _buildEmailUsHero(w),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              ActionChip(
+                                avatar: const Icon(Icons.email_outlined, size: 16),
+                                label: const Text('Email us'),
+                                onPressed: () => _scrollTo(_emailSectionKey),
+                              ),
+                              ActionChip(
+                                avatar: const Icon(Icons.rate_review_outlined, size: 16),
+                                label: const Text('Feedback'),
+                                onPressed: () => _scrollTo(_feedbackSectionKey),
+                              ),
+                              ActionChip(
+                                avatar: const Icon(Icons.help_outline, size: 16),
+                                label: const Text('FAQ'),
+                                onPressed: () => _scrollTo(_faqSectionKey),
+                              ),
+                            ],
+                          ),
                           const SizedBox(height: 12),
-                          _buildFeedbackModule(),
+                          KeyedSubtree(
+                            key: _emailSectionKey,
+                            child: _buildEmailUsHero(w),
+                          ),
+                          const SizedBox(height: 12),
+                          KeyedSubtree(
+                            key: _feedbackSectionKey,
+                            child: _buildFeedbackModule(),
+                          ),
                           const SizedBox(height: 16),
                           _buildContactInfo(w),
                           const SizedBox(height: 20),
-                          _buildFaqSection(w),
+                          KeyedSubtree(
+                            key: _faqSectionKey,
+                            child: _buildFaqSection(w),
+                          ),
                         ],
                       ),
             ),

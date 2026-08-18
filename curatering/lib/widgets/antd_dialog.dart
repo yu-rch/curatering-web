@@ -132,6 +132,88 @@ Future<T?> showAntdModal<T>({
   );
 }
 
+/// Dark Curatering success modal: `#1E1E1E` body, yellow OK, white title.
+Future<void> showCurateringSuccessDialog({
+  required BuildContext context,
+  required String title,
+  String? body,
+  String okLabel = 'OK',
+}) {
+  return DialogOpenGuard.runOnce<void>(
+    () => showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Material(
+              color: const Color(0xFF1E1E1E),
+              elevation: 12,
+              borderRadius: BorderRadius.circular(12),
+              clipBehavior: Clip.antiAlias,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: Color(0xFFFFFFFF),
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    if (body != null && body.trim().isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        body,
+                        style: const TextStyle(
+                          color: Color(0xFFFFFFFF),
+                          fontSize: 14,
+                          height: 1.45,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 20),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AntdTokens.brandPrimary,
+                          foregroundColor: AntdTokens.brandOnPrimary,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 22,
+                            vertical: 12,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                        ),
+                        child: Text(
+                          okLabel,
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    ),
+    key: 'curatering-success:$title',
+  );
+}
+
 /// Standard OK / Cancel footer for [showAntdModal].
 List<Widget> antdModalActions({
   required BuildContext context,

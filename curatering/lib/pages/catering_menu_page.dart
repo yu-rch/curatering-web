@@ -12,6 +12,7 @@ import '../utils/image_cache.dart';
 import '../widgets/catering_dish_info_dialog.dart';
 import '../widgets/customer_site_footer.dart';
 import '../widgets/customer_website_topbar.dart';
+import '../widgets/customer_antd_page_hero.dart';
 
 // Font constants
 const String _primaryFont = 'Inter';
@@ -328,43 +329,20 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      Text(
-                        WebsiteContentStore.instance.cateringPageTitle,
-                        textAlign: TextAlign.center,
-                        style: GoogleFonts.getFont(
-                          _primaryFont,
-                          fontSize: 28,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF1E1E1E),
+                      CustomerAntdPageHero(
+                        title: WebsiteContentStore.instance.cateringPageTitle,
+                        subtitle:
+                            WebsiteContentStore.instance.cateringPageSubtitle,
+                        filters: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          alignment: WrapAlignment.center,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            _setMenuDropdown(setMenus),
+                            _mealTypeChips(),
+                          ],
                         ),
-                      ),
-                      const SizedBox(height: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Color(0xFFFFC024),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          WebsiteContentStore.instance.cateringPageSubtitle,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                            color: Color(0xFF1E1E1E),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        alignment: WrapAlignment.center,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [_setMenuDropdown(setMenus), _mealTypeChips()],
                       ),
                     ],
                   ),

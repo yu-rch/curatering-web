@@ -355,12 +355,9 @@ class _PagedDataTableState extends State<PagedDataTable> {
         ];
 
         final cardChild = boundedHeight
-            ? SizedBox(
-                height: outerConstraints.maxHeight,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: columnChildren,
-                ),
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: columnChildren,
               )
             : Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -368,8 +365,17 @@ class _PagedDataTableState extends State<PagedDataTable> {
                 children: columnChildren,
               );
 
+        if (boundedHeight) {
+          // Parent already supplies a card / bounded box. Extra AntdCard
+          // padding would make the table taller than the container.
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(AntdTokens.radiusLg),
+            child: cardChild,
+          );
+        }
+
         return AntdCard(
-          padding: EdgeInsets.all(boundedHeight ? 8 : 12),
+          padding: const EdgeInsets.all(12),
           child: cardChild,
         );
       },

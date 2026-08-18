@@ -5,6 +5,7 @@ import '../auth/auth_session.dart';
 import '../auth/roles.dart';
 import '../services/auth_api.dart';
 import '../services/api_client.dart';
+import '../widgets/antd_dialog.dart';
 import 'verify_otp.dart';
 
 class Login extends StatefulWidget {
@@ -18,6 +19,7 @@ class _LoginState extends State<Login> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isLoading = false;
+  bool _obscurePassword = true;
   String? _errorMessage;
 
   Future<void> _onLogin() async {
@@ -72,7 +74,7 @@ class _LoginState extends State<Login> {
 
       final role = resp.user.role;
       final targetRoute = switch (role) {
-        Role.superAdmin => '/manage-accounts',
+        Role.superAdmin => '/dashboard',
         Role.supervisor => '/manage-events',
         Role.manager => '/manage-events',
         Role.cashier => '/restaurant-orders',
@@ -80,19 +82,9 @@ class _LoginState extends State<Login> {
 
       if (!mounted) return;
 
-      await showDialog<void>(
+      await showCurateringSuccessDialog(
         context: context,
-        barrierDismissible: false,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Success'),
-          content: const Text('login successful'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('OK'),
-            ),
-          ],
-        ),
+        title: 'Successful login',
       );
 
       if (!mounted) return;
@@ -137,6 +129,8 @@ class _LoginState extends State<Login> {
         return;
       }
 
+      _emailController.clear();
+      _passwordController.clear();
       setState(
         () => _errorMessage =
             e.message.trim().isEmpty
@@ -241,8 +235,22 @@ class _LoginState extends State<Login> {
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(10),
                           ),
+                          suffixIcon: IconButton(
+                            tooltip: _obscurePassword
+                                ? 'Show password'
+                                : 'Hide password',
+                            onPressed: () => setState(
+                              () => _obscurePassword = !_obscurePassword,
+                            ),
+                            icon: Icon(
+                              _obscurePassword
+                                  ? Icons.visibility_outlined
+                                  : Icons.visibility_off_outlined,
+                              color: Colors.white70,
+                            ),
+                          ),
                         ),
-                        obscureText: true,
+                        obscureText: _obscurePassword,
                         textInputAction: TextInputAction.done,
                         onSubmitted: (_) => _onLogin(),
                       ),

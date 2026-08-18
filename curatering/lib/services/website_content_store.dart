@@ -179,6 +179,8 @@ class CmsSection {
     this.mediaId,
     this.ctaLabel = '',
     this.ctaUrl = '',
+    this.visible = true,
+    this.buttonWidth,
     List<CmsImageRef>? images,
   }) : images = images ?? <CmsImageRef>[];
 
@@ -190,6 +192,8 @@ class CmsSection {
   String? mediaId;
   String ctaLabel;
   String ctaUrl;
+  bool visible;
+  double? buttonWidth;
   final List<CmsImageRef> images;
 
   Map<String, dynamic> toJson() => {
@@ -201,6 +205,8 @@ class CmsSection {
     if (mediaId != null && mediaId!.isNotEmpty) 'mediaId': mediaId,
     'ctaLabel': ctaLabel,
     'ctaUrl': ctaUrl,
+    'visible': visible,
+    if (buttonWidth != null) 'buttonWidth': buttonWidth,
     'images': images.map((e) => e.toJson()).toList(),
   };
 
@@ -226,7 +232,35 @@ class CmsSection {
       mediaId: (m['mediaId'] ?? m['media_id'])?.toString(),
       ctaLabel: (m['ctaLabel'] ?? '').toString(),
       ctaUrl: (m['ctaUrl'] ?? '').toString(),
+      visible: m['visible'] != false,
+      buttonWidth: (m['buttonWidth'] as num?)?.toDouble(),
       images: imgs,
+    );
+  }
+}
+
+class CmsPageBlock {
+  CmsPageBlock({
+    required this.id,
+    this.label = '',
+    this.visible = true,
+  });
+
+  final String id;
+  String label;
+  bool visible;
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'label': label,
+    'visible': visible,
+  };
+
+  factory CmsPageBlock.fromJson(Map<String, dynamic> m) {
+    return CmsPageBlock(
+      id: (m['id'] ?? '').toString(),
+      label: (m['label'] ?? '').toString(),
+      visible: m['visible'] != false,
     );
   }
 }
@@ -503,6 +537,22 @@ class WebsiteContentStore extends ChangeNotifier {
   /// Short owner / business blurb for brand surfaces.
   String ownerBlurb =
       'Macrina\'s Kitchen and Catering has been serving celebrations across Luzon for more than two decades — from intimate birthdays to company events — with warm hospitality and unforgettable food.';
+
+  String kitchenPanelTitle = "Macrina's Kitchen";
+  String kitchenPanelSubtitle =
+      'Restaurant favorites ready for dine-in and pickup.';
+  String cateringPanelTitle = "Macrina's Catering";
+  String cateringPanelSubtitle =
+      'Full-service catering with event theme designs.';
+
+  /// Built-in home block order / visibility (`hero`, `banner`, `latestEvent`, `eventDesigns`, `extras`).
+  final List<CmsPageBlock> homeLayout = [
+    CmsPageBlock(id: 'hero', label: 'Hero'),
+    CmsPageBlock(id: 'banner', label: 'Banner'),
+    CmsPageBlock(id: 'latestEvent', label: 'Latest event'),
+    CmsPageBlock(id: 'eventDesigns', label: 'Event designs'),
+    CmsPageBlock(id: 'extras', label: 'Extra sections'),
+  ];
 
   /// Site brand colors (hex, e.g. `#1E1E1E`).
   String sitePrimaryColor = '#1E1E1E';
@@ -999,6 +1049,14 @@ class WebsiteContentStore extends ChangeNotifier {
     footerCopyright = map['footerCopyright'] as String? ?? footerCopyright;
 
     ownerBlurb = map['ownerBlurb'] as String? ?? ownerBlurb;
+    kitchenPanelTitle =
+        map['kitchenPanelTitle'] as String? ?? kitchenPanelTitle;
+    kitchenPanelSubtitle =
+        map['kitchenPanelSubtitle'] as String? ?? kitchenPanelSubtitle;
+    cateringPanelTitle =
+        map['cateringPanelTitle'] as String? ?? cateringPanelTitle;
+    cateringPanelSubtitle =
+        map['cateringPanelSubtitle'] as String? ?? cateringPanelSubtitle;
     sitePrimaryColor =
         map['sitePrimaryColor'] as String? ?? sitePrimaryColor;
     siteAccentColor = map['siteAccentColor'] as String? ?? siteAccentColor;
@@ -1059,6 +1117,23 @@ class WebsiteContentStore extends ChangeNotifier {
         final y = (v['y'] as num?)?.toDouble() ?? 0;
         imageAlignments[k] = {'x': x, 'y': y};
       });
+    }
+
+    final layoutRaw = map['homeLayout'];
+    if (layoutRaw is List && layoutRaw.isNotEmpty) {
+      final parsed = <CmsPageBlock>[];
+      for (final e in layoutRaw) {
+        if (e is Map) {
+          final block = CmsPageBlock.fromJson(Map<String, dynamic>.from(e));
+          if (block.id.trim().isEmpty) continue;
+          parsed.add(block);
+        }
+      }
+      if (parsed.isNotEmpty) {
+        homeLayout
+          ..clear()
+          ..addAll(parsed);
+      }
     }
 
     final g = map['galleryCategories'];
@@ -1205,6 +1280,11 @@ class WebsiteContentStore extends ChangeNotifier {
       'contactPageIntro': contactPageIntro,
       'footerCopyright': footerCopyright,
       'ownerBlurb': ownerBlurb,
+      'kitchenPanelTitle': kitchenPanelTitle,
+      'kitchenPanelSubtitle': kitchenPanelSubtitle,
+      'cateringPanelTitle': cateringPanelTitle,
+      'cateringPanelSubtitle': cateringPanelSubtitle,
+      'homeLayout': homeLayout.map((e) => e.toJson()).toList(),
       'sitePrimaryColor': sitePrimaryColor,
       'siteAccentColor': siteAccentColor,
       'headerLogoBase64': headerLogoBase64 ?? '',

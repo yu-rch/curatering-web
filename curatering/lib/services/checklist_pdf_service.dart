@@ -55,15 +55,15 @@ Future<Uint8List> buildTaskAssignmentPdf({
   final eventDate = order.scheduleSlots.isNotEmpty
       ? order.scheduleSlots.first.date
       : 'TBD';
-  final headers = ['Task', 'Assignee', 'Notes', 'Status'];
+  final headers = ['Employee', 'Task', 'Schedule', 'Status'];
   final rows = taskRows.map((row) {
     return [
-      '${row['task'] ?? row['title'] ?? row['item'] ?? ''}',
-      '${row['assignee'] ?? row['assignedTo'] ?? row['assigned_to'] ?? ''}',
-      '${row['notes'] ?? row['description'] ?? ''}',
+      '${row['employee'] ?? row['assignee'] ?? row['assignedTo'] ?? row['assigned_to'] ?? ''}',
+      '${row['tasks'] ?? row['task'] ?? row['title'] ?? row['item'] ?? ''}',
+      '${row['schedule_of_tasks'] ?? row['notes'] ?? row['description'] ?? ''}',
       '${row['status'] ?? 'pending'}',
     ];
-  }).toList();
+  }).where((row) => row.any((cell) => cell.trim().isNotEmpty)).toList();
 
   final doc = pw.Document();
   doc.addPage(
@@ -221,6 +221,12 @@ Future<Uint8List> buildChecklistPdfBytes({
             ],
           ),
           pw.SizedBox(height: 16),
+          if (rows.isEmpty)
+            pw.Text(
+              'No checklist items recorded.',
+              style: const pw.TextStyle(fontSize: 11),
+            )
+          else
           pw.TableHelper.fromTextArray(
             headers: headers,
             data: rows,

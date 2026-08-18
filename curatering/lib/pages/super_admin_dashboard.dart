@@ -33,10 +33,9 @@ class _SuperAdminDashboardPageState extends State<SuperAdminDashboardPage> {
   String _rangeFilter = '30d';
   String _sectionFilter = 'all';
   final Map<String, bool> _sectionExpanded = {
-    'analytics': true,
-    'users': true,
-    'sales': true,
-    'todos': true,
+    'analytics': false,
+    'users': false,
+    'sales': false,
   };
 
   @override
@@ -777,243 +776,147 @@ class _SuperAdminDashboardPageState extends State<SuperAdminDashboardPage> {
                 : summary == null
                 ? const AntdEmptyState(message: 'No dashboard data found.')
                 : SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _filterToolbar(),
-                      const SizedBox(height: 16),
-                      if (showTodos)
-                        _section(
-                          'todos',
-                          'To-do list',
-                          'Track admin follow-ups and open tasks.',
-                          [_todoCard()],
-                        ),
-                      if (!showAnalytics &&
-                          !showUsers &&
-                          !showSales &&
-                          !showTodos)
-                        const AntdEmptyState(
-                          message:
-                              'No dashboard sections match the current filters.',
-                        ),
-                      if (showAnalytics)
-                        _section(
-                          'analytics',
-                          'Analytics section',
-                          'Website, feedback, help request, and activity analytics.',
-                          [
-                            _metricGrid([
-                              _metricCard(
-                                'Website views',
-                                '${summary.analytics.website.totalViews}',
-                                icon: Icons.public,
-                              ),
-                              _metricCard(
-                                'Views in range',
-                                '${summary.analytics.website.last30Views}',
-                                icon: Icons.trending_up,
-                                color: AntdTokens.success,
-                              ),
-                              _metricCard(
-                                'Average feedback',
-                                summary.analytics.feedback.averageStars == null
-                                    ? 'n/a'
-                                    : summary.analytics.feedback.averageStars!
-                                        .toStringAsFixed(1),
-                                icon: Icons.star,
-                                color: AntdTokens.warning,
-                              ),
-                              _metricCard(
-                                'Open help requests',
-                                '${summary.analytics.helpRequests.unresolved}',
-                                icon: Icons.help_outline,
-                                color:
-                                    summary.analytics.helpRequests.unresolved >
-                                            0
-                                        ? AntdTokens.error
-                                        : AntdTokens.success,
-                              ),
-                            ]),
-                            const SizedBox(height: 12),
-                            LayoutBuilder(
-                              builder: (context, constraints) {
-                                final wide = constraints.maxWidth >= 900;
-                                final width =
-                                    wide
-                                        ? (constraints.maxWidth - 12) / 2
-                                        : constraints.maxWidth;
-                                return Wrap(
-                                  spacing: 12,
-                                  runSpacing: 12,
-                                  children: [
-                                    SizedBox(
-                                      width: width,
-                                      child: _barList(
-                                        title: 'Top website paths',
-                                        items: _filteredMapItems(
-                                          summary.analytics.website.topPaths,
-                                        ),
-                                        labelKey: 'path',
-                                        valueKey: 'views',
-                                      ),
-                                    ),
-                                    SizedBox(
-                                      width: width,
-                                      child: _activityList(
-                                        'Recent action logs',
-                                        _filteredActivities(
-                                          summary.analytics.recentActions,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                );
-                              },
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final wide = constraints.maxWidth >= 980;
+                      final sections = Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _filterToolbar(),
+                          const SizedBox(height: 16),
+                          if (!showAnalytics &&
+                              !showUsers &&
+                              !showSales &&
+                              !showTodos)
+                            const AntdEmptyState(
+                              message:
+                                  'No dashboard sections match the current filters.',
                             ),
-                          ],
-                        ),
-                      if (showUsers)
-                        _section(
-                          'users',
-                          'User Management section',
-                          'Staff and customer account status at a glance.',
-                          [
-                            _metricGrid([
-                              _metricCard(
-                                'Staff accounts',
-                                '${summary.userManagement.staff.total}',
-                                icon: Icons.badge_outlined,
-                              ),
-                              _metricCard(
-                                'Active staff',
-                                '${summary.userManagement.staff.active}',
-                                icon: Icons.verified_user_outlined,
-                                color: AntdTokens.success,
-                              ),
-                              _metricCard(
-                                'Archived staff',
-                                '${summary.userManagement.staff.archived}',
-                                icon: Icons.archive_outlined,
-                                color: AntdTokens.warning,
-                              ),
-                              _metricCard(
-                                'Customer accounts',
-                                '${summary.userManagement.customers.total}',
-                                icon: Icons.people_outline,
-                              ),
-                            ]),
-                            const SizedBox(height: 12),
-                            LayoutBuilder(
-                              builder: (context, constraints) {
-                                final wide = constraints.maxWidth >= 900;
-                                final width =
-                                    wide
-                                        ? (constraints.maxWidth - 12) / 2
-                                        : constraints.maxWidth;
-                                final roleItems =
-                                    summary
-                                        .userManagement
-                                        .staff
-                                        .roleCounts
-                                        .entries
-                                        .map(
-                                          (entry) => {
-                                            'role': entry.key,
-                                            'count': entry.value,
-                                          },
-                                        )
-                                        .toList();
-                                return Wrap(
-                                  spacing: 12,
-                                  runSpacing: 12,
-                                  children: [
-                                    SizedBox(
-                                      width: width,
-                                      child: _barList(
-                                        title: 'Staff by role',
-                                        items: _filteredMapItems(roleItems),
-                                        labelKey: 'role',
-                                        valueKey: 'count',
-                                      ),
-                                    ),
-                                    SizedBox(
-                                      width: width,
-                                      child: _activityList(
-                                        'Recent help requests',
-                                        _filteredActivities(
-                                          summary.analytics.recentHelpRequests,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                );
-                              },
+                          if (showAnalytics)
+                            _section(
+                              'analytics',
+                              'Analytics section',
+                              'Website, feedback, help request, and activity analytics.',
+                              [
+                                _metricGrid([
+                                  _metricCard(
+                                    'Website views',
+                                    '${summary.analytics.website.totalViews}',
+                                    icon: Icons.public,
+                                  ),
+                                  _metricCard(
+                                    'Views in range',
+                                    '${summary.analytics.website.last30Views}',
+                                    icon: Icons.trending_up,
+                                    color: AntdTokens.success,
+                                  ),
+                                  _metricCard(
+                                    'Average feedback',
+                                    summary.analytics.feedback.averageStars ==
+                                            null
+                                        ? 'n/a'
+                                        : summary
+                                            .analytics
+                                            .feedback
+                                            .averageStars!
+                                            .toStringAsFixed(1),
+                                    icon: Icons.star,
+                                    color: AntdTokens.warning,
+                                  ),
+                                  _metricCard(
+                                    'Open help requests',
+                                    '${summary.analytics.helpRequests.unresolved}',
+                                    icon: Icons.help_outline,
+                                    color:
+                                        summary
+                                                    .analytics
+                                                    .helpRequests
+                                                    .unresolved >
+                                                0
+                                            ? AntdTokens.error
+                                            : AntdTokens.success,
+                                  ),
+                                ]),
+                              ],
                             ),
-                          ],
+                          if (showUsers)
+                            _section(
+                              'users',
+                              'User management',
+                              'Staff and customer account status at a glance.',
+                              [
+                                _metricGrid([
+                                  _metricCard(
+                                    'Staff accounts',
+                                    '${summary.userManagement.staff.total}',
+                                    icon: Icons.badge_outlined,
+                                  ),
+                                  _metricCard(
+                                    'Active staff',
+                                    '${summary.userManagement.staff.active}',
+                                    icon: Icons.verified_user_outlined,
+                                    color: AntdTokens.success,
+                                  ),
+                                ]),
+                              ],
+                            ),
+                          if (showSales)
+                            _section(
+                              'sales',
+                              'Sales section',
+                              'Restaurant, catering, event, and combined financial figures.',
+                              [
+                                _metricGrid([
+                                  _metricCard(
+                                    'Restaurant sales',
+                                    formatPesos(summary.sales.restaurant.totalSales),
+                                    icon: Icons.point_of_sale,
+                                  ),
+                                  _metricCard(
+                                    'Catering sales',
+                                    formatPesos(summary.sales.catering.totalSales),
+                                    icon: Icons.ramen_dining_outlined,
+                                  ),
+                                ]),
+                              ],
+                            ),
+                        ],
+                      );
+                      final todoBox = Card(
+                        elevation: 0,
+                        color: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: BorderSide(
+                            color: Colors.black.withValues(alpha: 0.08),
+                          ),
                         ),
-                      if (showSales)
-                        _section(
-                          'sales',
-                          'Sales section',
-                          'Restaurant, catering, event, and combined financial figures.',
-                          [
-                            _metricGrid([
-                              _metricCard(
-                                'Combined total',
-                                formatPesos(summary.sales.combined.totalSales),
-                                icon: Icons.payments_outlined,
-                                color: AntdTokens.success,
-                              ),
-                              _metricCard(
-                                'This month',
-                                formatPesos(summary.sales.combined.monthSales),
-                                icon: Icons.calendar_month,
-                              ),
-                              _metricCard(
-                                'Restaurant sales',
-                                formatPesos(
-                                  summary.sales.restaurant.totalSales,
-                                ),
-                                icon: Icons.restaurant,
-                              ),
-                              _metricCard(
-                                'Catering + events',
-                                formatPesos(
-                                  summary.sales.catering.totalSales +
-                                      summary.sales.events.totalSales,
-                                ),
-                                icon: Icons.event_available,
-                              ),
-                            ]),
-                            const SizedBox(height: 12),
-                            _metricGrid([
-                              _metricCard(
-                                'Total orders',
-                                '${summary.sales.combined.orders}',
-                                icon: Icons.receipt_long,
-                              ),
-                              _metricCard(
-                                'Completed',
-                                '${summary.sales.combined.completed}',
-                                icon: Icons.check_circle_outline,
-                                color: AntdTokens.success,
-                              ),
-                              _metricCard(
-                                'Pending / active',
-                                '${summary.sales.combined.pending}',
-                                icon: Icons.pending_actions,
-                                color: AntdTokens.warning,
-                              ),
-                              _metricCard(
-                                'Year sales',
-                                formatPesos(summary.sales.combined.yearSales),
-                                icon: Icons.show_chart,
-                              ),
-                            ]),
-                          ],
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: _todoCard(),
                         ),
-                    ],
+                      );
+                      if (!wide) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            if (showTodos) todoBox,
+                            if (showTodos) const SizedBox(height: 16),
+                            sections,
+                          ],
+                        );
+                      }
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(flex: 7, child: sections),
+                          if (showTodos) ...[
+                            const SizedBox(width: 16),
+                            SizedBox(width: 340, child: todoBox),
+                          ],
+                        ],
+                      );
+                    },
                   ),
                 ),
       ),

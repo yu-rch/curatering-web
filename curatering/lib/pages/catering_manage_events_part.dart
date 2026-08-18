@@ -117,7 +117,6 @@ extension _ManageEventsTableExt on _ManageEventsState {
         lines.add('Set: $set');
       }
       final parts = <String>[m.dishName];
-      if (m.paxOption.trim().isNotEmpty) parts.add(m.paxOption);
       if (m.additionalChargeAmount > 0) {
         parts.add('+${formatPesos(m.additionalChargeAmount)} add-on');
       }
@@ -1874,10 +1873,12 @@ extension _ManageEventsTableExt on _ManageEventsState {
                               child: ConstrainedBox(
                                 constraints: BoxConstraints(
                                   maxWidth: tableConstraints.maxWidth,
+                                  maxHeight: tableConstraints.maxHeight,
                                 ),
                                 child: PagedDataTable(
                                   title: title.trim(),
                                   fullWidth: true,
+                                  forceVerticalScroll: true,
                                   minTableWidth: 680,
                                   columnSpacing: 8,
                                   horizontalMargin: 6,

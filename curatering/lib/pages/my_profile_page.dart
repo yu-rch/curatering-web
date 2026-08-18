@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config.dart';
+import '../widgets/customer_account_shell.dart';
 import '../widgets/customer_pages_top_bar.dart';
 import '../widgets/map_picker.dart';
 import '../widgets/antd_dialog.dart';
@@ -795,12 +796,10 @@ class _MyProfilePageState extends State<MyProfilePage> {
           ),
         ],
       ),
-      body: Column(
+      body: CustomerAccountShell(
+        currentTab: CustomerPageTab.profile,
+        body: Column(
         children: [
-          CustomerPagesTopBar(
-            currentTab: CustomerPageTab.profile,
-            onTabSelected: _navigateFromTopBar,
-          ),
           Expanded(
             child:
                 _isLoading
@@ -1326,6 +1325,7 @@ class _MyProfilePageState extends State<MyProfilePage> {
                     ),
           ),
         ],
+      ),
       ),
     );
   }

@@ -12,8 +12,8 @@ import '../utils/image_cache.dart';
 import '../utils/website_image_utils.dart';
 import '../widgets/customer_website_topbar.dart';
 import '../widgets/customer_site_footer.dart';
+import '../widgets/customer_antd_page_hero.dart';
 import '../widgets/image_focus_dialog.dart';
-import '../widgets/website_rich_text.dart';
 
 // Font constants
 const String _primaryFont = 'Inter';
@@ -188,28 +188,35 @@ class _GalleryPageState extends State<GalleryPage> {
             showCartAndCustomerAuth: !widget.contentEditable,
           ),
           Expanded(
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Padding(
+            child: CustomScrollView(
+              slivers: [
+                SliverToBoxAdapter(
+                  child: Padding(
                     padding: websitePagePadding(context),
                     child: ListenableBuilder(
                       listenable: w,
                       builder: (context, _) => _buildGallery(w),
                     ),
                   ),
-                  const SizedBox(height: 48),
-                  ListenableBuilder(
-                    listenable: w,
-                    builder:
-                        (context, _) => CustomerSiteFooter(
-                          store: w,
-                          contentEditable: widget.contentEditable,
-                        ),
+                ),
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: Column(
+                    children: [
+                      const Spacer(),
+                      const SizedBox(height: 48),
+                      ListenableBuilder(
+                        listenable: w,
+                        builder:
+                            (context, _) => CustomerSiteFooter(
+                              store: w,
+                              contentEditable: widget.contentEditable,
+                            ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ],
@@ -347,37 +354,22 @@ class _GalleryPageState extends State<GalleryPage> {
   }) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        const gap = 4.0;
-        final inline = constraints.maxWidth >= 760;
-
-        if (!inline) {
-          return SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: SizedBox(
-              width: 760,
-              child: Row(
-                children: [
-                  Expanded(flex: 3, child: searchField),
-                  const SizedBox(width: gap),
-                  for (final filter in filters) ...[
-                    Expanded(flex: 2, child: filter),
-                    if (filter != filters.last) const SizedBox(width: gap),
-                  ],
-                ],
-              ),
-            ),
-          );
-        }
-
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
+        final narrow = constraints.maxWidth < 760;
+        return Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            Expanded(flex: 3, child: searchField),
-            const SizedBox(width: gap),
-            for (final filter in filters) ...[
-              Expanded(flex: 2, child: filter),
-              if (filter != filters.last) const SizedBox(width: gap),
-            ],
+            SizedBox(
+              width: narrow ? constraints.maxWidth : null,
+              child: narrow
+                  ? searchField
+                  : SizedBox(
+                      width: (constraints.maxWidth * 0.4).clamp(220.0, 420.0),
+                      child: searchField,
+                    ),
+            ),
+            ...filters,
           ],
         );
       },
@@ -395,72 +387,62 @@ class _GalleryPageState extends State<GalleryPage> {
             .toList();
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const SizedBox(height: 24),
-        WebsiteRichText(
-          value: w.galleryTitle,
-          style: GoogleFonts.getFont(
-            _primaryFont,
-            fontSize: 36,
-            fontWeight: FontWeight.bold,
-            color: const Color(0xFF1E1E1E),
-          ),
-          textAlign: TextAlign.center,
-        ),
-        if (w.galleryIntro.trim().isNotEmpty) ...[
-          const SizedBox(height: 8),
-          WebsiteRichText(
-            value: w.galleryIntro,
-            style: const TextStyle(height: 1.35),
-            textAlign: TextAlign.center,
-          ),
-        ],
-        const SizedBox(height: 16),
-        _buildGalleryToolbar(
-          searchField: _buildGallerySearchField(
-            hintText: 'SEARCH BY TAG OR CATEGORY',
-          ),
-          filters: [
-            _buildFilterDropdown(
-              title: 'TAGS',
-              value:
-                  allTags.any(
-                        (tag) =>
-                            tag.toLowerCase() ==
-                            _selectedGalleryTag.toLowerCase(),
-                      )
-                      ? _selectedGalleryTag
-                      : 'ALL',
-              items: [
-                const DropdownMenuItem(value: 'ALL', child: Text('ALL')),
-                ...allTags.map(
-                  (tag) => DropdownMenuItem(value: tag, child: Text(tag)),
-                ),
-              ],
-              onChanged:
-                  (tag) => setState(() => _selectedGalleryTag = tag ?? 'ALL'),
+        CustomerAntdPageHero(
+          title: w.galleryTitle.trim().isEmpty ? 'GALLERY' : w.galleryTitle,
+          subtitle: w.galleryIntro.trim().isEmpty
+              ? 'Explore our event highlights and signature moments'
+              : w.galleryIntro,
+          titleFontSize: isMobile(context) ? 28 : 36,
+          filters: _buildGalleryToolbar(
+            searchField: _buildGallerySearchField(
+              hintText: 'SEARCH BY TAG OR CATEGORY',
             ),
-            _buildFilterDropdown(
-              title: 'CATEGORIES',
-              value:
-                  source.any((cat) => cat.id == _selectedGalleryCategoryId)
-                      ? _selectedGalleryCategoryId
-                      : 'ALL',
-              items: [
-                const DropdownMenuItem(value: 'ALL', child: Text('ALL')),
-                ...source.map(
-                  (cat) =>
-                      DropdownMenuItem(value: cat.id, child: Text(cat.label)),
-                ),
-              ],
-              onChanged:
-                  (value) => setState(() {
-                    _selectedGalleryCategoryId = value ?? 'ALL';
-                    _galleryDetailIndex = null;
-                  }),
-            ),
-          ],
+            filters: [
+              CustomerAntdFilterSelect<String>(
+                label: 'Filter by tags',
+                value: allTags.any(
+                      (tag) =>
+                          tag.toLowerCase() ==
+                          _selectedGalleryTag.toLowerCase(),
+                    )
+                    ? _selectedGalleryTag
+                    : 'ALL',
+                items: [
+                  const DropdownMenuItem(value: 'ALL', child: Text('All tags')),
+                  ...allTags.map(
+                    (tag) => DropdownMenuItem(value: tag, child: Text(tag)),
+                  ),
+                ],
+                onChanged: (tag) =>
+                    setState(() => _selectedGalleryTag = tag ?? 'ALL'),
+              ),
+              CustomerAntdFilterSelect<String>(
+                label: 'Filter by category',
+                value: source.any((cat) => cat.id == _selectedGalleryCategoryId)
+                    ? _selectedGalleryCategoryId
+                    : 'ALL',
+                items: [
+                  const DropdownMenuItem(
+                    value: 'ALL',
+                    child: Text('All categories'),
+                  ),
+                  ...source.map(
+                    (cat) => DropdownMenuItem(
+                      value: cat.id,
+                      child: Text(cat.label),
+                    ),
+                  ),
+                ],
+                onChanged: (value) => setState(() {
+                  _selectedGalleryCategoryId = value ?? 'ALL';
+                  _galleryDetailIndex = null;
+                }),
+              ),
+            ],
+          ),
         ),
         const SizedBox(height: 32),
         if (categories.isEmpty)

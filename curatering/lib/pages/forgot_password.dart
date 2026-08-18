@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/api_client.dart';
 import '../services/auth_api.dart';
+import '../widgets/antd_dialog.dart';
 
 class ForgotPassword extends StatefulWidget {
   const ForgotPassword({super.key});
@@ -200,18 +201,9 @@ class _ForgotPasswordState extends State<ForgotPassword> {
         newPassword: _passwordController.text,
       );
       if (!mounted) return;
-      await showDialog<void>(
+      await showCurateringSuccessDialog(
         context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Success'),
-          content: const Text('Password reset successfully'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('OK'),
-            ),
-          ],
-        ),
+        title: 'Password reset successful',
       );
       if (mounted) Navigator.of(context).pop();
     } on ApiError catch (e) {

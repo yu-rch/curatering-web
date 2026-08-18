@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config.dart';
 import '../config/site_routes.dart';
+import '../services/menu_store.dart';
 import '../utils/order_display_utils.dart';
 import '../utils/responsive_layout.dart';
 import '../widgets/customer_website_topbar.dart';
@@ -53,6 +54,7 @@ class _GuestOrderTrackingPageState extends State<GuestOrderTrackingPage>
     _tabController = TabController(length: 2, vsync: this);
     _hydrateFromQuery();
     _refreshAuth();
+    unawaited(MenuStore.instance.loadDishesWithImages(silent: true));
   }
 
   @override
@@ -544,6 +546,26 @@ class _GuestInquiryResultCard extends StatelessWidget {
           _infoRow('Status', status.replaceAll('_', ' ').toUpperCase()),
           _infoRow('Venue / address', address),
           _infoRow('Total', 'PHP ${NumberFormatHelper.pesos(total)}'),
+          const SizedBox(height: 16),
+          OutlinedButton.icon(
+            onPressed: () {
+              showDialog<void>(
+                context: context,
+                builder: (ctx) => Dialog(
+                  insetPadding: const EdgeInsets.all(16),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      maxWidth: 560,
+                      maxHeight: 640,
+                    ),
+                    child: _InquiryDetailsPopup(inquiry: inquiry),
+                  ),
+                ),
+              );
+            },
+            icon: const Icon(Icons.open_in_new, size: 18),
+            label: const Text('See order details'),
+          ),
           if (!loggedIn) ...[
             const SizedBox(height: 12),
             _SignupRewardsBanner(onSignUp: onSignUp),
@@ -649,14 +671,19 @@ class _GuestOrderResultCard extends StatelessWidget {
           const SizedBox(height: 16),
           OutlinedButton.icon(
             onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => OrderTrackingPage(orderData: order),
+              showDialog<void>(
+                context: context,
+                builder: (ctx) => Dialog(
+                  insetPadding: const EdgeInsets.all(16),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 720, maxHeight: 640),
+                    child: OrderTrackingPage(orderData: order),
+                  ),
                 ),
               );
             },
             icon: const Icon(Icons.open_in_new, size: 18),
-            label: const Text('View full order details'),
+            label: const Text('See order details'),
           ),
           if (!loggedIn) ...[
             const SizedBox(height: 12),
@@ -794,6 +821,117 @@ class _StatusTimeline extends StatelessWidget {
             ),
         ],
       ],
+    );
+  }
+}
+
+class _InquiryDetailsPopup extends StatelessWidget {
+  const _InquiryDetailsPopup({required this.inquiry});
+
+  final Map<String, dynamic> inquiry;
+
+  @override
+  Widget build(BuildContext context) {
+    final title =
+        '${inquiry['eventTitle'] ?? inquiry['event_title'] ?? 'Catering inquiry'}';
+    final menuRaw = inquiry['menu'] ?? inquiry['menuItems'] ?? inquiry['dishes'];
+    final menu = <String>[];
+    if (menuRaw is List) {
+      for (final item in menuRaw) {
+        if (item is String && item.trim().isNotEmpty) {
+          menu.add(item.trim());
+        } else if (item is Map) {
+          final name =
+              '${item['dishName'] ?? item['dish_name'] ?? item['name'] ?? ''}'
+                  .trim();
+          if (name.isNotEmpty) menu.add(name);
+        }
+      }
+    }
+
+    return Material(
+      color: Colors.white,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Material(
+            color: const Color(0xFF1E1E1E),
+            child: ListTile(
+              title: Text(
+                title,
+                style: const TextStyle(color: Colors.white),
+              ),
+              trailing: IconButton(
+                icon: const Icon(Icons.close, color: Colors.white),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ),
+          ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                _row('Status', '${inquiry['status'] ?? '—'}'),
+                _row(
+                  'Type',
+                  '${inquiry['orderType'] ?? inquiry['order_type'] ?? '—'}',
+                ),
+                _row(
+                  'Venue',
+                  '${inquiry['address'] ?? inquiry['venue'] ?? '—'}',
+                ),
+                _row(
+                  'Guests',
+                  '${inquiry['guestCount'] ?? inquiry['guest_count'] ?? '—'}',
+                ),
+                _row(
+                  'Total',
+                  'PHP ${NumberFormatHelper.pesos(inquiry['totalCost'] ?? inquiry['total_cost'] ?? 0)}',
+                ),
+                if (menu.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Menu',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 6),
+                  ...menu.map(
+                    (name) => Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.restaurant, size: 16),
+                          const SizedBox(width: 8),
+                          Expanded(child: Text(name)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _row(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 90,
+            child: Text(
+              label,
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+            ),
+          ),
+          Expanded(child: Text(value)),
+        ],
+      ),
     );
   }
 }
