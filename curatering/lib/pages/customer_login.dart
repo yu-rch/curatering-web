@@ -482,6 +482,7 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                   Expanded(
                     child: TextFormField(
                       controller: _emailController,
+                      enableInteractiveSelection: true,
                       keyboardType: TextInputType.emailAddress,
                       style: const TextStyle(fontSize: 13),
                       decoration: InputDecoration(
@@ -903,6 +904,7 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                         Expanded(
                           child: TextFormField(
                             controller: _passwordController,
+                            enableInteractiveSelection: true,
                             obscureText: _obscurePassword,
                             style: const TextStyle(fontSize: 13),
                             textInputAction: TextInputAction.done,

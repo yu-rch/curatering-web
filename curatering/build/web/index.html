@@ -1,62 +1,85 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <!--
-    If you are serving your web app in a path other than the root, change the
-    href value below to reflect the base path you are serving from.
-
-    The path provided below has to start and end with a slash "/" in order for
-    it to work correctly.
-
-    For more details:
-    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
-
-    This is a placeholder for base href that will be replaced by the value of
-    the `--base-href` argument provided to `flutter build`.
-  -->
   <base href="/">
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=5, user-scalable=yes">
+  <meta name="description" content="Macrina's Kitchen and Catering — restaurant orders, catering menus, and event inquiries.">
 
-  <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="curatering">
-  <link rel="apple-touch-icon" href="icons/Icon-192.png">
-
-  <!-- Favicon -->
+  <meta name="apple-mobile-web-app-title" content="Macrina's Kitchen">
+  <link rel="apple-touch-icon" href="favicon.png">
   <link rel="icon" type="image/png" href="favicon.png"/>
 
   <title>Home - Macrina's Kitchen and Catering</title>
   <link rel="manifest" href="manifest.json">
 
-  <!-- Prevent trackpad/touch horizontal overscroll from triggering browser back (homepage). -->
   <style>
     html, body {
+      margin: 0;
+      padding: 0;
+      background: #1e1e1e;
       overscroll-behavior-x: none;
       overscroll-behavior-y: auto;
     }
     flt-glass-pane, flutter-view {
       overscroll-behavior-x: none;
     }
+    #app-splash {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #1e1e1e;
+      color: #ffffff;
+      font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+      text-align: center;
+      padding: 24px;
+    }
+    #app-splash .mark {
+      width: 96px;
+      height: 96px;
+      border-radius: 18px;
+      background: #ffc024;
+      color: #1e1e1e;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 36px;
+      font-weight: 800;
+      margin-bottom: 20px;
+    }
+    #app-splash h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+      line-height: 1.2;
+      font-weight: 700;
+    }
+    #app-splash p {
+      margin: 0;
+      color: #d0d0d0;
+      font-size: 16px;
+    }
+    #app-splash.app-splash-hide {
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 220ms ease;
+    }
   </style>
-
-  <!-- Maps: flutter_map + OpenStreetMap tiles (no Google Maps script required). -->
-
-  <!-- Flutter Web Configuration - Use HTML renderer to prevent CanvasKit issues -->
-  <script>
-    window.flutterWebRenderer = "html";
-  </script>
-
-  <!-- Vercel Web Analytics for static/Flutter web deployments. -->
-  <script>
-    window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
-  </script>
-  <script defer src="/_vercel/insights/script.js"></script>
+  <script src="boot.js" defer></script>
 </head>
 <body>
+  <div id="app-splash">
+    <div class="mark" aria-hidden="true">MK</div>
+    <h1>Macrina's Kitchen and Catering</h1>
+    <p>Loading menu and catering…</p>
+  </div>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

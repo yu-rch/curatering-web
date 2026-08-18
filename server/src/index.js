@@ -266,6 +266,49 @@ function corsOriginAllowed(origin) {
 }
 
 const app = express();
+
+function applySecurityHeaders(req, res, next) {
+  const host = String(req.hostname || req.headers.host || "");
+  const isLocal =
+    host.startsWith("localhost") ||
+    host.startsWith("127.0.0.1") ||
+    host.startsWith("[::1]");
+  const proto = String(req.headers["x-forwarded-proto"] || req.protocol || "");
+  if (!isLocal && (proto === "https" || process.env.NODE_ENV === "production")) {
+    res.setHeader(
+      "Strict-Transport-Security",
+      "max-age=63072000; includeSubDomains; preload",
+    );
+  }
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader(
+    "Permissions-Policy",
+    "camera=(), microphone=(), geolocation=(self), payment=()",
+  );
+  res.setHeader(
+    "Content-Security-Policy",
+    [
+      "default-src 'self'",
+      "script-src 'self' 'wasm-unsafe-eval'",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "font-src 'self' data: https://fonts.gstatic.com",
+      "img-src 'self' data: blob: https:",
+      "connect-src 'self' https: wss: blob:",
+      "worker-src 'self' blob:",
+      "child-src 'self' blob:",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "object-src 'none'",
+      "upgrade-insecure-requests",
+    ].join("; "),
+  );
+  next();
+}
+app.use(applySecurityHeaders);
+
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   if (corsOriginAllowed(origin)) {
@@ -13629,6 +13672,19 @@ async function registerRoutesAfterDbInit() {
           // Never fall through to HTML for missing assets — that causes
           // "Unexpected token '<'" when the browser parses index.html as JS/JSON.
           fallthrough: true,
+          setHeaders(res, filePath) {
+            if (
+              filePath.includes(`${path.sep}assets${path.sep}`) ||
+              filePath.includes(`${path.sep}canvaskit${path.sep}`) ||
+              filePath.endsWith('.js.map') ||
+              filePath.endsWith('.wasm')
+            ) {
+              res.setHeader(
+                'Cache-Control',
+                'public, max-age=31536000, immutable',
+              );
+            }
+          },
         }),
       );
       app.get("*", (req, res, next) => {

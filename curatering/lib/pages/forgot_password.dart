@@ -277,6 +277,7 @@ class _ForgotPasswordState extends State<ForgotPassword> {
                 const SizedBox(height: 12),
                 TextField(
                   controller: _emailController,
+                  enableInteractiveSelection: true,
                   decoration: InputDecoration(
                     hintText: 'your.email@example.com',
                     border: OutlineInputBorder(
@@ -363,6 +364,7 @@ class _ForgotPasswordState extends State<ForgotPassword> {
                 const SizedBox(height: 8),
                 TextField(
                   controller: _passwordController,
+                  enableInteractiveSelection: true,
                   decoration: InputDecoration(
                     hintText: 'Enter new password',
                     border: OutlineInputBorder(

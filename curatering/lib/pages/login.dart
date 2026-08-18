@@ -198,6 +198,7 @@ class _LoginState extends State<Login> {
                       const SizedBox(height: 28),
                       TextField(
                         controller: _emailController,
+                        enableInteractiveSelection: true,
                         style: const TextStyle(color: Colors.white),
                         textInputAction: TextInputAction.next,
                         onSubmitted: (_) => FocusScope.of(context).nextFocus(),
@@ -220,6 +221,7 @@ class _LoginState extends State<Login> {
                       const SizedBox(height: 16),
                       TextField(
                         controller: _passwordController,
+                        enableInteractiveSelection: true,
                         style: const TextStyle(color: Colors.white),
                         decoration: InputDecoration(
                           labelText: 'Password',
