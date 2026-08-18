@@ -48,12 +48,6 @@ import '../utils/inquiry_pricing.dart';
 import '../utils/image_cache.dart';
 import '../utils/responsive_layout.dart';
 import 'customer_login.dart';
-import 'checkout_page.dart';
-import 'guest_order_tracking_page.dart';
-import 'my_orders_page.dart';
-import 'my_caterings_page.dart';
-import 'my_order_tracking_page.dart';
-import 'my_profile_page.dart';
 
 part 'customer_website_theme_editor.dart';
 
@@ -1374,9 +1368,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
       return;
     }
     try {
-      nav.push(
-        MaterialPageRoute<void>(builder: (context) => const CheckoutPage()),
-      );
+      nav.pushNamed(customerRoute('/checkout'));
     } catch (e, st) {
       debugPrint('Navigate to checkout failed: $e\n$st');
       if (!mounted) return;
@@ -1391,25 +1383,25 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   Future<void> _navigateToMyOrders() async {
     final result = await Navigator.of(
       context,
-    ).push(MaterialPageRoute(builder: (context) => const MyOrdersPage()));
+    ).pushNamed(customerRoute('/my-orders'));
     if (result == 'login_required' && mounted) {
       await _handleLogin();
     }
   }
 
   Future<void> _navigateToMyCaterings() async {
-    final result = await Navigator.of(context).push(
-      MaterialPageRoute(builder: (context) => const MyCateringsPage()),
-    );
+    final result = await Navigator.of(
+      context,
+    ).pushNamed(customerRoute('/my-inquiries'));
     if (result == 'login_required' && mounted) {
       await _handleLogin();
     }
   }
 
   Future<void> _navigateToOrderTracking() async {
-    final result = await Navigator.of(context).push(
-      MaterialPageRoute(builder: (context) => const MyOrderTrackingPage()),
-    );
+    final result = await Navigator.of(
+      context,
+    ).pushNamed(customerRoute('/my-tracking'));
     if (result == 'login_required' && mounted) {
       await _handleLogin();
     }
@@ -1418,7 +1410,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   Future<void> _navigateToMyProfile() async {
     final result = await Navigator.of(
       context,
-    ).push(MaterialPageRoute(builder: (context) => const MyProfilePage()));
+    ).pushNamed(customerRoute('/my-profile'));
     if (result == 'login_required' && mounted) {
       await _handleLogin();
     }
@@ -1628,25 +1620,8 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                     await _navigateToOrderTracking();
                     return;
                   }
-                  final prefs = await SharedPreferences.getInstance();
-                  final orderNo = prefs.getString('guest_track_order_no');
-                  final email = prefs.getString('guest_track_email');
-                  final phone = prefs.getString('guest_track_phone');
                   if (!mounted) return;
-                  Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder:
-                          (_) => GuestOrderTrackingPage(
-                            initialOrderNo: orderNo,
-                            initialEmail: email,
-                            initialPhone: phone,
-                            autoLookup:
-                                (orderNo ?? '').trim().isNotEmpty &&
-                                ((email ?? '').trim().isNotEmpty ||
-                                    (phone ?? '').trim().isNotEmpty),
-                          ),
-                    ),
-                  );
+                  Navigator.of(context).pushNamed(customerRoute('/track-order'));
                 },
               ),
               ListenableBuilder(

@@ -197,15 +197,21 @@ bool isStaffRoute(String? routeName) {
     '/contact-us',
     '/inquire',
     '/my-inquiries',
+    '/my-orders',
+    '/my-profile',
+    '/my-tracking',
     '/track-order',
     '/restaurant',
+    '/restaurant-feedback',
     '/catering-menu',
+    '/checkout',
   };
   if (customerRootPaths.contains(name)) return false;
 
   const staffPrefixes = [
     '/login',
     '/dashboard',
+    '/super-admin-dashboard',
     '/manage-',
     '/loyalty',
     '/catering-restaurant-menu',
@@ -232,14 +238,20 @@ bool isCustomerContentRoute(String? routeName) {
   if (routeName == null || routeName.isEmpty) return false;
   final name = stripLegacyCustomerPrefix(normalizeRoutePath(routeName));
   if (name == '/') return true;
+  if (name.startsWith('/p/') && name.length > 3) return true;
   const customerPaths = [
     '/gallery',
     '/contact-us',
     '/inquire',
     '/my-inquiries',
+    '/my-orders',
+    '/my-profile',
+    '/my-tracking',
     '/track-order',
     '/restaurant',
+    '/restaurant-feedback',
     '/catering-menu',
+    '/checkout',
   ];
   return customerPaths.contains(name);
 }

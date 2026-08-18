@@ -1,10 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../config/site_routes.dart';
-import '../pages/my_caterings_page.dart';
-import '../pages/my_order_tracking_page.dart';
-import '../pages/my_orders_page.dart';
-import '../pages/my_profile_page.dart';
 import 'customer_pages_top_bar.dart';
 
 /// Side navigation used on My Orders / My Caterings / Order Tracking / Profile.
@@ -27,16 +23,14 @@ class CustomerAccountShell extends StatelessWidget {
       );
       return;
     }
-    final Widget page = switch (tab) {
-      CustomerPageTab.profile => const MyProfilePage(),
-      CustomerPageTab.orders => const MyOrdersPage(),
-      CustomerPageTab.caterings => const MyCateringsPage(),
-      CustomerPageTab.tracking => const MyOrderTrackingPage(),
-      CustomerPageTab.home => const SizedBox.shrink(),
+    final String route = switch (tab) {
+      CustomerPageTab.profile => '/my-profile',
+      CustomerPageTab.orders => '/my-orders',
+      CustomerPageTab.caterings => '/my-inquiries',
+      CustomerPageTab.tracking => '/my-tracking',
+      CustomerPageTab.home => '/',
     };
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => page),
-    );
+    Navigator.of(context).pushReplacementNamed(customerRoute(route));
   }
 
   @override

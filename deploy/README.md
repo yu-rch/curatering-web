@@ -14,7 +14,7 @@ Build steps (local)
 ```powershell
 cd curatering
 flutter pub get
-flutter build web --release --web-renderer html --tree-shake-icons --source-maps --pwa-strategy none
+flutter build web --release --tree-shake-icons --source-maps
 ```
 
 Output: `curatering/build/web` (static files to serve)

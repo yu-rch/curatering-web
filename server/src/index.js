@@ -291,7 +291,7 @@ function applySecurityHeaders(req, res, next) {
     "Content-Security-Policy",
     [
       "default-src 'self'",
-      "script-src 'self' 'wasm-unsafe-eval'",
+      "script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval' blob:",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' data: https://fonts.gstatic.com",
       "img-src 'self' data: blob: https:",
@@ -302,7 +302,6 @@ function applySecurityHeaders(req, res, next) {
       "base-uri 'self'",
       "form-action 'self'",
       "object-src 'none'",
-      "upgrade-insecure-requests",
     ].join("; "),
   );
   next();

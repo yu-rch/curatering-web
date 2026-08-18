@@ -8,10 +8,10 @@ import '../services/cart_store.dart';
 import '../services/website_content_store.dart';
 import '../models/menu_dish.dart';
 import '../utils/image_cache.dart';
+import '../config/site_routes.dart';
 import '../widgets/antd_message.dart';
 import '../widgets/customer_website_topbar.dart';
 import '../widgets/customer_antd_page_hero.dart';
-import 'checkout_page.dart';
 
 // Font constants
 const String _primaryFont = 'Inter';
@@ -375,9 +375,10 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
     if (!mounted) return;
 
     try {
-      await Navigator.of(context, rootNavigator: true).push<void>(
-        MaterialPageRoute<void>(builder: (context) => const CheckoutPage()),
-      );
+      await Navigator.of(
+        context,
+        rootNavigator: true,
+      ).pushNamed(customerRoute('/checkout'));
     } catch (e, st) {
       debugPrint('RestaurantOrderPage checkout navigation failed: $e\n$st');
       if (!mounted) return;

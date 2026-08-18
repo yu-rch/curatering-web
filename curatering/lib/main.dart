@@ -4,49 +4,36 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' hide Placeholder;
 import 'package:flutter/services.dart';
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
-import 'package:google_fonts/google_fonts.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' deferred as supabase
+    show Supabase;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'config.dart';
 import 'config/site_routes.dart';
+import 'customer_extra_pages.dart' deferred as customer_extra
+    show customerExtraPageFor;
+import 'staff_app.dart' deferred as staff_app show staffPageFor;
 import 'widgets/app_root_route.dart';
 import 'widgets/external_host_redirect.dart';
 import 'widgets/legacy_path_redirect.dart';
-import 'pages/login.dart';
-import 'pages/dashboard.dart';
-import 'pages/manage_accounts.dart';
-import 'pages/catering.dart';
-import 'pages/manage_loyalty_rewards.dart';
-import 'pages/archive.dart';
-import 'pages/menu.dart';
-import 'pages/reports.dart';
-import 'pages/transactions.dart';
-import 'pages/settings.dart';
-import 'pages/customer_website.dart';
-import 'pages/custom_cms_page.dart';
-import 'pages/gallery_page.dart';
-import 'pages/contact_us_page.dart';
-import 'pages/inquire_page.dart';
-import 'pages/my_caterings_page.dart';
-import 'pages/restaurant_order_page.dart';
-import 'pages/restaurant_feedback_public_page.dart';
-import 'pages/catering_menu_page.dart';
-import 'pages/guest_order_tracking_page.dart';
 import 'auth/auth_session.dart';
-import 'auth/page_permissions.dart';
-import 'auth/role_guard.dart';
 import 'auth/roles.dart';
 import 'auth/staff_permission_refresh.dart';
-import 'widgets/page_permission_guard.dart';
-import 'pages/help_requests.dart';
-import 'pages/customer_feedback_page.dart';
-import 'pages/action_logs.dart';
-import 'pages/customer_management.dart';
-import 'pages/website_admin_page.dart';
-import 'pages/restaurant_orders_route.dart';
-import 'pages/inventory.dart';
-import 'pages/super_admin_dashboard.dart';
 import 'data_store.dart';
+
+const _customerExtraPaths = {
+  '/gallery',
+  '/contact-us',
+  '/inquire',
+  '/my-inquiries',
+  '/my-orders',
+  '/my-profile',
+  '/my-tracking',
+  '/track-order',
+  '/restaurant',
+  '/restaurant-feedback',
+  '/catering-menu',
+  '/checkout',
+};
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -58,9 +45,15 @@ Future<void> main() async {
     // Ignore .env loading error for web deployment
   }
 
-  if (supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty) {
-    await Supabase.initialize(url: supabaseUrl, anonKey: supabaseAnonKey);
-  } else if (kDebugMode) {
+  if (!isCustomerSiteHost &&
+      supabaseUrl.isNotEmpty &&
+      supabaseAnonKey.isNotEmpty) {
+    await supabase.loadLibrary();
+    await supabase.Supabase.initialize(
+      url: supabaseUrl,
+      anonKey: supabaseAnonKey,
+    );
+  } else if (kDebugMode && !isCustomerSiteHost) {
     debugPrint(
       'Supabase not initialized — set SUPABASE_URL and SUPABASE_ANON_KEY for storage features.',
     );
@@ -87,18 +80,6 @@ Widget _staffPage(Widget child, String path) {
   return HostRouteGuard(routePath: path, child: child);
 }
 
-class _RoleAwareDashboard extends StatelessWidget {
-  const _RoleAwareDashboard();
-
-  @override
-  Widget build(BuildContext context) {
-    if (AuthSession.instance.currentRole == Role.superAdmin) {
-      return const SuperAdminDashboardPage();
-    }
-    return const Dashboard();
-  }
-}
-
 String _startupRoutePath() => resolveAppInitialRoute();
 
 String _routePathFromSettings(RouteSettings settings) {
@@ -112,256 +93,6 @@ String _routePathFromSettings(RouteSettings settings) {
 }
 
 Route<dynamic>? _buildRouteForPath(String path) {
-  final routes = <String, Widget Function(BuildContext)>{
-    '/': (context) => const AppRootRoute(),
-    '/login': (context) => _staffPage(const Login(), '/login'),
-    '/gallery':
-        (context) => _customerPage(
-          const GalleryPage(contentEditable: false, showStaffChrome: false),
-          '/gallery',
-        ),
-    '/contact-us':
-        (context) => _customerPage(
-          const ContactUsPage(contentEditable: false, showStaffChrome: false),
-          '/contact-us',
-        ),
-    '/inquire':
-        (context) => _customerPage(
-          const InquirePage(contentEditable: false, showStaffChrome: false),
-          '/inquire',
-        ),
-    '/my-inquiries':
-        (context) => _customerPage(
-          const MyCateringsPage(),
-          '/my-inquiries',
-        ),
-    '/track-order':
-        (context) => _customerPage(
-          const GuestOrderTrackingPage(),
-          '/track-order',
-        ),
-    '/restaurant':
-        (context) => _customerPage(
-          const RestaurantOrderPage(
-            contentEditable: false,
-            showStaffChrome: false,
-          ),
-          '/restaurant',
-        ),
-    '/restaurant-feedback':
-        (context) => _customerPage(
-          RestaurantFeedbackPublicPage(
-            token: Uri.base.queryParameters['token'] ?? '',
-          ),
-          '/restaurant-feedback',
-        ),
-    '/catering-menu':
-        (context) => _customerPage(
-          const CateringMenuPage(
-            contentEditable: false,
-            showStaffChrome: false,
-          ),
-          '/catering-menu',
-        ),
-    '/dashboard':
-        (context) => _staffPage(
-          RoleGuard(
-            requiredRole: Role.manager,
-            allowedRoles: {Role.manager, Role.superAdmin},
-            child: PagePermissionGuard(
-              route: PagePermissionRoutes.dashboard,
-              child: const _RoleAwareDashboard(),
-            ),
-          ),
-          '/dashboard',
-        ),
-    '/super-admin-dashboard':
-        (context) => _staffPage(
-          const RoleGuard(
-            requiredRole: Role.superAdmin,
-            child: _RoleAwareDashboard(),
-          ),
-          '/super-admin-dashboard',
-        ),
-    '/manager-dashboard':
-        (context) => _staffPage(
-          const RoleGuard(requiredRole: Role.superAdmin, child: Dashboard()),
-          '/manager-dashboard',
-        ),
-    '/manage-accounts':
-        (context) => _staffPage(
-          const RoleGuard(
-            requiredRole: Role.superAdmin,
-            child: ManageAccounts(),
-          ),
-          '/manage-accounts',
-        ),
-    '/help-requests':
-        (context) => _staffPage(
-          RoleGuard(
-            requiredRole: Role.superAdmin,
-            allowedRoles: {Role.manager, Role.supervisor},
-            child: PagePermissionGuard(
-              route: PagePermissionRoutes.helpRequests,
-              child: const HelpRequestsPage(),
-            ),
-          ),
-          '/help-requests',
-        ),
-    '/customer-feedback':
-        (context) => _staffPage(
-          RoleGuard(
-            requiredRole: Role.superAdmin,
-            allowedRoles: {Role.manager},
-            child: CustomerFeedbackPage(),
-          ),
-          '/customer-feedback',
-        ),
-    '/action-logs':
-        (context) => _staffPage(
-          const RoleGuard(
-            requiredRole: Role.superAdmin,
-            child: ActionLogsPage(),
-          ),
-          '/action-logs',
-        ),
-    '/customer-management':
-        (context) => _staffPage(
-          const RoleGuard(
-            requiredRole: Role.superAdmin,
-            child: CustomerManagementPage(),
-          ),
-          '/customer-management',
-        ),
-    '/manage-events':
-        (context) => _staffPage(
-          RoleGuard(
-            requiredRole: Role.manager,
-            allowedRoles: {Role.manager, Role.supervisor},
-            child: PagePermissionGuard(
-              route: PagePermissionRoutes.manageEvents,
-              child: const ManageEvents(),
-            ),
-          ),
-          '/manage-events',
-        ),
-    '/loyalty':
-        (context) => _staffPage(
-          RoleGuard(
-            requiredRole: Role.manager,
-            allowedRoles: {Role.manager, Role.supervisor},
-            child: PagePermissionGuard(
-              route: PagePermissionRoutes.loyalty,
-              child: const ManageLoyaltyRewards(),
-            ),
-          ),
-          '/loyalty',
-        ),
-    '/catering-restaurant-menu':
-        (context) => _staffPage(
-          RoleGuard(
-            requiredRole: Role.manager,
-            allowedRoles: {Role.manager},
-            child: PagePermissionGuard(
-              route: PagePermissionRoutes.menu,
-              child: const Menu(),
-            ),
-          ),
-          '/catering-restaurant-menu',
-        ),
-    '/inventory':
-        (context) => _staffPage(
-          RoleGuard(
-            requiredRole: Role.manager,
-            allowedRoles: {Role.manager, Role.supervisor},
-            child: PagePermissionGuard(
-              route: PagePermissionRoutes.inventory,
-              child: const Inventory(),
-            ),
-          ),
-          '/inventory',
-        ),
-    '/restaurant-orders':
-        (context) => _staffPage(
-          RoleGuard(
-            requiredRole: Role.manager,
-            allowedRoles: {Role.manager, Role.supervisor, Role.cashier},
-            child: PagePermissionGuard(
-              route: PagePermissionRoutes.restaurantOrders,
-              child: const RestaurantOrdersRoute(),
-            ),
-          ),
-          '/restaurant-orders',
-        ),
-    '/reports':
-        (context) => _staffPage(
-          RoleGuard(
-            requiredRole: Role.manager,
-            allowedRoles: {Role.manager},
-            child: PagePermissionGuard(
-              route: PagePermissionRoutes.reports,
-              child: const Reports(),
-            ),
-          ),
-          '/reports',
-        ),
-    '/order-history':
-        (context) => _staffPage(
-          RoleGuard(
-            requiredRole: Role.manager,
-            allowedRoles: {Role.manager, Role.supervisor},
-            child: PagePermissionGuard(
-              route: PagePermissionRoutes.orderHistory,
-              child: const Transactions(),
-            ),
-          ),
-          '/order-history',
-        ),
-    '/archive':
-        (context) => _staffPage(
-          RoleGuard(
-            requiredRole: Role.manager,
-            allowedRoles: {Role.manager, Role.superAdmin},
-            child: PagePermissionGuard(
-              route: PagePermissionRoutes.archive,
-              child: Archive(),
-            ),
-          ),
-          '/archive',
-        ),
-    '/website':
-        (context) => _staffPage(
-          const RoleGuard(
-            requiredRole: Role.superAdmin,
-            child: CustomerWebsiteScreen(
-              contentEditable: true,
-              showStaffChrome: true,
-            ),
-          ),
-          '/website',
-        ),
-    '/website-admin':
-        (context) => _staffPage(
-          const RoleGuard(
-            requiredRole: Role.superAdmin,
-            child: WebsiteAdminPage(),
-          ),
-          '/website-admin',
-        ),
-    '/settings':
-        (context) => _staffPage(
-          RoleGuard(
-            requiredRole: Role.manager,
-            allowedRoles: {Role.manager, Role.supervisor, Role.cashier},
-            child: PagePermissionGuard(
-              route: PagePermissionRoutes.settings,
-              child: const Settings(),
-            ),
-          ),
-          '/settings',
-        ),
-  };
-
   if (needsRedirectToCustomerSite(path)) {
     return MaterialPageRoute<void>(
       settings: RouteSettings(name: path),
@@ -379,21 +110,121 @@ Route<dynamic>? _buildRouteForPath(String path) {
     );
   }
 
-  final builder = routes[path];
-  if (builder == null) {
-    if (path.startsWith('/p/') && path.length > 3) {
-      final slug = path.substring(3);
-      return MaterialPageRoute<void>(
-        settings: RouteSettings(name: path),
-        builder: (_) => CustomCmsPage(slug: slug),
+  if (path == '/') {
+    return MaterialPageRoute<void>(
+      settings: const RouteSettings(name: '/'),
+      builder: (_) => const AppRootRoute(),
+    );
+  }
+
+  if (_customerExtraPaths.contains(path) ||
+      (path.startsWith('/p/') && path.length > 3)) {
+    return MaterialPageRoute<void>(
+      settings: RouteSettings(name: path),
+      builder:
+          (_) => _customerPage(
+            _DeferredCustomerExtraPage(path: path),
+            path,
+          ),
+    );
+  }
+
+  if (isStaffRoute(path)) {
+    return MaterialPageRoute<void>(
+      settings: RouteSettings(name: path),
+      builder:
+          (_) => _staffPage(_DeferredStaffPage(path: path), path),
+    );
+  }
+
+  return null;
+}
+
+class _DeferredStaffPage extends StatefulWidget {
+  const _DeferredStaffPage({required this.path});
+
+  final String path;
+
+  @override
+  State<_DeferredStaffPage> createState() => _DeferredStaffPageState();
+}
+
+class _DeferredStaffPageState extends State<_DeferredStaffPage> {
+  static Future<void>? _loading;
+  bool _ready = false;
+  Object? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loading ??= staff_app.loadLibrary();
+    _loading!
+        .then((_) {
+          if (mounted) setState(() => _ready = true);
+        })
+        .catchError((Object e) {
+          if (mounted) setState(() => _error = e);
+        });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_error != null) {
+      return const Scaffold(
+        body: Center(child: Text('Failed to load staff page.')),
       );
     }
-    return null;
+    if (!_ready) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+    return staff_app.staffPageFor(widget.path);
   }
-  return MaterialPageRoute<void>(
-    settings: RouteSettings(name: path),
-    builder: builder,
-  );
+}
+
+class _DeferredCustomerExtraPage extends StatefulWidget {
+  const _DeferredCustomerExtraPage({required this.path});
+
+  final String path;
+
+  @override
+  State<_DeferredCustomerExtraPage> createState() =>
+      _DeferredCustomerExtraPageState();
+}
+
+class _DeferredCustomerExtraPageState extends State<_DeferredCustomerExtraPage> {
+  static Future<void>? _loading;
+  bool _ready = false;
+  Object? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loading ??= customer_extra.loadLibrary();
+    _loading!
+        .then((_) {
+          if (mounted) setState(() => _ready = true);
+        })
+        .catchError((Object e) {
+          if (mounted) setState(() => _error = e);
+        });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_error != null) {
+      return const Scaffold(
+        body: Center(child: Text('Failed to load page.')),
+      );
+    }
+    if (!_ready) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+    return customer_extra.customerExtraPageFor(widget.path);
+  }
 }
 
 class MyApp extends StatefulWidget {
@@ -515,7 +346,6 @@ class _MyAppState extends State<MyApp> {
             colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
             useMaterial3: true,
             brightness: dark ? Brightness.dark : Brightness.light,
-            textTheme: GoogleFonts.interTextTheme(),
             pageTransitionsTheme: const PageTransitionsTheme(
               builders: {
                 TargetPlatform.android: _SmoothPageTransitionsBuilder(),
@@ -572,7 +402,11 @@ class _MyAppState extends State<MyApp> {
               if (isStaffRoute(name)) {
                 return MaterialPageRoute<void>(
                   settings: settings,
-                  builder: (_) => _staffPage(const Login(), '/login'),
+                  builder:
+                      (_) => _staffPage(
+                        const _DeferredStaffPage(path: '/login'),
+                        '/login',
+                      ),
                 );
               }
               if (needsRedirectToCustomerSite(name)) {
@@ -599,7 +433,11 @@ class _MyAppState extends State<MyApp> {
             if (isStaffRoute(name)) {
               return MaterialPageRoute<void>(
                 settings: settings,
-                builder: (_) => _staffPage(const Login(), '/login'),
+                builder:
+                    (_) => _staffPage(
+                      const _DeferredStaffPage(path: '/login'),
+                      '/login',
+                    ),
               );
             }
             final rawName = settings.name ?? name;
@@ -607,7 +445,11 @@ class _MyAppState extends State<MyApp> {
               if (isStaffSiteHost) {
                 return MaterialPageRoute<void>(
                   settings: const RouteSettings(name: '/login'),
-                  builder: (_) => _staffPage(const Login(), '/login'),
+                  builder:
+                      (_) => _staffPage(
+                        const _DeferredStaffPage(path: '/login'),
+                        '/login',
+                      ),
                 );
               }
               return MaterialPageRoute<void>(
@@ -622,251 +464,6 @@ class _MyAppState extends State<MyApp> {
               settings: settings,
               builder: (_) => const AppRootRoute(),
             );
-          },
-          routes: {
-            '/': (context) => const AppRootRoute(),
-            '/login': (context) => _staffPage(const Login(), '/login'),
-            '/gallery':
-                (context) => _customerPage(
-                  const GalleryPage(
-                    contentEditable: false,
-                    showStaffChrome: false,
-                  ),
-                  '/gallery',
-                ),
-            '/contact-us':
-                (context) => _customerPage(
-                  const ContactUsPage(
-                    contentEditable: false,
-                    showStaffChrome: false,
-                  ),
-                  '/contact-us',
-                ),
-            '/inquire':
-                (context) => _customerPage(
-                  const InquirePage(
-                    contentEditable: false,
-                    showStaffChrome: false,
-                  ),
-                  '/inquire',
-                ),
-            '/my-inquiries':
-                (context) => _customerPage(
-                  const MyCateringsPage(),
-                  '/my-inquiries',
-                ),
-            '/track-order':
-                (context) => _customerPage(
-                  const GuestOrderTrackingPage(),
-                  '/track-order',
-                ),
-            '/restaurant':
-                (context) => _customerPage(
-                  const RestaurantOrderPage(
-                    contentEditable: false,
-                    showStaffChrome: false,
-                  ),
-                  '/restaurant',
-                ),
-            '/catering-menu':
-                (context) => _customerPage(
-                  const CateringMenuPage(
-                    contentEditable: false,
-                    showStaffChrome: false,
-                  ),
-                  '/catering-menu',
-                ),
-            '/dashboard':
-                (context) => _staffPage(
-                  RoleGuard(
-                    requiredRole: Role.manager,
-                    allowedRoles: {
-                      Role.manager,
-                      Role.superAdmin,
-                    },
-                    child: PagePermissionGuard(
-                      route: PagePermissionRoutes.dashboard,
-                      child: const _RoleAwareDashboard(),
-                    ),
-                  ),
-                  '/dashboard',
-                ),
-            '/manager-dashboard':
-                (context) => _staffPage(
-                  const RoleGuard(
-                    requiredRole: Role.superAdmin,
-                    child: Dashboard(),
-                  ),
-                  '/manager-dashboard',
-                ),
-            '/manage-accounts':
-                (context) => _staffPage(
-                  const RoleGuard(
-                    requiredRole: Role.superAdmin,
-                    child: ManageAccounts(),
-                  ),
-                  '/manage-accounts',
-                ),
-            '/help-requests':
-                (context) => _staffPage(
-                  const RoleGuard(
-                    requiredRole: Role.superAdmin,
-                    child: HelpRequestsPage(),
-                  ),
-                  '/help-requests',
-                ),
-            '/customer-feedback':
-                (context) => _staffPage(
-                  RoleGuard(
-                    requiredRole: Role.superAdmin,
-                    allowedRoles: {Role.manager},
-                    child: CustomerFeedbackPage(),
-                  ),
-                  '/customer-feedback',
-                ),
-            '/action-logs':
-                (context) => _staffPage(
-                  const RoleGuard(
-                    requiredRole: Role.superAdmin,
-                    child: ActionLogsPage(),
-                  ),
-                  '/action-logs',
-                ),
-            '/customer-management':
-                (context) => _staffPage(
-                  const RoleGuard(
-                    requiredRole: Role.superAdmin,
-                    child: CustomerManagementPage(),
-                  ),
-                  '/customer-management',
-                ),
-            '/manage-events':
-                (context) => _staffPage(
-                  RoleGuard(
-                    requiredRole: Role.manager,
-                    allowedRoles: {Role.manager, Role.supervisor},
-                    child: PagePermissionGuard(
-                      route: PagePermissionRoutes.manageEvents,
-                      child: const ManageEvents(),
-                    ),
-                  ),
-                  '/manage-events',
-                ),
-            '/loyalty':
-                (context) => _staffPage(
-                  RoleGuard(
-                    requiredRole: Role.manager,
-                    allowedRoles: {Role.manager, Role.supervisor},
-                    child: PagePermissionGuard(
-                      route: PagePermissionRoutes.loyalty,
-                      child: const ManageLoyaltyRewards(),
-                    ),
-                  ),
-                  '/loyalty',
-                ),
-            '/catering-restaurant-menu':
-                (context) => _staffPage(
-                  RoleGuard(
-                    requiredRole: Role.manager,
-                    allowedRoles: {Role.manager},
-                    child: PagePermissionGuard(
-                      route: PagePermissionRoutes.menu,
-                      child: const Menu(),
-                    ),
-                  ),
-                  '/catering-restaurant-menu',
-                ),
-            '/inventory':
-                (context) => _staffPage(
-                  RoleGuard(
-                    requiredRole: Role.manager,
-                    allowedRoles: {Role.manager, Role.supervisor},
-                    child: PagePermissionGuard(
-                      route: PagePermissionRoutes.inventory,
-                      child: const Inventory(),
-                    ),
-                  ),
-                  '/inventory',
-                ),
-            '/restaurant-orders':
-                (context) => _staffPage(
-                  RoleGuard(
-                    requiredRole: Role.manager,
-                    allowedRoles: {Role.manager, Role.supervisor, Role.cashier},
-                    child: PagePermissionGuard(
-                      route: PagePermissionRoutes.restaurantOrders,
-                      child: const RestaurantOrdersRoute(),
-                    ),
-                  ),
-                  '/restaurant-orders',
-                ),
-            '/reports':
-                (context) => _staffPage(
-                  RoleGuard(
-                    requiredRole: Role.manager,
-                    allowedRoles: {Role.manager},
-                    child: PagePermissionGuard(
-                      route: PagePermissionRoutes.reports,
-                      child: const Reports(),
-                    ),
-                  ),
-                  '/reports',
-                ),
-            '/order-history':
-                (context) => _staffPage(
-                  RoleGuard(
-                    requiredRole: Role.manager,
-                    allowedRoles: {Role.manager, Role.supervisor},
-                    child: PagePermissionGuard(
-                      route: PagePermissionRoutes.orderHistory,
-                      child: const Transactions(),
-                    ),
-                  ),
-                  '/order-history',
-                ),
-            '/archive':
-                (context) => _staffPage(
-                  RoleGuard(
-                    requiredRole: Role.manager,
-                    allowedRoles: {Role.manager, Role.superAdmin},
-                    child: PagePermissionGuard(
-                      route: PagePermissionRoutes.archive,
-                      child: Archive(),
-                    ),
-                  ),
-                  '/archive',
-                ),
-            '/website':
-                (context) => _staffPage(
-                  const RoleGuard(
-                    requiredRole: Role.superAdmin,
-                    child: CustomerWebsiteScreen(
-                      contentEditable: true,
-                      showStaffChrome: true,
-                    ),
-                  ),
-                  '/website',
-                ),
-            '/website-admin':
-                (context) => _staffPage(
-                  const RoleGuard(
-                    requiredRole: Role.superAdmin,
-                    child: WebsiteAdminPage(),
-                  ),
-                  '/website-admin',
-                ),
-            '/settings':
-                (context) => _staffPage(
-                  RoleGuard(
-                    requiredRole: Role.manager,
-                    allowedRoles: {Role.manager, Role.supervisor, Role.cashier},
-                    child: PagePermissionGuard(
-                      route: PagePermissionRoutes.settings,
-                      child: const Settings(),
-                    ),
-                  ),
-                  '/settings',
-                ),
           },
         );
       },

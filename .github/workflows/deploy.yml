@@ -29,27 +29,36 @@ jobs:
         working-directory: curatering
         run: |
           flutter build web --release \
-            --web-renderer html \
             --tree-shake-icons \
             --source-maps \
-            --pwa-strategy none \
             --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
             --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
 
-      - name: Patch deprecated Intl.v8BreakIterator feature detect
+      - name: Patch Flutter web bootstrap
         run: |
           python3 - <<'PY'
+          import re
           from pathlib import Path
+
           root = Path('curatering/build/web')
           for name in ('flutter.js', 'flutter_bootstrap.js'):
               path = root / name
               if not path.exists():
                   continue
               text = path.read_text(encoding='utf-8')
-              path.write_text(
-                  text.replace('Intl.v8BreakIterator', 'Intl.Segmenter'),
-                  encoding='utf-8',
+              text = text.replace('Intl.v8BreakIterator', 'Intl.Segmenter')
+              path.write_text(text, encoding='utf-8')
+
+          bootstrap = root / 'flutter_bootstrap.js'
+          if bootstrap.exists():
+              text = bootstrap.read_text(encoding='utf-8')
+              text = re.sub(
+                  r"_flutter\.loader\.load\(\{[\s\S]*?\}\);",
+                  "_flutter.loader.load({});",
+                  text,
+                  count=1,
               )
+              bootstrap.write_text(text, encoding='utf-8')
           PY
 
       - name: Install Vercel CLI
@@ -63,4 +72,3 @@ jobs:
       - name: Deploy to Vercel
         working-directory: curatering/build/web
         run: npx vercel deploy --prod --token=${{ secrets.VERCEL_TOKEN }} --yes --scope urichs-projects-360c4d2f
-

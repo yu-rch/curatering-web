@@ -105,6 +105,9 @@ class _GuestOrderTrackingPageState extends State<GuestOrderTrackingPage>
     if (orderNo.isNotEmpty) _orderNoCtrl.text = orderNo;
     if (email.isNotEmpty && _emailCtrl.text.isEmpty) _emailCtrl.text = email;
     if (phone.isNotEmpty && _phoneCtrl.text.isEmpty) _phoneCtrl.text = phone;
+    if (email.isNotEmpty || phone.isNotEmpty) {
+      unawaited(_lookup());
+    }
   }
 
   Future<void> _refreshAuth() async {

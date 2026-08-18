@@ -9,13 +9,7 @@ import '../config/site_open_tab_stub.dart'
     if (dart.library.html) '../config/site_open_tab_web.dart';
 import '../config/site_routes.dart';
 import '../constants/catering_meal_types.dart';
-import '../pages/checkout_page.dart';
 import '../pages/customer_login.dart';
-import '../pages/guest_order_tracking_page.dart';
-import '../pages/my_caterings_page.dart';
-import '../pages/my_order_tracking_page.dart';
-import '../pages/my_orders_page.dart';
-import '../pages/my_profile_page.dart';
 import '../services/cart_store.dart';
 import '../services/menu_store.dart';
 import '../services/website_content_store.dart';
@@ -156,33 +150,10 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
 
   Future<void> _openOrderTracking() async {
     if (_isCustomerLoggedIn) {
-      await Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => const MyOrderTrackingPage(),
-        ),
-      );
+      await Navigator.of(context).pushNamed(customerRoute('/my-tracking'));
       return;
     }
-    final prefs = await SharedPreferences.getInstance();
-    final orderNo = prefs.getString('guest_track_order_no');
-    final email = prefs.getString('guest_track_email');
-    final phone = prefs.getString('guest_track_phone');
-    if (!mounted) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        settings: RouteSettings(name: customerRoute('/track-order')),
-        builder:
-            (_) => GuestOrderTrackingPage(
-              initialOrderNo: orderNo,
-              initialEmail: email,
-              initialPhone: phone,
-              autoLookup:
-                  (orderNo ?? '').trim().isNotEmpty &&
-                  ((email ?? '').trim().isNotEmpty ||
-                      (phone ?? '').trim().isNotEmpty),
-            ),
-      ),
-    );
+    await Navigator.of(context).pushNamed(customerRoute('/track-order'));
   }
 
   String _navRouteFor(CmsNavItem item) {
@@ -521,10 +492,8 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                                   child: ElevatedButton(
                                     onPressed: () {
                                       Navigator.of(context).pop();
-                                      Navigator.of(this.context).push(
-                                        MaterialPageRoute<void>(
-                                          builder: (_) => const CheckoutPage(),
-                                        ),
+                                      Navigator.of(this.context).pushNamed(
+                                        customerRoute('/checkout'),
                                       );
                                     },
                                     style: ElevatedButton.styleFrom(
@@ -704,9 +673,7 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                       title: const Text('My Profile', style: TextStyle(color: Colors.white)),
                       onTap: () {
                         Navigator.pop(sheetCtx);
-                        Navigator.of(context).push(
-                          MaterialPageRoute<void>(builder: (_) => const MyProfilePage()),
-                        );
+                        Navigator.of(context).pushNamed(customerRoute('/my-profile'));
                       },
                     ),
                     ListTile(
@@ -714,9 +681,7 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                       title: const Text('My Orders', style: TextStyle(color: Colors.white)),
                       onTap: () {
                         Navigator.pop(sheetCtx);
-                        Navigator.of(context).push(
-                          MaterialPageRoute<void>(builder: (_) => const MyOrdersPage()),
-                        );
+                        Navigator.of(context).pushNamed(customerRoute('/my-orders'));
                       },
                     ),
                     ListTile(
@@ -724,9 +689,7 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                       title: const Text('My Caterings', style: TextStyle(color: Colors.white)),
                       onTap: () {
                         Navigator.pop(sheetCtx);
-                        Navigator.of(context).push(
-                          MaterialPageRoute<void>(builder: (_) => const MyCateringsPage()),
-                        );
+                        Navigator.of(context).pushNamed(customerRoute('/my-inquiries'));
                       },
                     ),
                     ListTile(
@@ -734,9 +697,7 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                       title: const Text('Order Tracking', style: TextStyle(color: Colors.white)),
                       onTap: () {
                         Navigator.pop(sheetCtx);
-                        Navigator.of(context).push(
-                          MaterialPageRoute<void>(builder: (_) => const MyOrderTrackingPage()),
-                        );
+                        Navigator.of(context).pushNamed(customerRoute('/my-tracking'));
                       },
                     ),
                     ListTile(
@@ -853,10 +814,8 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                         icon: Icons.person_outline,
                         label: 'My Profile',
                         onSelected: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => const MyProfilePage(),
-                            ),
+                          Navigator.of(context).pushNamed(
+                            customerRoute('/my-profile'),
                           );
                         },
                       ),
@@ -865,10 +824,8 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                         icon: Icons.receipt_long,
                         label: 'My Orders',
                         onSelected: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => const MyOrdersPage(),
-                            ),
+                          Navigator.of(context).pushNamed(
+                            customerRoute('/my-orders'),
                           );
                         },
                       ),
@@ -877,10 +834,8 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                         icon: Icons.event,
                         label: 'My Caterings',
                         onSelected: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => const MyCateringsPage(),
-                            ),
+                          Navigator.of(context).pushNamed(
+                            customerRoute('/my-inquiries'),
                           );
                         },
                       ),
@@ -889,10 +844,8 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
                         icon: Icons.local_shipping_outlined,
                         label: 'Order Tracking',
                         onSelected: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => const MyOrderTrackingPage(),
-                            ),
+                          Navigator.of(context).pushNamed(
+                            customerRoute('/my-tracking'),
                           );
                         },
                       ),
