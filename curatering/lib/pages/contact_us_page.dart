@@ -52,6 +52,7 @@ class ContactUsPage extends StatefulWidget {
 
 class _ContactUsPageState extends State<ContactUsPage> {
   final _feedbackFormKey = GlobalKey<FormState>();
+  final _mailFormKey = GlobalKey<FormState>();
   final _emailSectionKey = GlobalKey();
   final _feedbackSectionKey = GlobalKey();
   final _faqSectionKey = GlobalKey();
@@ -60,6 +61,12 @@ class _ContactUsPageState extends State<ContactUsPage> {
   final _feedbackMessageController = TextEditingController();
   bool _isSubmittingFeedback = false;
   int _feedbackRating = 0;
+
+  // Separate "Mail us" form (feedback form is for ratings).
+  final _mailNameController = TextEditingController();
+  final _mailEmailController = TextEditingController();
+  final _mailMessageController = TextEditingController();
+  bool _isSubmittingMail = false;
 
   @override
   void initState() {
@@ -91,6 +98,9 @@ class _ContactUsPageState extends State<ContactUsPage> {
     _feedbackNameController.dispose();
     _feedbackEmailController.dispose();
     _feedbackMessageController.dispose();
+    _mailNameController.dispose();
+    _mailEmailController.dispose();
+    _mailMessageController.dispose();
     super.dispose();
   }
 
@@ -138,15 +148,54 @@ class _ContactUsPageState extends State<ContactUsPage> {
     }
   }
 
-  Future<void> _launchPhone(String phone) async {
-    final uri = Uri.parse('tel:$phone');
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
+  Future<void> _submitMail() async {
+    final form = _mailFormKey.currentState;
+    if (form == null || !form.validate()) return;
+
+    setState(() => _isSubmittingMail = true);
+    try {
+      final response = await http.post(
+        Uri.parse('$apiBaseUrl/api/contact-feedback'),
+        headers: const {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'name': _mailNameController.text.trim(),
+          'email': _mailEmailController.text.trim(),
+          'message': _mailMessageController.text.trim(),
+          // Intentionally omit `rating` for the mail form.
+        }),
+      );
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        final decoded = jsonDecode(response.body);
+        throw Exception(decoded['error'] ?? 'Failed to send message.');
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Message sent. Thank you!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+
+      _mailNameController.clear();
+      _mailEmailController.clear();
+      _mailMessageController.clear();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to send message. Please try again.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isSubmittingMail = false);
     }
   }
 
-  Future<void> _launchEmail(String email) async {
-    final uri = Uri.parse('mailto:$email');
+  Future<void> _launchPhone(String phone) async {
+    final uri = Uri.parse('tel:$phone');
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri);
     }
@@ -314,65 +363,131 @@ class _ContactUsPageState extends State<ContactUsPage> {
   }
 
   Widget _buildEmailUsHero(WebsiteContentStore w) {
-    return Material(
+    return Card(
+      elevation: 0,
       color: const Color(0xFF1E1E1E),
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        onTap: () => _launchEmail(w.contactEmail),
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-          child: Row(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Form(
+          key: _mailFormKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFC024),
-                  borderRadius: BorderRadius.circular(24),
+              Row(
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFC024),
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                    child: const Icon(
+                      Icons.mail_outline,
+                      color: Color(0xFF1E1E1E),
+                      size: 26,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Mail us',
+                          style: GoogleFonts.getFont(
+                            _primaryFont,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'We reply within one business day.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.white.withValues(alpha: 0.75),
+                            height: 1.3,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _mailNameController,
+                decoration: const InputDecoration(
+                  labelText: 'Name',
+                  border: OutlineInputBorder(),
+                  isDense: true,
                 ),
-                child: const Icon(
-                  Icons.email_outlined,
-                  color: Color(0xFF1E1E1E),
-                  size: 26,
+                validator: (v) {
+                  final t = v?.trim() ?? '';
+                  if (t.isEmpty) return 'Name is required';
+                  return null;
+                },
+              ),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _mailEmailController,
+                decoration: const InputDecoration(
+                  labelText: 'Email Address',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                keyboardType: TextInputType.emailAddress,
+                validator: (v) {
+                  final t = v?.trim() ?? '';
+                  if (t.isEmpty) return 'Email is required';
+                  if (!t.contains('@')) return 'Please enter a valid email';
+                  return null;
+                },
+              ),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _mailMessageController,
+                decoration: const InputDecoration(
+                  labelText: 'Message',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                maxLines: 4,
+                validator: (v) {
+                  final t = v?.trim() ?? '';
+                  if (t.length < 3) return 'Please enter your message';
+                  return null;
+                },
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _isSubmittingMail ? null : _submitMail,
+                  icon: _isSubmittingMail
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.send_outlined),
+                  label: Text(
+                    _isSubmittingMail ? 'SENDING…' : 'SEND MESSAGE',
+                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
+                  ),
                 ),
               ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Email us',
-                      style: GoogleFonts.getFont(
-                        _primaryFont,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      w.contactEmail,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        color: Color(0xFFFFC024),
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Best way to reach us — we typically reply within one business day.',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.white.withValues(alpha: 0.75),
-                        height: 1.3,
-                      ),
-                    ),
-                  ],
+              const SizedBox(height: 6),
+              Text(
+                'Direct email: ${w.contactEmail}',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.white.withValues(alpha: 0.7),
                 ),
               ),
-              const Icon(Icons.arrow_forward, color: Color(0xFFFFC024)),
             ],
           ),
         ),
@@ -668,7 +783,7 @@ class _ContactUsPageState extends State<ContactUsPage> {
           title: 'Email us',
           subtitle: w.contactEmail,
           emphasize: true,
-          onTap: () => _launchEmail(w.contactEmail),
+          onTap: () => _scrollTo(_emailSectionKey),
         ),
         const SizedBox(height: 8),
         _ContactCard(
