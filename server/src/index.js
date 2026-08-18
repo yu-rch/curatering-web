@@ -291,7 +291,7 @@ function applySecurityHeaders(req, res, next) {
     "Content-Security-Policy",
     [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval' blob:",
+      "script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval' blob: https://www.gstatic.com",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' data: https://fonts.gstatic.com",
       "img-src 'self' data: blob: https:",

@@ -28,59 +28,10 @@
     flt-glass-pane, flutter-view {
       overscroll-behavior-x: none;
     }
-    #app-splash {
-      position: fixed;
-      inset: 0;
-      z-index: 9999;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      background: #1e1e1e;
-      color: #ffffff;
-      font-family: system-ui, -apple-system, Segoe UI, sans-serif;
-      text-align: center;
-      padding: 24px;
-    }
-    #app-splash .mark {
-      width: 96px;
-      height: 96px;
-      border-radius: 18px;
-      background: #ffc024;
-      color: #1e1e1e;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 36px;
-      font-weight: 800;
-      margin-bottom: 20px;
-    }
-    #app-splash h1 {
-      margin: 0 0 8px;
-      font-size: 28px;
-      line-height: 1.2;
-      font-weight: 700;
-    }
-    #app-splash p {
-      margin: 0;
-      color: #d0d0d0;
-      font-size: 16px;
-      max-width: 420px;
-    }
-    #app-splash.app-splash-hide {
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 220ms ease;
-    }
   </style>
   <script src="boot.js" defer></script>
 </head>
 <body>
-  <div id="app-splash">
-    <div class="mark" aria-hidden="true">MK</div>
-    <h1>Macrina's Kitchen and Catering</h1>
-    <p>Loading menu and catering…</p>
-  </div>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>
