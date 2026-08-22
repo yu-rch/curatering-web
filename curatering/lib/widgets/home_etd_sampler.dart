@@ -130,7 +130,7 @@ class _HomeEtdSamplerState extends State<HomeEtdSampler> {
   Future<void> _selectSampleVenue(int index) async {
     setState(() => _error = null);
     try {
-      final data = await rootBundle.load(HomeDefaultAssets.collage[index]);
+      final data = await rootBundle.load(HomeDefaultAssets.etdSamples[index]);
       final bytes = data.buffer.asUint8List();
       final b64 = await _encodeVenueForRunpod(bytes);
       if (!mounted || b64 == null) return;
@@ -419,7 +419,7 @@ class _HomeEtdSamplerState extends State<HomeEtdSampler> {
                                 child: ClipRRect(
                                   borderRadius: BorderRadius.circular(7),
                                   child: Image.asset(
-                                    HomeDefaultAssets.collage[i],
+                                    HomeDefaultAssets.etdSamples[i],
                                     fit: BoxFit.cover,
                                   ),
                                 ),

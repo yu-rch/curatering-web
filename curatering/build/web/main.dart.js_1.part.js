@@ -22,7 +22,7 @@ ctV:function ctV(d){this.a=d},
 ctU:function ctU(d,e){this.a=d
 this.b=e},
 cRM(d){var x,w
-for(x=0;x<8;++x){w=C.Qr[x]
+for(x=0;x<8;++x){w=C.Qq[x]
 if(w.b===d)return w}return null},
 Pp:function Pp(d,e,f){this.c=d
 this.a=e
@@ -249,7 +249,7 @@ _.c=e
 _.e=f
 _.f=g
 _.x=h},
-cDZ(d){if(d===C.FQ)return"access_token"
+cDZ(d){if(d===C.FP)return"access_token"
 else if(d===C.aa5)return"postgres_changes"
 else if(d===C.aa3)return"broadcast"
 else if(d===C.aa4)return"presence"
@@ -267,7 +267,7 @@ cXQ(d,e,f,g,h,i,j,k){var x,w=null,v=B.b([],y.U),u=A.QO("supabase.realtime"),t=y.
 t=B.d(["open",B.b([],t),"close",B.b([],t),"error",B.b([],t),"message",B.b([],t)],s,y.G)
 x=B.bL(d+"/websocket",0,w)
 x=x.qt(0,w).gpD()
-s=B.fD(C.bhz,s,s)
+s=B.fD(C.bhA,s,s)
 s.t(0,f)
 v=new A.aC4(v,x,s,i,j,A.dzY(),u,[],t,e)
 v.aEE(d,e,w,w,f,25e3,g,h,w,2e4,i,w,j,k)
@@ -324,7 +324,7 @@ cTg(d,e,f){return new A.aeB(d,!0,f.i("aeB<0>"))},
 aeB:function aeB(d,e,f){this.a=d
 this.b=e
 this.$ti=f},
-cDE(d,e){var x=null,w=d?new B.Nt(x,x,e.i("Nt<0>")):new B.Rf(x,x,e.i("Rf<0>")),v=new A.aRU(C.FF)
+cDE(d,e){var x=null,w=d?new B.Nt(x,x,e.i("Nt<0>")):new B.Rf(x,x,e.i("Rf<0>")),v=new A.aRU(C.FE)
 return new A.ado(v,w,A.cTg(A.cRQ(v,w,d,e),!0,e),e.i("ado<0>"))},
 cRQ(d,e,f,g){return new A.aVE(d,e,g)},
 ado:function ado(d,e,f,g){var _=this
@@ -487,7 +487,7 @@ t.OA()
 s=C.aiq.bfq(t)
 if(s.d==null){t=B.bL(a4,0,null)
 s=s.bfn(new A.bkv("sb-"+D.h.ga0(t.gq9(t).split("."))+"-auth-token"))}t=y.N
-r=B.fD(C.bhw,t,t)
+r=B.fD(C.bhx,t,t)
 q=A.QO("supabase.supabase")
 p=a4+"/rest/v1"
 o=B.bG(a4+"/realtime/v1","http","ws")
@@ -507,7 +507,7 @@ g=y.b
 f=A.cDE(!1,g)
 g=A.cDE(!0,g)
 e=A.QO("supabase.auth")
-d=B.fD(C.bhv,t,t)
+d=B.fD(C.bhw,t,t)
 d.t(0,h)
 h=new A.b3D(n,d,null,f,g,s.b,i,e)
 h.w=!0
@@ -532,21 +532,21 @@ i=new A.auR(i,a3,j.gaPN())
 j.z=i
 h=B.fD(k,t,t)
 g=A.QO("supabase.postgrest")
-B.fD(C.bhu,t,t).t(0,h)
+B.fD(C.bhv,t,t).t(0,h)
 g.cs(C.kz,"Initialize PostgrestClient with url: "+p+", schema: public",null,null)
 g.cs(C.h9,"Initialize with headers: "+h.j(0),null,null)
 j.ay!==$&&B.c3()
 j.ay=new A.bec(p,"public",r,!0,g)
 p=B.fD(k,t,t)
 h=A.QO("supabase.functions")
-B.fD(C.bhx,t,t).t(0,p)
+B.fD(C.bhy,t,t).t(0,p)
 h.cs(C.kz,"Initialize FunctionsClient v2.5.0 with url '"+l+"' and region 'null'",null,null)
 h.cs(C.h9,"Initialize with headers: "+p.j(0),null,null)
 j.as!==$&&B.c3()
 j.as=new A.b2S(r,!0,h)
 r=B.fD(k,t,t)
 p=A.QO("supabase.storage")
-B.fD(C.bhy,t,t).t(0,r)
+B.fD(C.bhz,t,t).t(0,r)
 A.QO("supabase.storage")
 p.cs(C.kz,"Initialize SupabaseStorageClient v2.5.2 with url: "+m+", retryAttempts: 0",null,null)
 p.cs(C.h9,"Initialize with headers: "+r.j(0),null,null)
@@ -840,7 +840,7 @@ var $async$LP=B.o(function(f,g){if(f===1)return B.p(g,w)
 for(;;)switch(x){case 0:u=y.N
 t=A.b3R(null,v.b,d,!0,B.d(["scope",e.b],u,u))
 x=2
-return B.h(v.gafM().yO(0,v.a+"/logout",C.C4,t),$async$LP)
+return B.h(v.gafM().yO(0,v.a+"/logout",C.C3,t),$async$LP)
 case 2:return B.q(null,w)}})
 return B.r($async$LP,w)}}
 A.b3B.prototype={}
@@ -860,7 +860,7 @@ t=D.h.ga0(o.split("/"))
 s=A.cRM(D.h.gaG(o.split("/")))
 r=y.N
 x=4
-return B.h(u.gNK().yO(0,u.d+"/token",C.C4,A.b3R(B.d(["auth_code",d,"code_verifier",t],r,y.z),u.e,null,null,B.d(["grant_type","pkce"],r,r))),$async$Ck)
+return B.h(u.gNK().yO(0,u.d+"/token",C.C3,A.b3R(B.d(["auth_code",d,"code_verifier",t],r,y.z),u.e,null,null,B.d(["grant_type","pkce"],r,r))),$async$Ck)
 case 4:q=f
 x=5
 return B.h(p.Dj(0,"supabase.auth.token-code-verifier"),$async$Ck)
@@ -952,7 +952,7 @@ n=t.ch
 n.cs(C.kA,"Signing out user with scope: "+B.l(o),null,null)
 q=t.c
 s=q==null?null:q.c
-x=o!==C.bqw?2:3
+x=o!==C.bqx?2:3
 break
 case 2:n.cs(C.eJ,"Removing session",null,null)
 t.c=null
@@ -1078,7 +1078,7 @@ if(q==null){x=1
 break}p=m?null:n.gIN()
 if(p==null){x=1
 break}o=D.j.dV(D.l.bz(new B.bk(B.Ty(p*1000,0,!1),0,!1).fZ(r).a,1000)/1e4)
-s.ch.cs(C.KZ,"Access token expires in "+B.l(o)+" ticks",null,null)
+s.ch.cs(C.KY,"Access token expires in "+B.l(o)+" ticks",null,null)
 x=o<=3?7:8
 break
 case 7:x=9
@@ -1122,7 +1122,7 @@ u.ch.cs(C.ha,"Failed to start broadcast channel",x,w)}},
 zI(d){return this.aJr(d)},
 aJr(d){var x=0,w=B.t(y.l),v,u=2,t=[],s=[],r=this,q,p,o,n,m,l,k,j,i
 var $async$zI=B.o(function(e,f){if(e===1){t.push(f)
-x=u}for(;;)switch(x){case 0:if(r.y!=null){r.ch.cs(C.KZ,"Don't call refresh token, already in progress",null,null)
+x=u}for(;;)switch(x){case 0:if(r.y!=null){r.ch.cs(C.KY,"Don't call refresh token, already in progress",null,null)
 v=r.y.a
 x=1
 break}u=4
@@ -1273,7 +1273,7 @@ return"User(id: "+x.a+", appMetadata: "+B.l(x.b)+", userMetadata: "+B.l(x.c)+", 
 l(d,e){var x,w=this
 if(e==null)return!1
 if(w===e)return!0
-x=C.Hh.ga44()
+x=C.Hg.ga44()
 return e instanceof A.aFu&&e.a===w.a&&x.$2(e.b,w.b)&&x.$2(e.c,w.c)&&e.d===w.d&&e.e==w.e&&e.f==w.f&&e.r==w.r&&e.w==w.w&&e.x==w.x&&e.y==w.y&&e.z==w.z&&e.Q==w.Q&&e.as===w.as&&e.at==w.at&&e.ax==w.ax&&e.ay==w.ay&&e.ch==w.ch&&e.CW==w.CW&&e.cx==w.cx&&x.$2(e.cy,w.cy)&&x.$2(e.db,w.db)&&e.dx===w.dx},
 gE(d){var x=this
 return(D.e.gE(x.a)^J.ah(x.b)^J.ah(x.c)^D.e.gE(x.d)^J.ah(x.e)^J.ah(x.f)^J.ah(x.r)^J.ah(x.w)^J.ah(x.x)^J.ah(x.y)^J.ah(x.z)^J.ah(x.Q)^D.e.gE(x.as)^J.ah(x.at)^J.ah(x.ax)^J.ah(x.ay)^J.ah(x.ch)^J.ah(x.CW)^J.ah(x.cx)^J.ah(x.cy)^J.ah(x.db)^D.ib.gE(x.dx))>>>0}}
@@ -1285,7 +1285,7 @@ return"UserIdentity(id: "+x.a+", userId: "+x.b+", identityData: "+B.l(x.c)+", id
 l(d,e){var x=this
 if(e==null)return!1
 if(x===e)return!0
-return e instanceof A.X2&&e.a===x.a&&e.b===x.b&&C.Hh.ga44().$2(e.c,x.c)&&e.d===x.d&&e.e===x.e&&e.f==x.f&&e.r==x.r&&e.w==x.w},
+return e instanceof A.X2&&e.a===x.a&&e.b===x.b&&C.Hg.ga44().$2(e.c,x.c)&&e.d===x.d&&e.e===x.e&&e.f==x.f&&e.r==x.r&&e.w==x.w},
 gE(d){var x=this
 return(D.e.gE(x.a)^D.e.gE(x.b)^J.ah(x.c)^D.e.gE(x.d)^D.e.gE(x.e)^J.ah(x.f)^J.ah(x.r)^J.ah(x.w))>>>0}}
 A.Se.prototype={
@@ -1340,7 +1340,7 @@ if(r===k)B.ao(B.ii(u))
 J.aD(r,t,s)}}j=B.J(j,i)
 j.k(0,"topic",l.a)
 i=l.b
-j.k(0,"event",i!==C.FP?A.cDZ(i):"heartbeat")
+j.k(0,"event",i!==C.FO?A.cDZ(i):"heartbeat")
 j.k(0,"payload",k.bf())
 j.k(0,"ref",l.d)
 return j}}
@@ -1389,7 +1389,7 @@ o=s.cx
 m=r
 if(o==null?m!=null:o!==m){x=1
 break}o=s.dy
-if(o!==C.D0&&o!==C.CZ){s.dy=C.D_
+if(o!==C.D_&&o!==C.CY){s.dy=C.CZ
 s.a0c(q)
 o=s.at
 o===$&&B.c()
@@ -1430,7 +1430,7 @@ x=r!=null?2:3
 break
 case 2:u=v.dy
 t=u===C.mZ||u===C.po
-if(t){v.dy=C.CZ
+if(t){v.dy=C.CY
 v.cs("transport","disconnecting",B.d(["code",null,"reason",null],y.N,y.X),C.eJ)}x=u===C.po?4:5
 break
 case 4:s=r.f
@@ -1441,7 +1441,7 @@ case 6:case 5:x=t?7:8
 break
 case 7:x=9
 return B.h(r.gn4().b8(0),$async$Cb)
-case 9:v.dy=C.D0
+case 9:v.dy=C.D_
 s=v.at
 s===$&&B.c()
 s.kH(0)
@@ -1481,7 +1481,7 @@ if(u.a===s){x=1
 break}u.a=s
 for(t=u.b,r=y.N,q=y.z,p=0;!1;++p){o=t[p]
 o.bs0(B.d(["access_token",s,"version","realtime-dart/2.7.3"],r,q))
-if(o.gbrJ()&&o.gbrH())o.brR(C.FQ,B.d(["access_token",s],r,q))}case 1:return B.q(v,w)}})
+if(o.gbrJ()&&o.gbrH())o.brR(C.FP,B.d(["access_token",s],r,q))}case 1:return B.q(v,w)}})
 return B.r($async$zf,w)},
 b_7(){var x,w,v=this,u="transport"
 v.a5o(u,"connected to "+v.ga42())
@@ -1501,7 +1501,7 @@ b_5(){var x,w,v=this,u=v.cx,t=u==null,s=t?null:u.b
 if(s!=null)x=new A.bfh(s,t?null:u.c)
 else x=null
 v.cs("transport","close",x,C.eJ)
-if(v.dy===C.D_){v.amz(x)
+if(v.dy===C.CZ){v.amz(x)
 u=v.at
 u===$&&B.c()
 u.a8f()}u=v.z
@@ -1541,7 +1541,7 @@ u.as=s
 t=D.l.j(s)
 u.Q=t
 r=y.z
-u.kG(new A.bau("phoenix",C.FP,B.J(r,r),t))
+u.kG(new A.bau("phoenix",C.FO,B.J(r,r),t))
 x=3
 return B.h(u.zf(u.a),$async$LB)
 case 3:case 1:return B.q(v,w)}})
@@ -2215,7 +2215,7 @@ q.ch.cs(C.eJ,"Attempt "+ ++u.a.a+" to refresh token",null,null)
 t=y.N
 s=A.b3R(B.d(["refresh_token",u.c],t,y.z),q.e,null,null,B.d(["grant_type","refresh_token"],t,t))
 x=3
-return B.h(q.gNK().yO(0,q.d+"/token",C.C4,s),$async$$0)
+return B.h(q.gNK().yO(0,q.d+"/token",C.C3,s),$async$$0)
 case 3:r=e
 q=A.akj(r)
 if(A.czH(r)==null)A.akj(r)
@@ -2240,9 +2240,9 @@ break A}if("PASSWORD_RECOVERY"===w){x=C.nr
 break A}if("SIGNED_IN"===w){x=C.ns
 break A}if("SIGNED_OUT"===w){x=C.lt
 break A}if("TOKEN_REFRESHED"===w){x=C.nt
-break A}if("USER_UPDATED"===w){x=C.ES
-break A}if("MFA_CHALLENGE_VERIFIED"===w){x=C.ER
-break A}x=B.cy7(C.Qr,new A.b3G(r))
+break A}if("USER_UPDATED"===w){x=C.ER
+break A}if("MFA_CHALLENGE_VERIFIED"===w){x=C.EQ
+break A}x=B.cy7(C.Qq,new A.b3G(r))
 break A}v=x
 if(v!=null){u=null
 if(s.h(d,"session")!=null)u=A.akj(s.h(d,"session"))
@@ -2270,13 +2270,13 @@ A.b1t.prototype={
 $1(d){return d.b===J.k(this.a,"factor_type")},
 $S:z+6}
 A.b1u.prototype={
-$0(){return C.ID},
+$0(){return C.IC},
 $S:z+7}
 A.b1v.prototype={
 $1(d){return d.b===J.k(this.a,"status")},
 $S:z+8}
 A.b1w.prototype={
-$0(){return C.IC},
+$0(){return C.IB},
 $S:z+9}
 A.boV.prototype={
 $1(d){var x,w=J.a0(d),v=B.bJ(w.h(d,"id")),u=B.bJ(w.h(d,"user_id")),t=y.s.a(w.h(d,"identity_data"))
@@ -2327,7 +2327,7 @@ $1(d){return this.a.bmE(B.bJ(d))},
 $S:46}
 A.bfa.prototype={
 $0(){var x=this.a,w=x.dy
-if(w!==C.D0&&w!==C.CZ)x.dy=C.D_
+if(w!==C.D_&&w!==C.CY)x.dy=C.CZ
 x.b_5()},
 $S:0}
 A.bfb.prototype={
@@ -2391,7 +2391,7 @@ A.aVE.prototype={
 $0(){var x,w,v=this,u=v.a,t=u.c
 if(t!=null&&!u.a){u=v.b
 return new A.aEh(t.a,t.b,v.c.i("aEh<0>")).rl(new B.fh(u,B.B(u).i("fh<1>")))}x=u.b
-if(x!==C.FF&&u.a){u=v.b
+if(x!==C.FE&&u.a){u=v.b
 w=v.c
 return new A.aEi(w.a(x),w.i("aEi<0>")).rl(new B.fh(u,B.B(u).i("fh<1>")))}u=v.b
 return new B.fh(u,B.B(u).i("fh<1>"))},
@@ -2621,60 +2621,60 @@ B.cpg(b.typeUniverse,JSON.parse('{"a6t":1,"aRU":1,"abU":1,"abT":1,"afD":2,"apg":
 var y=(function rtii(){var x=B.ax
 return{l:x("RJ"),k:x("adh"),b:x("XR"),Q:x("avr<@>"),o:x("avs<@>"),w:x("cL<i,i>"),I:x("cE"),u:x("VJ"),Y:x("j9"),R:x("aK<R>"),x:x("aK<~>"),t:x("H<S3>"),O:x("H<aE>"),U:x("H<bf3>"),m:x("aE"),G:x("V<S3>"),j:x("V<@>"),L:x("a7v"),a:x("X<i,@>"),f:x("X<@,@>"),i:x("We"),P:x("cd"),Z:x("aEn<aa?>"),n:x("a3A"),N:x("i"),e:x("aEu"),_:x("UG"),V:x("X2"),g:x("aFv"),d:x("bt<RJ>"),c:x("bt<@>"),W:x("bt<aa?>"),h:x("bt<~>"),C:x("SW<aE>"),q:x("aH<RJ>"),p:x("aH<R>"),r:x("aH<@>"),v:x("aH<aa?>"),D:x("aH<~>"),y:x("R"),z:x("@"),S:x("X<i,@>?"),s:x("X<@,@>?"),X:x("aa?"),T:x("i?"),H:x("~")}})();(function constants(){var x=a.makeConstList
 C.nr=new A.Pp("PASSWORD_RECOVERY",1,"passwordRecovery")
-C.ER=new A.Pp("MFA_CHALLENGE_VERIFIED",7,"mfaChallengeVerified")
+C.EQ=new A.Pp("MFA_CHALLENGE_VERIFIED",7,"mfaChallengeVerified")
 C.ls=new A.Pp("INITIAL_SESSION",0,"initialSession")
 C.ns=new A.Pp("SIGNED_IN",2,"signedIn")
 C.lt=new A.Pp("SIGNED_OUT",3,"signedOut")
 C.nt=new A.Pp("TOKEN_REFRESHED",4,"tokenRefreshed")
-C.ES=new A.Pp("USER_UPDATED",5,"userUpdated")
+C.ER=new A.Pp("USER_UPDATED",5,"userUpdated")
 C.a5U=new A.auQ(0,"implicit")
 C.wQ=new A.auQ(1,"pkce")
-C.bRh=new A.b2T()
+C.bRi=new A.b2T()
 C.a8R=new A.bed()
-C.bRl=new A.bf4()
-C.bRn=new A.blB()
-C.FF=new A.bI2()
+C.bRm=new A.bf4()
+C.bRo=new A.blB()
+C.FE=new A.bI2()
 C.aa2=new A.Ya(1,"error")
-C.FP=new A.Ya(5,"heartbeat")
-C.FQ=new A.Ya(6,"accessToken")
+C.FO=new A.Ya(5,"heartbeat")
+C.FP=new A.Ya(6,"accessToken")
 C.aa3=new A.Ya(7,"broadcast")
 C.aa4=new A.Ya(8,"presence")
 C.aa5=new A.Ya(9,"postgresChanges")
-C.Hh=new B.aey(!1)
-C.IC=new A.TI(2,"unknown")
-C.ID=new A.TJ(2,"unknown")
+C.Hg=new B.aey(!1)
+C.IB=new A.TI(2,"unknown")
+C.IC=new A.TJ(2,"unknown")
 C.aiq=new A.axI(null,!0,!0,null,C.wQ)
 C.kz=new A.Se("CONFIG",700)
-C.KZ=new A.Se("FINER",400)
+C.KY=new A.Se("FINER",400)
 C.h9=new A.Se("FINEST",300)
 C.eJ=new A.Se("FINE",500)
 C.kA=new A.Se("INFO",800)
 C.ha=new A.Se("WARNING",900)
 C.a5T=new A.Pp("",6,"userDeleted")
-C.Qr=x([C.ls,C.nr,C.ns,C.lt,C.nt,C.ES,C.a5T,C.ER],B.ax("H<Pp>"))
+C.Qq=x([C.ls,C.nr,C.ns,C.lt,C.nt,C.ER,C.a5T,C.EQ],B.ax("H<Pp>"))
 C.ahX=new A.TI(0,"verified")
 C.ahY=new A.TI(1,"unverified")
-C.bao=x([C.ahX,C.ahY,C.IC],B.ax("H<TI>"))
+C.bao=x([C.ahX,C.ahY,C.IB],B.ax("H<TI>"))
 C.ahZ=new A.TJ(0,"totp")
 C.ai_=new A.TJ(1,"phone")
-C.bew=x([C.ahZ,C.ai_,C.ID],B.ax("H<TJ>"))
+C.bew=x([C.ahZ,C.ai_,C.IC],B.ax("H<TJ>"))
 C.mH={"X-Client-Info":0}
-C.bhu=new B.cL(C.mH,["postgrest-dart/2.7.0"],y.w)
-C.bhv=new B.cL(C.mH,["gotrue-dart/2.20.0"],y.w)
-C.bhw=new B.cL(C.mH,["supabase-flutter/2.12.4"],y.w)
-C.bhx=new B.cL(C.mH,["functions-dart/2.5.0"],y.w)
-C.bhy=new B.cL(C.mH,["storage-dart/2.5.2"],y.w)
-C.bhz=new B.cL(C.mH,["realtime-dart/2.7.3"],y.w)
+C.bhv=new B.cL(C.mH,["postgrest-dart/2.7.0"],y.w)
+C.bhw=new B.cL(C.mH,["gotrue-dart/2.20.0"],y.w)
+C.bhx=new B.cL(C.mH,["supabase-flutter/2.12.4"],y.w)
+C.bhy=new B.cL(C.mH,["functions-dart/2.5.0"],y.w)
+C.bhz=new B.cL(C.mH,["storage-dart/2.5.2"],y.w)
+C.bhA=new B.cL(C.mH,["realtime-dart/2.7.3"],y.w)
 C.a0g=new A.aCL(0,"get")
-C.C4=new A.aCL(1,"post")
-C.bRR=new A.ako(0,"global")
+C.C3=new A.aCL(1,"post")
+C.bRS=new A.ako(0,"global")
 C.a0Z=new A.ako(1,"local")
-C.bqw=new A.ako(2,"others")
+C.bqx=new A.ako(2,"others")
 C.po=new A.a3w(0,"connecting")
 C.mZ=new A.a3w(1,"open")
-C.CZ=new A.a3w(2,"disconnecting")
-C.D_=new A.a3w(3,"closed")
-C.D0=new A.a3w(4,"disconnected")})();(function staticFields(){$.cGs=0
+C.CY=new A.a3w(2,"disconnecting")
+C.CZ=new A.a3w(3,"closed")
+C.D_=new A.a3w(4,"disconnected")})();(function staticFields(){$.cGs=0
 $.cVT=B.J(y.N,y.L)
 $.cIv=!1})();(function lazyInitializers(){var x=a.lazyFinal
 x($,"dAa","cNw",()=>{var w=new A.aV1()
@@ -2691,4 +2691,4 @@ return w})
 x($,"dFM","aUc",()=>B.as(B.as(B.XB(),"window"),"localStorage"))
 x($,"dFO","cCV",()=>A.QO("supabase.supabase_flutter"))
 x($,"dDe","XF",()=>new A.aEu(B.e3(null,y.H)))})()};
-(a=>{a["KcIumsP7aL7ewfvOdB24YwfKp+4="]=a.current})($__dart_deferred_initializers__);
+(a=>{a["J9oTsRM97QZydFVWBryhei6A7hA="]=a.current})($__dart_deferred_initializers__);
