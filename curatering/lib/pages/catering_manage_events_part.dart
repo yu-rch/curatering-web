@@ -1689,6 +1689,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
         _selectedManageEventsOrder = raw;
         _manageEventsDetailLoading = false;
       });
+      _startDetailLivePollIfNeeded();
     } catch (e) {
       if (!mounted) return;
       // ignore: invalid_use_of_protected_member
@@ -1696,6 +1697,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
         _manageEventsDetailLoading = false;
         _manageEventsDetailError = '$e';
       });
+      _stopDetailLivePoll();
     }
   }
 

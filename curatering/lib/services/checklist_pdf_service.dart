@@ -5,6 +5,28 @@ import 'package:pdf/widgets.dart' as pw;
 
 import '../models/event_order.dart';
 
+bool checklistStatusIsCompleted(dynamic statusOrBool) {
+  if (statusOrBool == true) return true;
+  if (statusOrBool == false) return false;
+  final status = '$statusOrBool'.trim().toLowerCase();
+  if (status.isEmpty) return false;
+  if (status.contains('not')) return false;
+  return status == 'completed' ||
+      status == 'done' ||
+      status.contains('completed') ||
+      status.contains('done');
+}
+
+String normalizeTaskStatusLabel(dynamic status) {
+  return checklistStatusIsCompleted(status) ? 'completed' : 'not done';
+}
+
+String _pdfGeneratedStamp() {
+  final n = DateTime.now();
+  String two(int v) => v.toString().padLeft(2, '0');
+  return '${n.year}-${two(n.month)}-${two(n.day)} ${two(n.hour)}:${two(n.minute)}';
+}
+
 class ChecklistPdfLine {
   const ChecklistPdfLine({
     required this.item,
@@ -27,7 +49,6 @@ Future<Uint8List> buildChecklistPdf({
   required List<Map<String, dynamic>> checklistRows,
 }) async {
   final items = checklistRows.map((row) {
-    final status = '${row['status'] ?? ''}'.toLowerCase();
     return ChecklistPdfLine(
       item: '${row['item'] ?? row['title'] ?? ''}',
       description: '${row['description'] ?? ''}',
@@ -37,7 +58,7 @@ Future<Uint8List> buildChecklistPdf({
         return (int.tryParse('$q') ?? 1).clamp(1, 999999);
       }(),
       cost: double.tryParse('${row['cost'] ?? row['price'] ?? 0}') ?? 0,
-      isCompleted: status.contains('done') && !status.contains('not'),
+      isCompleted: checklistStatusIsCompleted(row['status'] ?? row['isCompleted']),
     );
   }).toList();
   return buildChecklistPdfBytes(
@@ -55,13 +76,15 @@ Future<Uint8List> buildTaskAssignmentPdf({
   final eventDate = order.scheduleSlots.isNotEmpty
       ? order.scheduleSlots.first.date
       : 'TBD';
-  final headers = ['Employee', 'Task', 'Schedule', 'Status'];
+  final generatedAt = _pdfGeneratedStamp();
+  final headers = ['Employee', 'Task', 'Schedule', 'Budget', 'Status'];
   final rows = taskRows.map((row) {
     return [
       '${row['employee'] ?? row['assignee'] ?? row['assignedTo'] ?? row['assigned_to'] ?? ''}',
       '${row['tasks'] ?? row['task'] ?? row['title'] ?? row['item'] ?? ''}',
       '${row['schedule_of_tasks'] ?? row['notes'] ?? row['description'] ?? ''}',
-      '${row['status'] ?? 'pending'}',
+      '${row['budget'] ?? ''}',
+      normalizeTaskStatusLabel(row['status']),
     ];
   }).where((row) => row.any((cell) => cell.trim().isNotEmpty)).toList();
 
@@ -85,6 +108,10 @@ Future<Uint8List> buildTaskAssignmentPdf({
             'Stage: $stageLabel',
             style: const pw.TextStyle(fontSize: 10),
           ),
+          pw.Text(
+            'Generated: $generatedAt',
+            style: const pw.TextStyle(fontSize: 10),
+          ),
           pw.SizedBox(height: 14),
           pw.Row(
             crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -103,6 +130,10 @@ Future<Uint8List> buildTaskAssignmentPdf({
                     ),
                     pw.Text(
                       'Customer: ${order.customerName}',
+                      style: const pw.TextStyle(fontSize: 10),
+                    ),
+                    pw.Text(
+                      'Transaction: ${order.transactionNo}',
                       style: const pw.TextStyle(fontSize: 10),
                     ),
                   ],
@@ -145,6 +176,7 @@ Future<Uint8List> buildChecklistPdfBytes({
   final eventDate = order.scheduleSlots.isNotEmpty
       ? order.scheduleSlots.first.date
       : 'TBD';
+  final generatedAt = _pdfGeneratedStamp();
 
   final headers = [
     'Item',
@@ -163,7 +195,7 @@ Future<Uint8List> buildChecklistPdfBytes({
       '${item.quantity}',
       item.cost.toStringAsFixed(2),
       total.toStringAsFixed(2),
-      item.isCompleted ? 'Completed' : 'Pending',
+      item.isCompleted ? 'completed' : 'not done',
     ];
   }).toList();
 
@@ -194,6 +226,10 @@ Future<Uint8List> buildChecklistPdfBytes({
               style: const pw.TextStyle(fontSize: 10),
             ),
           ],
+          pw.Text(
+            'Generated: $generatedAt',
+            style: const pw.TextStyle(fontSize: 10),
+          ),
           pw.SizedBox(height: 14),
           pw.Row(
             crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -205,6 +241,7 @@ Future<Uint8List> buildChecklistPdfBytes({
                     _pdfInfoRow('Event', order.eventTitle),
                     _pdfInfoRow('Customer', order.customerName),
                     _pdfInfoRow('Date', eventDate),
+                    _pdfInfoRow('Transaction', order.transactionNo),
                   ],
                 ),
               ),

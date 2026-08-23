@@ -42,7 +42,7 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                 'description': c.description,
                 'quantity': c.quantity,
                 'cost': c.cost,
-                'status': c.isCompleted ? 'done' : 'not done',
+                'status': c.isCompleted ? 'completed' : 'not done',
               },
             )
             .toList();
@@ -54,7 +54,7 @@ extension _ManageEventsDetailExt on _ManageEventsState {
             'description': c.description,
             'quantity': c.quantity,
             'cost': c.price,
-            'status': c.isCompleted ? 'done' : 'not done',
+            'status': c.isCompleted ? 'completed' : 'not done',
           },
         )
         .where((row) => '${row['item']}'.trim().isNotEmpty)
@@ -68,12 +68,38 @@ extension _ManageEventsDetailExt on _ManageEventsState {
     return [...saved, ...extras];
   }
 
+  List<Map<String, dynamic>> _blankTaskAssignmentRows() {
+    return List.generate(
+      5,
+      (_) => <String, dynamic>{
+        'employee': '',
+        'tasks': '',
+        'schedule_of_tasks': '',
+        'budget': '',
+        'status': 'not done',
+      },
+    );
+  }
+
+  String _normalizeTaskRowStatus(dynamic status) {
+    final s = '$status'.trim().toLowerCase();
+    if (s.contains('not')) return 'not done';
+    if (s == 'done' || s == 'completed' || s.contains('completed') || s.contains('done')) {
+      return 'completed';
+    }
+    return 'not done';
+  }
+
   List<Map<String, dynamic>> _taskRowsFromOrder(EventOrderDto order) {
     final raw = order.postAnalysisRaw['task_assignment_rows'];
     if (raw is List) {
       return raw
           .whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e))
+          .map((e) {
+            final m = Map<String, dynamic>.from(e);
+            m['status'] = _normalizeTaskRowStatus(m['status']);
+            return m;
+          })
           .toList();
     }
     return const [];
@@ -423,41 +449,47 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                       ],
                     ),
                   ),
-                  if (stage == 'on_going' && !isCancelled) ...[
+                  if ((stage == 'on_going' ||
+                          stage == 'for_full_payment' ||
+                          stage == 'completed') &&
+                      !isCancelled) ...[
                     const SizedBox(height: 12),
                     _detailSection(
                       'Checklist',
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          const Text(
-                            'Ingredients are loaded from the selected menu dishes.',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                          const SizedBox(height: 8),
-                          OutlinedButton.icon(
-                            onPressed: () => _showChecklistDialog(order),
-                            icon: const Icon(Icons.edit_note, size: 18),
-                            label: Text(
-                              (_isManager || _isSupervisor)
-                                  ? 'Edit checklist'
-                                  : 'View checklist',
+                          if (stage == 'on_going')
+                            const Text(
+                              'Ingredients are loaded from the selected menu dishes.',
+                              style: TextStyle(fontSize: 12),
                             ),
-                          ),
-                          const SizedBox(height: 6),
-                          OutlinedButton.icon(
-                            onPressed: () async {
-                              final rows = _checklistRowsFromOrder(order);
-                              final bytes = await buildChecklistPdf(
-                                order: order,
-                                stageLabel: stage.replaceAll('_', ' ').toUpperCase(),
-                                checklistRows: rows,
-                              );
-                              await _printPdfBytes(bytes, name: 'checklist.pdf');
-                            },
-                            icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
-                            label: const Text('Generate Checklist PDF'),
-                          ),
+                          if (stage == 'on_going') const SizedBox(height: 8),
+                          if (stage == 'on_going')
+                            OutlinedButton.icon(
+                              onPressed: () => _showChecklistDialog(order),
+                              icon: const Icon(Icons.edit_note, size: 18),
+                              label: Text(
+                                (_isManager || _isSupervisor)
+                                    ? 'Edit checklist'
+                                    : 'View checklist',
+                              ),
+                            ),
+                          if (stage == 'on_going' && _isManager) const SizedBox(height: 6),
+                          if (_isManager)
+                            OutlinedButton.icon(
+                              onPressed: () async {
+                                final rows = _checklistRowsFromOrder(order);
+                                final bytes = await buildChecklistPdf(
+                                  order: order,
+                                  stageLabel: stage.replaceAll('_', ' ').toUpperCase(),
+                                  checklistRows: rows,
+                                );
+                                await _printPdfBytes(bytes, name: 'checklist.pdf');
+                              },
+                              icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
+                              label: const Text('Generate Checklist PDF'),
+                            ),
                         ],
                       ),
                     ),
@@ -468,25 +500,27 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            OutlinedButton.icon(
-                              onPressed: () => _showTaskAssignmentEditor(order),
-                              icon: const Icon(Icons.edit_note, size: 18),
-                              label: const Text('Task Assignment Editor'),
-                            ),
-                            const SizedBox(height: 6),
-                            OutlinedButton.icon(
-                              onPressed: () async {
-                                final rows = _taskRowsFromOrder(order);
-                                final bytes = await buildTaskAssignmentPdf(
-                                  order: order,
-                                  stageLabel: stage.replaceAll('_', ' ').toUpperCase(),
-                                  taskRows: rows,
-                                );
-                                await _printPdfBytes(bytes, name: 'task-assignment.pdf');
-                              },
-                              icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
-                              label: const Text('Generate Task Assignment PDF'),
-                            ),
+                            if (stage == 'on_going')
+                              OutlinedButton.icon(
+                                onPressed: () => _showTaskAssignmentEditor(order),
+                                icon: const Icon(Icons.edit_note, size: 18),
+                                label: const Text('Task Assignment Editor'),
+                              ),
+                            if (stage == 'on_going' && _isManager) const SizedBox(height: 6),
+                            if (_isManager)
+                              OutlinedButton.icon(
+                                onPressed: () async {
+                                  final rows = _taskRowsFromOrder(order);
+                                  final bytes = await buildTaskAssignmentPdf(
+                                    order: order,
+                                    stageLabel: stage.replaceAll('_', ' ').toUpperCase(),
+                                    taskRows: rows,
+                                  );
+                                  await _printPdfBytes(bytes, name: 'task-assignment.pdf');
+                                },
+                                icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
+                                label: const Text('Generate Task Assignment PDF'),
+                              ),
                           ],
                         ),
                       ),
@@ -623,10 +657,15 @@ extension _ManageEventsDetailExt on _ManageEventsState {
   }
 
   Future<void> _showTaskAssignmentEditor(EventOrderDto order) async {
-    final rows = List<Map<String, dynamic>>.from(_taskRowsFromOrder(order));
+    _checklistTaskEditorOpen = true;
+    final existing = _taskRowsFromOrder(order);
+    final rows = List<Map<String, dynamic>>.from(
+      existing.isEmpty ? _blankTaskAssignmentRows() : existing,
+    );
     final size = MediaQuery.sizeOf(context);
     final modalHeight = (size.height * 0.58).clamp(320.0, 520.0);
     var isEditingTasks = false;
+    try {
     await showAntdModal<void>(
       context: context,
       title: 'Task assignment — ${order.transactionNo}',
@@ -643,7 +682,7 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                 text: '${row['schedule_of_tasks'] ?? ''}',
               );
               final budget = TextEditingController(text: '${row['budget'] ?? ''}');
-              var status = '${row['status'] ?? 'not done'}';
+              var status = _normalizeTaskRowStatus(row['status']);
               await showDialog<void>(
                 context: ctx,
                 builder: (dctx) => AlertDialog(
@@ -673,11 +712,37 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                         const SizedBox(height: 8),
                         TextField(
                           controller: schedule,
+                          readOnly: true,
                           decoration: const InputDecoration(
                             labelText: 'Schedule',
                             border: OutlineInputBorder(),
                             isDense: true,
+                            suffixIcon: Icon(Icons.calendar_today_outlined, size: 18),
                           ),
+                          onTap: () async {
+                            final now = DateTime.now();
+                            DateTime initial = now;
+                            final existing = schedule.text.trim();
+                            if (RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(existing)) {
+                              final p = existing.split('-');
+                              initial = DateTime(
+                                int.parse(p[0]),
+                                int.parse(p[1]),
+                                int.parse(p[2]),
+                              );
+                            }
+                            final picked = await showDatePicker(
+                              context: dctx,
+                              initialDate: initial,
+                              firstDate: DateTime(now.year - 1),
+                              lastDate: DateTime(now.year + 5),
+                            );
+                            if (picked == null) return;
+                            final y = picked.year.toString().padLeft(4, '0');
+                            final m = picked.month.toString().padLeft(2, '0');
+                            final d = picked.day.toString().padLeft(2, '0');
+                            schedule.text = '$y-$m-$d';
+                          },
                         ),
                         const SizedBox(height: 8),
                         TextField(
@@ -693,7 +758,7 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                           value: status,
                           items: const [
                             DropdownMenuItem(value: 'not done', child: Text('not done')),
-                            DropdownMenuItem(value: 'done', child: Text('done')),
+                            DropdownMenuItem(value: 'completed', child: Text('completed')),
                           ],
                           onChanged: (v) => status = v ?? status,
                           decoration: const InputDecoration(
@@ -717,7 +782,7 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                           row['tasks'] = task.text.trim();
                           row['schedule_of_tasks'] = schedule.text.trim();
                           row['budget'] = budget.text.trim();
-                          row['status'] = status;
+                          row['status'] = _normalizeTaskRowStatus(status);
                         });
                         Navigator.pop(dctx);
                       },
@@ -868,7 +933,7 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                                           width: 110,
                                           child: isEditingTasks
                                               ? DropdownButtonFormField<String>(
-                                            value: '${row['status'] ?? 'not done'}',
+                                            value: _normalizeTaskRowStatus(row['status']),
                                             isExpanded: true,
                                             decoration: const InputDecoration(
                                               border: OutlineInputBorder(),
@@ -884,18 +949,18 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                                                 child: Text('not done'),
                                               ),
                                               DropdownMenuItem(
-                                                value: 'done',
-                                                child: Text('done'),
+                                                value: 'completed',
+                                                child: Text('completed'),
                                               ),
                                             ],
                                             onChanged: (v) {
                                               if (v != null) {
-                                                setModal(() => row['status'] = v);
+                                                setModal(() => row['status'] = _normalizeTaskRowStatus(v));
                                               }
                                             },
                                           )
                                               : Text(
-                                            '${row['status'] ?? 'not done'}',
+                                            _normalizeTaskRowStatus(row['status']),
                                             style: const TextStyle(fontSize: 13),
                                           ),
                                         ),
@@ -989,7 +1054,15 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                               await ManagerCateringApi.instance.patchStageData(
                                 id: order.id,
                                 orderKind: _managerOrderKind(order),
-                                patch: {'task_assignment_rows': rows},
+                                patch: {
+                                  'task_assignment_rows': rows
+                                      .map((r) {
+                                        final m = Map<String, dynamic>.from(r);
+                                        m['status'] = _normalizeTaskRowStatus(m['status']);
+                                        return m;
+                                      })
+                                      .toList(),
+                                },
                               );
                               if (loaderCtx != null &&
                                   Navigator.of(loaderCtx!).canPop()) {
@@ -1027,6 +1100,9 @@ extension _ManageEventsDetailExt on _ManageEventsState {
       ),
       actions: const [],
     );
+    } finally {
+      _checklistTaskEditorOpen = false;
+    }
   }
 
   Widget _buildMenuAllergensDetail(EventOrderDto order) {

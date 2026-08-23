@@ -4065,6 +4065,90 @@ function requireRoles(req, res, next, allowed) {
   return next();
 }
 
+function defaultTaskAssignmentRows() {
+  return Array.from({ length: 5 }, () => ({
+    employee: "",
+    tasks: "",
+    schedule_of_tasks: "",
+    budget: "",
+    status: "not done",
+  }));
+}
+
+function extractChecklistItems(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (raw && typeof raw === "object" && Array.isArray(raw.items)) return raw.items;
+  return [];
+}
+
+function extractChecklistPostAnalysis(raw) {
+  if (raw && typeof raw === "object" && !Array.isArray(raw) && raw.post_analysis) {
+    return typeof raw.post_analysis === "object" ? raw.post_analysis : {};
+  }
+  return {};
+}
+
+function checklistItemCompleted(row) {
+  if (row?.isCompleted === true) return true;
+  const status = String(row?.status ?? "").trim().toLowerCase();
+  if (!status) return false;
+  if (status.includes("not")) return false;
+  return (
+    status === "completed" ||
+    status === "done" ||
+    status.includes("completed") ||
+    status.includes("done")
+  );
+}
+
+function normalizeChecklistItem(raw) {
+  const row = raw && typeof raw === "object" ? raw : {};
+  const title = (row.title ?? row.item ?? "").toString().trim();
+  const description = (row.description ?? "").toString();
+  const qty = Math.max(1, Number(row.quantity) || 1);
+  const price =
+    row.price != null
+      ? Number(row.price)
+      : row.cost != null
+        ? Number(row.cost)
+        : 0;
+  const completed = checklistItemCompleted(row);
+  return {
+    id:
+      row.id && String(row.id).trim()
+        ? String(row.id).trim()
+        : crypto.randomUUID(),
+    title: title || "Item",
+    item: title || "Item",
+    description,
+    price: Number.isFinite(price) ? price : 0,
+    cost: Number.isFinite(price) ? price : 0,
+    quantity: qty,
+    assignedTo: (row.assignedTo ?? row.assigned_to ?? "").toString(),
+    isCompleted: completed,
+    status: completed ? "completed" : "not done",
+    inventoryId: row.inventoryId ? String(row.inventoryId) : null,
+  };
+}
+
+function packChecklistForStorage(items, existingChecklistRaw) {
+  const post = extractChecklistPostAnalysis(existingChecklistRaw);
+  return {
+    items,
+    post_analysis: post && typeof post === "object" ? post : {},
+  };
+}
+
+function structuralChecklistFingerprint(item) {
+  return JSON.stringify({
+    title: String(item.title ?? item.item ?? "").trim().toLowerCase(),
+    description: String(item.description ?? "").trim(),
+    quantity: Number(item.quantity) || 1,
+    price: Number(item.price ?? item.cost) || 0,
+    inventoryId: item.inventoryId ? String(item.inventoryId) : null,
+  });
+}
+
 /** Manager/supervisor/admin JWT guard for restaurant POS and loyalty config routes. */
 function managerAuthRequired(req, res, next) {
   const token = req.headers.authorization?.replace('Bearer ', '');
@@ -7509,7 +7593,7 @@ app.post(
   "/api/events/orders/:orderId/complete-post-analysis",
   authRequired,
   (req, res, next) =>
-    requireRoles(req, res, next, new Set(["manager", "supervisor", "admin"])),
+    requireRoles(req, res, next, new Set(["manager", "admin", "super_admin"])),
   async (req, res) => {
     try {
       const { orderId } = req.params;
@@ -7588,7 +7672,7 @@ app.post(
   "/api/events/orders/:orderId/complete",
   authRequired,
   (req, res, next) =>
-    requireRoles(req, res, next, new Set(["manager", "supervisor", "admin"])),
+    requireRoles(req, res, next, new Set(["manager", "admin", "super_admin"])),
   async (req, res) => {
     try {
       const { orderId } = req.params;
@@ -7680,6 +7764,41 @@ app.patch(
         return res.status(400).json({ message: "patch object is required" });
       }
 
+      const role = req.user?.role;
+      const isSupervisorOnly = role === "supervisor";
+      if (isSupervisorOnly) {
+        const allowed = new Set(["task_assignment_rows", "task_assignment"]);
+        const keys = Object.keys(patch);
+        const blocked = keys.filter((k) => !allowed.has(k));
+        if (blocked.length > 0) {
+          return res.status(403).json({
+            message: "supervisor can only update task assignment fields",
+            blocked,
+          });
+        }
+      }
+
+      if (Array.isArray(patch.task_assignment_rows)) {
+        patch.task_assignment_rows = patch.task_assignment_rows.map((raw) => {
+          const row = raw && typeof raw === "object" ? raw : {};
+          const statusRaw = String(row.status ?? "not done").trim().toLowerCase();
+          const completed =
+            statusRaw === "completed" ||
+            statusRaw === "done" ||
+            (statusRaw.includes("done") && !statusRaw.includes("not"));
+          return {
+            employee: String(row.employee ?? "").trim(),
+            tasks: String(row.tasks ?? row.task ?? "").trim(),
+            schedule_of_tasks: String(row.schedule_of_tasks ?? "").trim(),
+            budget: String(row.budget ?? "").trim(),
+            status: completed ? "completed" : "not done",
+          };
+        });
+        if (patch.task_assignment_rows.length === 0) {
+          patch.task_assignment_rows = defaultTaskAssignmentRows();
+        }
+      }
+
       const tableName =
         orderKind === "catering" ? "catering_orders" : "event_orders";
 
@@ -7704,6 +7823,12 @@ app.patch(
             ? alt.rows[0].post_analysis
             : {};
         const merged = { ...current, ...patch };
+        if (
+          !Array.isArray(merged.task_assignment_rows) ||
+          merged.task_assignment_rows.length === 0
+        ) {
+          merged.task_assignment_rows = defaultTaskAssignmentRows();
+        }
         await pool.query(
           `UPDATE ${altTable}
            SET post_analysis = $1::jsonb, updated_by = $2, updated_at = now()
@@ -7725,6 +7850,12 @@ app.patch(
           ? existing.rows[0].post_analysis
           : {};
       const merged = { ...current, ...patch };
+      if (
+        !Array.isArray(merged.task_assignment_rows) ||
+        merged.task_assignment_rows.length === 0
+      ) {
+        merged.task_assignment_rows = defaultTaskAssignmentRows();
+      }
       await pool.query(
         `UPDATE ${tableName}
          SET post_analysis = $1::jsonb, updated_by = $2, updated_at = now()
@@ -8712,7 +8843,17 @@ async function registerRoutesAfterDbInit() {
   }
 
     // Replace entire checklist (bulk save from staff UI)
-    app.put('/api/events/orders/:orderId/checklist', authRequired, async (req, res) => {
+    app.put(
+      '/api/events/orders/:orderId/checklist',
+      authRequired,
+      (req, res, next) =>
+        requireRoles(
+          req,
+          res,
+          next,
+          new Set(["manager", "supervisor", "admin", "super_admin"]),
+        ),
+      async (req, res) => {
       try {
         const { orderId } = req.params;
         const { checklist, deductInventory } = req.body || {};
@@ -8721,9 +8862,9 @@ async function registerRoutesAfterDbInit() {
         }
 
         const orderResult = await pool.query(
-          `SELECT 'event_orders' as table_name FROM event_orders WHERE id = $1
+          `SELECT 'event_orders' as table_name, checklist FROM event_orders WHERE id = $1
            UNION ALL
-           SELECT 'catering_orders' FROM catering_orders WHERE id = $1
+           SELECT 'catering_orders', checklist FROM catering_orders WHERE id = $1
            LIMIT 1`,
           [orderId],
         );
@@ -8731,51 +8872,40 @@ async function registerRoutesAfterDbInit() {
           return res.status(404).json({ error: 'Order not found' });
         }
         const tableName = orderResult.rows[0].table_name;
+        const existingRaw = orderResult.rows[0].checklist;
+        const existingItems = extractChecklistItems(existingRaw).map(normalizeChecklistItem);
+        const normalized = checklist.map(normalizeChecklistItem);
 
-        const normalized = checklist.map((raw) => {
-          const row = raw && typeof raw === 'object' ? raw : {};
-          const title = (row.title ?? row.item ?? '').toString().trim();
-          const description = (row.description ?? '').toString();
-          const qty = Math.max(1, Number(row.quantity) || 1);
-          const price =
-            row.price != null
-              ? Number(row.price)
-              : row.cost != null
-                ? Number(row.cost)
-                : 0;
-          return {
-            id:
-              row.id && String(row.id).trim()
-                ? String(row.id).trim()
-                : crypto.randomUUID(),
-            title: title || 'Item',
-            description,
-            price: Number.isFinite(price) ? price : 0,
-            quantity: qty,
-            assignedTo: (row.assignedTo ?? '').toString(),
-            isCompleted: row.isCompleted === true,
-            inventoryId: row.inventoryId ? String(row.inventoryId) : null,
-          };
-        });
+        const role = req.user?.role;
+        if (role === 'supervisor') {
+          if (normalized.length !== existingItems.length) {
+            return res.status(403).json({
+              error: 'supervisor can only update checklist status',
+            });
+          }
+          for (let i = 0; i < normalized.length; i++) {
+            if (
+              structuralChecklistFingerprint(normalized[i]) !==
+              structuralChecklistFingerprint(existingItems[i])
+            ) {
+              return res.status(403).json({
+                error: 'supervisor can only update checklist status',
+              });
+            }
+          }
+        }
 
-        const shouldAdvanceToFullPayment =
-          normalized.length > 0 && normalized.every((item) => item.isCompleted === true);
+        const packed = packChecklistForStorage(normalized, existingRaw);
         const result = await pool.query(
           `UPDATE ${tableName}
            SET checklist = $1::jsonb,
-               status = CASE
-                 WHEN $3::boolean
-                   AND status IN ('on_going', 'ongoing', 'for_processing')
-                   THEN 'for_full_payment'
-                 ELSE status
-               END,
                updated_at = now()
            WHERE id = $2
            RETURNING checklist, status`,
-          [JSON.stringify(normalized), orderId, shouldAdvanceToFullPayment],
+          [JSON.stringify(packed), orderId],
         );
 
-        if (deductInventory === true) {
+        if (deductInventory === true && role !== 'supervisor') {
           for (const item of normalized) {
             if (!item.inventoryId) continue;
             const qty = Math.max(0, Number(item.quantity) || 0);
@@ -8857,16 +8987,25 @@ async function registerRoutesAfterDbInit() {
     );
 
     // Checklist CRUD operations
-    app.put('/api/events/orders/:orderId/checklist/:itemId', authRequired, async (req, res) => {
+    app.put(
+      '/api/events/orders/:orderId/checklist/:itemId',
+      authRequired,
+      (req, res, next) =>
+        requireRoles(
+          req,
+          res,
+          next,
+          new Set(["manager", "supervisor", "admin", "super_admin"]),
+        ),
+      async (req, res) => {
       try {
         const { orderId, itemId } = req.params;
-        const { isCompleted, title, description, price, assignedTo } = req.body;
+        const body = req.body || {};
         
-        // Determine which table to use
         const orderResult = await pool.query(
-          `SELECT 'event_orders' as table_name FROM event_orders WHERE id = $1
+          `SELECT 'event_orders' as table_name, checklist FROM event_orders WHERE id = $1
            UNION ALL
-           SELECT 'catering_orders' FROM catering_orders WHERE id = $1
+           SELECT 'catering_orders', checklist FROM catering_orders WHERE id = $1
            LIMIT 1`,
           [orderId]
         );
@@ -8876,27 +9015,39 @@ async function registerRoutesAfterDbInit() {
         }
         
         const tableName = orderResult.rows[0].table_name;
-        
-        // Update checklist item in the correct table
-        const result = await pool.query(
-          `UPDATE ${tableName} 
-           SET checklist = jsonb_set(
-             checklist,
-             array(
-               (SELECT idx FROM jsonb_array_elements(checklist) WITH ORDINALITY arr(elem, idx) 
-                WHERE elem->>'id' = $2)::int - 1
-             ),
-             $3::jsonb,
-             true
-           )
-           WHERE id = $1
-           RETURNING checklist`,
-          [orderId, itemId, JSON.stringify({ id: itemId, title, description, price, assignedTo, isCompleted })]
-        );
-        
-        if (result.rows.length === 0) {
+        const existingRaw = orderResult.rows[0].checklist;
+        const items = extractChecklistItems(existingRaw).map(normalizeChecklistItem);
+        const idx = items.findIndex((it) => String(it.id) === String(itemId));
+        if (idx < 0) {
           return res.status(404).json({ error: 'Checklist item not found' });
         }
+
+        const role = req.user?.role;
+        const nextItem = normalizeChecklistItem({
+          ...items[idx],
+          ...body,
+          id: itemId,
+        });
+        if (role === 'supervisor') {
+          if (
+            structuralChecklistFingerprint(nextItem) !==
+            structuralChecklistFingerprint(items[idx])
+          ) {
+            return res.status(403).json({
+              error: 'supervisor can only update checklist status',
+            });
+          }
+        }
+        items[idx] = nextItem;
+        const packed = packChecklistForStorage(items, existingRaw);
+        
+        const result = await pool.query(
+          `UPDATE ${tableName} 
+           SET checklist = $1::jsonb, updated_at = now()
+           WHERE id = $2
+           RETURNING checklist`,
+          [JSON.stringify(packed), orderId]
+        );
         
         res.json({ checklist: result.rows[0].checklist });
       } catch (error) {
@@ -8905,16 +9056,20 @@ async function registerRoutesAfterDbInit() {
       }
     });
 
-    app.post('/api/events/orders/:orderId/checklist', authRequired, async (req, res) => {
+    app.post(
+      '/api/events/orders/:orderId/checklist',
+      authRequired,
+      (req, res, next) =>
+        requireRoles(req, res, next, new Set(["manager", "admin", "super_admin"])),
+      async (req, res) => {
       try {
         const { orderId } = req.params;
-        const item = req.body;
+        const item = normalizeChecklistItem(req.body);
         
-        // Determine which table to use
         const orderResult = await pool.query(
-          `SELECT 'event_orders' as table_name FROM event_orders WHERE id = $1
+          `SELECT 'event_orders' as table_name, checklist FROM event_orders WHERE id = $1
            UNION ALL
-           SELECT 'catering_orders' FROM catering_orders WHERE id = $1
+           SELECT 'catering_orders', checklist FROM catering_orders WHERE id = $1
            LIMIT 1`,
           [orderId]
         );
@@ -8924,11 +9079,14 @@ async function registerRoutesAfterDbInit() {
         }
         
         const tableName = orderResult.rows[0].table_name;
-        
-        // Add checklist item to the correct table
+        const existingRaw = orderResult.rows[0].checklist;
+        const items = extractChecklistItems(existingRaw).map(normalizeChecklistItem);
+        items.push(item);
+        const packed = packChecklistForStorage(items, existingRaw);
+
         const result = await pool.query(
-          `UPDATE ${tableName} SET checklist = checklist || $1::jsonb WHERE id = $2 RETURNING checklist`,
-          [JSON.stringify(item), orderId]
+          `UPDATE ${tableName} SET checklist = $1::jsonb, updated_at = now() WHERE id = $2 RETURNING checklist`,
+          [JSON.stringify(packed), orderId]
         );
         
         res.json({ checklist: result.rows[0].checklist });
@@ -8938,15 +9096,19 @@ async function registerRoutesAfterDbInit() {
       }
     });
 
-    app.delete('/api/events/orders/:orderId/checklist/:itemId', authRequired, async (req, res) => {
+    app.delete(
+      '/api/events/orders/:orderId/checklist/:itemId',
+      authRequired,
+      (req, res, next) =>
+        requireRoles(req, res, next, new Set(["manager", "admin", "super_admin"])),
+      async (req, res) => {
       try {
         const { orderId, itemId } = req.params;
         
-        // Determine which table to use
         const orderResult = await pool.query(
-          `SELECT 'event_orders' as table_name FROM event_orders WHERE id = $1
+          `SELECT 'event_orders' as table_name, checklist FROM event_orders WHERE id = $1
            UNION ALL
-           SELECT 'catering_orders' FROM catering_orders WHERE id = $1
+           SELECT 'catering_orders', checklist FROM catering_orders WHERE id = $1
            LIMIT 1`,
           [orderId]
         );
@@ -8956,18 +9118,18 @@ async function registerRoutesAfterDbInit() {
         }
         
         const tableName = orderResult.rows[0].table_name;
-        
-        // Remove checklist item from the correct table
+        const existingRaw = orderResult.rows[0].checklist;
+        const items = extractChecklistItems(existingRaw)
+          .map(normalizeChecklistItem)
+          .filter((it) => String(it.id) !== String(itemId));
+        const packed = packChecklistForStorage(items, existingRaw);
+
         const result = await pool.query(
           `UPDATE ${tableName} 
-           SET checklist = (
-             SELECT jsonb_agg(elem) 
-             FROM jsonb_array_elements(checklist) elem 
-             WHERE elem->>'id' != $1
-           )
+           SET checklist = $1::jsonb, updated_at = now()
            WHERE id = $2
            RETURNING checklist`,
-          [itemId, orderId]
+          [JSON.stringify(packed), orderId]
         );
         
         res.json({ checklist: result.rows[0].checklist });

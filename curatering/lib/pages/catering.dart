@@ -473,6 +473,8 @@ class _ManageEventsState extends State<ManageEvents>
 
   bool _ordersLoading = false;
   bool _isSubmittingOrder = false; // Loading state for form submission
+  bool _checklistTaskEditorOpen = false;
+  Timer? _detailLivePollTimer;
   List<EventOrderDto> _onlineInquiryOrders = const <EventOrderDto>[];
   List<EventOrderDto> _processingOrdersDto = const <EventOrderDto>[];
   List<EventOrderDto> _postAnalysisOrdersDto = const <EventOrderDto>[];
@@ -507,6 +509,7 @@ class _ManageEventsState extends State<ManageEvents>
         _selectedManageEventsOrder = null;
         _manageEventsDetailError = null;
       });
+      _stopDetailLivePoll();
     });
     _allDishes = MenuStore.instance.activeDishes;
     MenuStore.instance.addListener(_onMenuStoreChanged);
@@ -543,6 +546,7 @@ class _ManageEventsState extends State<ManageEvents>
 
   @override
   void dispose() {
+    _stopDetailLivePoll();
     _tabController.dispose();
     AuthSession.instance.currentUser.removeListener(_handleAuthSessionChange);
     MenuStore.instance.removeListener(_onMenuStoreChanged);
@@ -562,6 +566,46 @@ class _ManageEventsState extends State<ManageEvents>
     _newEventAdditionalCostAmountController.dispose();
     _foodTabController?.dispose();
     super.dispose();
+  }
+
+  void _stopDetailLivePoll() {
+    _detailLivePollTimer?.cancel();
+    _detailLivePollTimer = null;
+  }
+
+  void _startDetailLivePollIfNeeded() {
+    _stopDetailLivePoll();
+    final order = _selectedManageEventsOrder;
+    if (order == null) return;
+    final stage = _isSupervisor
+        ? 'on_going'
+        : _ManageEventsState._stageKeys[_tabController.index
+            .clamp(0, _ManageEventsState._stageKeys.length - 1)];
+    if (stage != 'on_going') return;
+    _detailLivePollTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      unawaited(_pollDetailLive());
+    });
+  }
+
+  Future<void> _pollDetailLive() async {
+    if (!mounted || _checklistTaskEditorOpen || _manageEventsDetailLoading) return;
+    final current = _selectedManageEventsOrder;
+    if (current == null) return;
+    try {
+      final roleType =
+          AuthSession.instance.currentRole == Role.supervisor
+              ? 'supervisor'
+              : 'manager';
+      final fresh = await EventsApi.instance.getEventOrder(
+        orderId: current.id,
+        roleType: roleType,
+      );
+      if (!mounted || _checklistTaskEditorOpen) return;
+      if (_selectedManageEventsOrder?.id != current.id) return;
+      setState(() {
+        _selectedManageEventsOrder = fresh;
+      });
+    } catch (_) {}
   }
 
   void _mutateTableState(VoidCallback fn) {
@@ -4437,6 +4481,8 @@ class _ManageEventsState extends State<ManageEvents>
   }
 
   Future<void> _showChecklistDialog(EventOrderDto order) async {
+    _checklistTaskEditorOpen = true;
+    try {
     EventOrderDto sourceOrder = order;
     try {
       final roleType =
@@ -5234,6 +5280,9 @@ class _ManageEventsState extends State<ManageEvents>
     );
     } finally {
       newItemController.dispose();
+    }
+    } finally {
+      _checklistTaskEditorOpen = false;
     }
   }
 
@@ -8914,8 +8963,9 @@ class _ManageEventsState extends State<ManageEvents>
 
       final checklistPayload =
           editableItems
-              .map(
-                (item) => {
+              .map((item) {
+                final status = item.isCompleted ? 'completed' : 'not done';
+                return <String, dynamic>{
                   'item': item.item,
                   'title': item.item,
                   'description': item.description,
@@ -8923,30 +8973,16 @@ class _ManageEventsState extends State<ManageEvents>
                   'cost': item.cost,
                   'price': item.cost,
                   'isCompleted': item.isCompleted,
-                  if (item.inventoryId != null)
-                    'inventoryId': item.inventoryId,
-                },
-              )
+                  'status': status,
+                  if (item.inventoryId != null) 'inventoryId': item.inventoryId,
+                };
+              })
               .toList();
 
       await EventsApi.instance.replaceChecklist(
         orderId: order.id,
         deductInventory: _isCateringPlusEventOrder(order),
         items: checklistPayload,
-      );
-
-      final orderKind =
-          order.orderKind == 'catering'
-              ? 'catering'
-              : order.orderKind == 'event'
-                  ? 'event'
-                  : (order.orderType.toLowerCase() == 'catering'
-                      ? 'catering'
-                      : 'event');
-      await ManagerCateringApi.instance.patchStageData(
-        id: order.id,
-        orderKind: orderKind,
-        patch: {'checklist': checklistPayload},
       );
 
       if (loaderContext != null && Navigator.of(loaderContext!).canPop()) {
@@ -8988,67 +9024,29 @@ class _ManageEventsState extends State<ManageEvents>
     List<ChecklistItem> editableItems,
   ) async {
     try {
-      // Generate PDF content (simplified for demo)
-      _generatePDFContent(order, editableItems);
-
-      // Create download link (in a real implementation, this would generate and serve the PDF)
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('PDF generated successfully!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
+      final rows = editableItems
+          .map(
+            (item) => {
+              'item': item.item,
+              'description': item.description,
+              'quantity': item.quantity,
+              'cost': item.cost,
+              'status': item.isCompleted ? 'completed' : 'not done',
+            },
+          )
+          .toList();
+      final bytes = await buildChecklistPdf(
+        order: order,
+        stageLabel: 'CHECKLIST',
+        checklistRows: rows,
+      );
+      await Printing.sharePdf(bytes: bytes, filename: 'checklist.pdf');
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to generate PDF: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('PDF failed: $e')),
         );
       }
     }
-  }
-
-  String _generatePDFContent(
-    EventOrderDto order,
-    List<ChecklistItem> editableItems,
-  ) {
-    final buffer = StringBuffer();
-    buffer.writeln('EVENT CHECKLIST');
-    buffer.writeln('================');
-    buffer.writeln('Event: ${order.eventTitle}');
-    buffer.writeln('Customer: ${order.customerName}');
-    buffer.writeln(
-      'Date: ${order.scheduleSlots.isNotEmpty ? order.scheduleSlots.first.date : "TBD"}',
-    );
-    buffer.writeln('');
-
-    buffer.writeln('CHECKLIST ITEMS:');
-    buffer.writeln('----------------');
-
-    for (final item in editableItems) {
-      buffer.writeln('');
-      buffer.writeln('Item: ${item.item}');
-      buffer.writeln('Description: ${item.description}');
-      buffer.writeln('Quantity: ${item.quantity}');
-      buffer.writeln('Price per item: PHP ${item.cost.toStringAsFixed(2)}');
-      buffer.writeln(
-        'Total Price: PHP ${(item.cost * item.quantity).toStringAsFixed(2)}',
-      );
-      buffer.writeln('Status: ${item.isCompleted ? "Completed" : "Pending"}');
-      buffer.writeln('----------------');
-    }
-
-    final totalCost = editableItems.fold(
-      0.0,
-      (sum, item) => sum + (item.cost * item.quantity),
-    );
-    buffer.writeln('');
-    buffer.writeln('TOTAL COST: PHP ${totalCost.toStringAsFixed(2)}');
-
-    return buffer.toString();
   }
 }

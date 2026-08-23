@@ -410,6 +410,35 @@ class EventsApi {
     return const <dynamic>[];
   }
 
+  /// Plain array or mobile-packed `{ items: [...] }` (optionally with `post_analysis`).
+  List<dynamic> _checklistItemsList(dynamic value) {
+    if (value is List) return value;
+    if (value is Map) {
+      final items = value['items'];
+      if (items is List) return items;
+      return const <dynamic>[];
+    }
+    if (value is String) {
+      final trimmed = value.trim();
+      if (trimmed.isEmpty) return const <dynamic>[];
+      try {
+        return _checklistItemsList(jsonDecode(trimmed));
+      } catch (_) {}
+    }
+    return const <dynamic>[];
+  }
+
+  bool _checklistItemIsCompleted(Map<String, dynamic> cc) {
+    if (cc['isCompleted'] == true) return true;
+    final status = '${cc['status'] ?? ''}'.trim().toLowerCase();
+    if (status.isEmpty) return false;
+    if (status.contains('not')) return false;
+    return status == 'completed' ||
+        status == 'done' ||
+        status.contains('completed') ||
+        status.contains('done');
+  }
+
   List<String> _toStringList(dynamic value) {
     return _toList(value)
         .map((e) => e.toString().trim())
@@ -594,22 +623,22 @@ class EventsApi {
 
     final checklistRaw = map['checklist'];
     final checklist = <ChecklistItemDto>[];
-    for (final c in _toList(checklistRaw)) {
+    for (final c in _checklistItemsList(checklistRaw)) {
       final cc = _toMap(c);
       if (cc.isEmpty) continue;
       checklist.add(
         ChecklistItemDto(
-          id: cc['id'] as String? ?? '',
-          title: cc['title'] as String? ?? cc['item'] as String? ?? '',
-          description: cc['description'] as String? ?? '',
+          id: (cc['id'] ?? '').toString(),
+          title: (cc['title'] ?? cc['item'] ?? '').toString(),
+          description: (cc['description'] ?? '').toString(),
           price: _toDouble(cc['price'] ?? cc['cost']),
           quantity: () {
             final q = cc['quantity'] ?? cc['qty'];
             if (q is num) return q.toInt().clamp(1, 999999);
             return (int.tryParse('$q') ?? 1).clamp(1, 999999);
           }(),
-          isCompleted: cc['isCompleted'] as bool? ?? false,
-          assignedTo: cc['assignedTo'] as String? ?? '',
+          isCompleted: _checklistItemIsCompleted(cc),
+          assignedTo: (cc['assignedTo'] ?? cc['assigned_to'] ?? '').toString(),
         ),
       );
     }
