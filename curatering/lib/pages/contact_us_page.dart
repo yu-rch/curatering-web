@@ -53,9 +53,6 @@ class ContactUsPage extends StatefulWidget {
 class _ContactUsPageState extends State<ContactUsPage> {
   final _feedbackFormKey = GlobalKey<FormState>();
   final _mailFormKey = GlobalKey<FormState>();
-  final _emailSectionKey = GlobalKey();
-  final _feedbackSectionKey = GlobalKey();
-  final _faqSectionKey = GlobalKey();
   final _feedbackNameController = TextEditingController();
   final _feedbackEmailController = TextEditingController();
   final _feedbackMessageController = TextEditingController();
@@ -68,6 +65,23 @@ class _ContactUsPageState extends State<ContactUsPage> {
   final _mailMessageController = TextEditingController();
   bool _isSubmittingMail = false;
 
+  /// 0 = Mail us, 1 = Feedback, 2 = FAQ
+  int _sideTabIndex = 0;
+
+  static const _mailFieldDecoration = InputDecoration(
+    labelText: '',
+    labelStyle: TextStyle(color: Colors.white70),
+    hintStyle: TextStyle(color: Colors.white54),
+    border: OutlineInputBorder(),
+    enabledBorder: OutlineInputBorder(
+      borderSide: BorderSide(color: Colors.white38),
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderSide: BorderSide(color: Color(0xFFFFC024)),
+    ),
+    isDense: true,
+  );
+
   @override
   void initState() {
     super.initState();
@@ -79,17 +93,6 @@ class _ContactUsPageState extends State<ContactUsPage> {
 
   void _onContent() {
     if (mounted) setState(() {});
-  }
-
-  void _scrollTo(GlobalKey key) {
-    final ctx = key.currentContext;
-    if (ctx == null) return;
-    Scrollable.ensureVisible(
-      ctx,
-      duration: const Duration(milliseconds: 350),
-      curve: Curves.easeInOut,
-      alignment: 0.08,
-    );
   }
 
   @override
@@ -205,9 +208,100 @@ class _ContactUsPageState extends State<ContactUsPage> {
     await openOsmMap(address);
   }
 
+  Widget _buildSideTabNav({required bool vertical}) {
+    final tabs = <({IconData icon, String label})>[
+      (icon: Icons.email_outlined, label: 'Mail us'),
+      (icon: Icons.rate_review_outlined, label: 'Feedback'),
+      (icon: Icons.help_outline, label: 'FAQ'),
+    ];
+    Widget tabButton(int i) {
+      final selected = _sideTabIndex == i;
+      final t = tabs[i];
+      return Material(
+        color: selected ? const Color(0xFF1E1E1E) : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => setState(() => _sideTabIndex = i),
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: vertical ? 12 : 14,
+              vertical: vertical ? 12 : 10,
+            ),
+            child: Row(
+              mainAxisSize: vertical ? MainAxisSize.max : MainAxisSize.min,
+              children: [
+                Icon(
+                  t.icon,
+                  size: 18,
+                  color: selected ? const Color(0xFFFFC024) : Colors.grey.shade700,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  t.label,
+                  style: TextStyle(
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    fontSize: 13,
+                    color: selected ? Colors.white : const Color(0xFF1E1E1E),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (vertical) {
+      return Container(
+        width: 168,
+        padding: const EdgeInsets.all(6),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.grey.shade300),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (var i = 0; i < tabs.length; i++) ...[
+              if (i > 0) const SizedBox(height: 4),
+              tabButton(i),
+            ],
+          ],
+        ),
+      );
+    }
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (var i = 0; i < tabs.length; i++) ...[
+            if (i > 0) const SizedBox(width: 6),
+            tabButton(i),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActiveSideTab(WebsiteContentStore w) {
+    switch (_sideTabIndex) {
+      case 1:
+        return _buildFeedbackModule();
+      case 2:
+        return _buildFaqSection(w);
+      case 0:
+      default:
+        return _buildEmailUsHero(w);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final w = WebsiteContentStore.instance;
+    final desktop = isDesktop(context);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
@@ -221,140 +315,78 @@ class _ContactUsPageState extends State<ContactUsPage> {
             child: CenteredViewportScroll(
               padding: websitePagePadding(context, vertical: 12),
               mainAxisAlignment: MainAxisAlignment.start,
-              child:
-                  isDesktop(context)
-                      ? Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            flex: 2,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'GET IN TOUCH',
-                                  style: GoogleFonts.getFont(
-                                    _primaryFont,
-                                    fontSize: 28,
-                                    fontWeight: FontWeight.bold,
-                                    color: const Color(0xFF1E1E1E),
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                WebsiteRichText(
-                                  value: w.contactPageIntro,
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    color: Colors.grey.shade600,
-                                    height: 1.35,
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-                                Wrap(
-                                  spacing: 8,
-                                  runSpacing: 8,
-                                  children: [
-                                    ActionChip(
-                                      avatar: const Icon(Icons.email_outlined, size: 16),
-                                      label: const Text('Email us'),
-                                      onPressed: () => _scrollTo(_emailSectionKey),
-                                    ),
-                                    ActionChip(
-                                      avatar: const Icon(Icons.rate_review_outlined, size: 16),
-                                      label: const Text('Feedback'),
-                                      onPressed: () => _scrollTo(_feedbackSectionKey),
-                                    ),
-                                    ActionChip(
-                                      avatar: const Icon(Icons.help_outline, size: 16),
-                                      label: const Text('FAQ'),
-                                      onPressed: () => _scrollTo(_faqSectionKey),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 12),
-                                KeyedSubtree(
-                                  key: _emailSectionKey,
-                                  child: _buildEmailUsHero(w),
-                                ),
-                                const SizedBox(height: 12),
-                                KeyedSubtree(
-                                  key: _feedbackSectionKey,
-                                  child: _buildFeedbackModule(),
-                                ),
-                                const SizedBox(height: 20),
-                                KeyedSubtree(
-                                  key: _faqSectionKey,
-                                  child: _buildFaqSection(w),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 24),
-                          Expanded(child: _buildContactInfo(w)),
-                        ],
-                      )
-                      : Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'GET IN TOUCH',
-                            style: GoogleFonts.getFont(
-                              _primaryFont,
-                              fontSize: 28,
-                              fontWeight: FontWeight.bold,
-                              color: const Color(0xFF1E1E1E),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          WebsiteRichText(
-                            value: w.contactPageIntro,
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.grey.shade600,
-                              height: 1.35,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
+              child: desktop
+                  ? Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          flex: 2,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              ActionChip(
-                                avatar: const Icon(Icons.email_outlined, size: 16),
-                                label: const Text('Email us'),
-                                onPressed: () => _scrollTo(_emailSectionKey),
+                              Text(
+                                'GET IN TOUCH',
+                                style: GoogleFonts.getFont(
+                                  _primaryFont,
+                                  fontSize: 28,
+                                  fontWeight: FontWeight.bold,
+                                  color: const Color(0xFF1E1E1E),
+                                ),
                               ),
-                              ActionChip(
-                                avatar: const Icon(Icons.rate_review_outlined, size: 16),
-                                label: const Text('Feedback'),
-                                onPressed: () => _scrollTo(_feedbackSectionKey),
+                              const SizedBox(height: 8),
+                              WebsiteRichText(
+                                value: w.contactPageIntro,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey.shade600,
+                                  height: 1.35,
+                                ),
                               ),
-                              ActionChip(
-                                avatar: const Icon(Icons.help_outline, size: 16),
-                                label: const Text('FAQ'),
-                                onPressed: () => _scrollTo(_faqSectionKey),
+                              const SizedBox(height: 16),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _buildSideTabNav(vertical: true),
+                                  const SizedBox(width: 16),
+                                  Expanded(child: _buildActiveSideTab(w)),
+                                ],
                               ),
                             ],
                           ),
-                          const SizedBox(height: 12),
-                          KeyedSubtree(
-                            key: _emailSectionKey,
-                            child: _buildEmailUsHero(w),
+                        ),
+                        const SizedBox(width: 24),
+                        Expanded(child: _buildContactInfo(w)),
+                      ],
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'GET IN TOUCH',
+                          style: GoogleFonts.getFont(
+                            _primaryFont,
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                            color: const Color(0xFF1E1E1E),
                           ),
-                          const SizedBox(height: 12),
-                          KeyedSubtree(
-                            key: _feedbackSectionKey,
-                            child: _buildFeedbackModule(),
+                        ),
+                        const SizedBox(height: 8),
+                        WebsiteRichText(
+                          value: w.contactPageIntro,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.grey.shade600,
+                            height: 1.35,
                           ),
-                          const SizedBox(height: 16),
-                          _buildContactInfo(w),
-                          const SizedBox(height: 20),
-                          KeyedSubtree(
-                            key: _faqSectionKey,
-                            child: _buildFaqSection(w),
-                          ),
-                        ],
-                      ),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildSideTabNav(vertical: false),
+                        const SizedBox(height: 12),
+                        _buildActiveSideTab(w),
+                        const SizedBox(height: 16),
+                        _buildContactInfo(w),
+                      ],
+                    ),
             ),
           ),
         ],
@@ -420,11 +452,9 @@ class _ContactUsPageState extends State<ContactUsPage> {
               const SizedBox(height: 12),
               TextFormField(
                 controller: _mailNameController,
-                decoration: const InputDecoration(
-                  labelText: 'Name',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
+                style: const TextStyle(color: Colors.white),
+                cursorColor: const Color(0xFFFFC024),
+                decoration: _mailFieldDecoration.copyWith(labelText: 'Name'),
                 validator: (v) {
                   final t = v?.trim() ?? '';
                   if (t.isEmpty) return 'Name is required';
@@ -434,10 +464,10 @@ class _ContactUsPageState extends State<ContactUsPage> {
               const SizedBox(height: 8),
               TextFormField(
                 controller: _mailEmailController,
-                decoration: const InputDecoration(
+                style: const TextStyle(color: Colors.white),
+                cursorColor: const Color(0xFFFFC024),
+                decoration: _mailFieldDecoration.copyWith(
                   labelText: 'Email Address',
-                  border: OutlineInputBorder(),
-                  isDense: true,
                 ),
                 keyboardType: TextInputType.emailAddress,
                 validator: (v) {
@@ -450,11 +480,9 @@ class _ContactUsPageState extends State<ContactUsPage> {
               const SizedBox(height: 8),
               TextFormField(
                 controller: _mailMessageController,
-                decoration: const InputDecoration(
-                  labelText: 'Message',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
+                style: const TextStyle(color: Colors.white),
+                cursorColor: const Color(0xFFFFC024),
+                decoration: _mailFieldDecoration.copyWith(labelText: 'Message'),
                 maxLines: 4,
                 validator: (v) {
                   final t = v?.trim() ?? '';
@@ -783,7 +811,7 @@ class _ContactUsPageState extends State<ContactUsPage> {
           title: 'Email us',
           subtitle: w.contactEmail,
           emphasize: true,
-          onTap: () => _scrollTo(_emailSectionKey),
+          onTap: () => setState(() => _sideTabIndex = 0),
         ),
         const SizedBox(height: 8),
         _ContactCard(

@@ -13,32 +13,101 @@
     {
       "id": "c1",
       "label": "FIRST BIRTHDAYS",
-      "images": []
+      "images": [
+        {
+          "id": "img-c1-1",
+          "tags": [
+            "First Birthdays",
+            "Completed Events"
+          ],
+          "mediaId": "15664650-3bf8-4bd0-b30b-b43226b331ba",
+          "imageBase64": ""
+        },
+        {
+          "id": "img-c1-git",
+          "tags": [
+            "First Birthdays",
+            "Archive"
+          ],
+          "mediaId": "2da45402-dbd4-49f2-9917-30519f499b1d",
+          "imageBase64": ""
+        }
+      ]
     },
     {
       "id": "c2",
       "label": "18TH BIRTHDAYS",
-      "images": []
+      "images": [
+        {
+          "id": "img-c2-1",
+          "tags": [
+            "18th Birthdays",
+            "Completed Events"
+          ],
+          "mediaId": "c9e78a25-e015-466c-be5d-cea9f2168258",
+          "imageBase64": ""
+        }
+      ]
     },
     {
       "id": "c3",
       "label": "50TH BIRTHDAYS",
-      "images": []
+      "images": [
+        {
+          "id": "img-c3-1",
+          "tags": [
+            "50th Birthdays",
+            "Completed Events"
+          ],
+          "mediaId": "919ad49c-5d59-4f41-ab64-9c70793dbd41",
+          "imageBase64": ""
+        }
+      ]
     },
     {
       "id": "c4",
       "label": "CASUAL CELEBRATIONS",
-      "images": []
+      "images": [
+        {
+          "id": "img-c4-1",
+          "tags": [
+            "Casual",
+            "Completed Events"
+          ],
+          "mediaId": "c4018e5d-a112-401c-81d1-2554c7d770aa",
+          "imageBase64": ""
+        }
+      ]
     },
     {
       "id": "c5",
       "label": "WEDDING RECEPTIONS",
-      "images": []
+      "images": [
+        {
+          "id": "img-c5-1",
+          "tags": [
+            "Wedding",
+            "Completed Events"
+          ],
+          "mediaId": "9106aca9-1d31-4346-9eb7-e95cea1e45d8",
+          "imageBase64": ""
+        }
+      ]
     },
     {
       "id": "c6",
       "label": "COMPANY CELEBRATIONS",
-      "images": []
+      "images": [
+        {
+          "id": "img-c6-1",
+          "tags": [
+            "Company",
+            "Completed Events"
+          ],
+          "mediaId": "919ad49c-5d59-4f41-ab64-9c70793dbd41",
+          "imageBase64": ""
+        }
+      ]
     }
   ],
   "contactFacebook": "MACRINA'S KITCHEN AND CATERING",
@@ -46,5 +115,5 @@
   "contactHours": "7:00 AM TO 10:00 PM",
   "contactPhone": "0917 138 7514",
   "contactEmail": "MACRINA_CATERING@YAHOO.COM",
-  "footerCopyright": "COPYRIGHT © 2026 MACRINA'S KITCHEN AND CATERING. POWERED BY CURATERING."
+  "footerCopyright": "COPYRIGHT \u00a9 2026 MACRINA'S KITCHEN AND CATERING. POWERED BY CURATERING."
 }

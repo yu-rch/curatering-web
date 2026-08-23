@@ -80,7 +80,6 @@ class _DashboardState extends State<Dashboard> {
   String _range = '30d';
   String _orderSource = 'ALL';
   String _businessSide = 'ALL';
-  String _cateringStyle = 'ALL';
   String _dashboardSearch = '';
   _DashboardSection _selectedDashboardSection = _DashboardSection.restaurant;
 
@@ -314,7 +313,6 @@ class _DashboardState extends State<Dashboard> {
       aiRange: _insightRange,
       orderSource: _orderSource,
       businessSide: _businessSide,
-      cateringStyle: _cateringStyle,
     );
   }
 
@@ -350,19 +348,6 @@ class _DashboardState extends State<Dashboard> {
           },
           onChanged: (v) {
             setState(() => _businessSide = v);
-            _refreshDashboard(force: true);
-          },
-        ),
-        _filterDropdown(
-          value: _cateringStyle,
-          label: 'Catering style',
-          items: const {
-            'ALL': 'All catering',
-            'CATERING_ONLY': 'Catering only',
-            'CATERING_WITH_EVENT': 'Catering + event styling',
-          },
-          onChanged: (v) {
-            setState(() => _cateringStyle = v);
             _refreshDashboard(force: true);
           },
         ),

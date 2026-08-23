@@ -212,6 +212,7 @@ bool isStaffRoute(String? routeName) {
     '/login',
     '/dashboard',
     '/super-admin-dashboard',
+    '/manager-dashboard',
     '/manage-',
     '/loyalty',
     '/catering-restaurant-menu',
@@ -229,7 +230,11 @@ bool isStaffRoute(String? routeName) {
     '/customer-management',
   ];
   for (final p in staffPrefixes) {
-    if (name == p || name.startsWith('$p/')) return true;
+    // Exact match, nested path (/p/...), or prefix without requiring a trailing slash
+    // so `/manage-events` matches `/manage-`.
+    if (name == p || name.startsWith('$p/') || name.startsWith(p)) {
+      return true;
+    }
   }
   return false;
 }

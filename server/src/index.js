@@ -9651,7 +9651,7 @@ async function registerRoutesAfterDbInit() {
 
         const topNames = Object.entries(dishCounts)
           .sort((a, b) => b[1] - a[1])
-          .slice(0, 8)
+          .slice(0, 10)
           .map(([name, count]) => ({ name, count }));
 
         const menuCols = await getTableColumnNames('menu_dishes');

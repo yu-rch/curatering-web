@@ -545,14 +545,41 @@ class WebsiteContentStore extends ChangeNotifier {
   String cateringPanelSubtitle =
       'Full-service catering with event theme designs.';
 
-  /// Built-in home block order / visibility (`hero`, `banner`, `latestEvent`, `eventDesigns`, `extras`).
+  /// Built-in home block order / visibility.
   final List<CmsPageBlock> homeLayout = [
     CmsPageBlock(id: 'hero', label: 'Hero'),
     CmsPageBlock(id: 'banner', label: 'Banner'),
     CmsPageBlock(id: 'latestEvent', label: 'Latest event'),
+    CmsPageBlock(id: 'about', label: 'About'),
+    CmsPageBlock(id: 'popularDishes', label: 'Popular dishes'),
     CmsPageBlock(id: 'eventDesigns', label: 'Event designs'),
     CmsPageBlock(id: 'extras', label: 'Extra sections'),
   ];
+
+  static List<CmsPageBlock> get _defaultHomeLayout => [
+    CmsPageBlock(id: 'hero', label: 'Hero'),
+    CmsPageBlock(id: 'banner', label: 'Banner'),
+    CmsPageBlock(id: 'latestEvent', label: 'Latest event'),
+    CmsPageBlock(id: 'about', label: 'About'),
+    CmsPageBlock(id: 'popularDishes', label: 'Popular dishes'),
+    CmsPageBlock(id: 'eventDesigns', label: 'Event designs'),
+    CmsPageBlock(id: 'extras', label: 'Extra sections'),
+  ];
+
+  void _ensureHomeLayoutBlocks() {
+    final byId = {for (final b in homeLayout) b.id: b};
+    final merged = <CmsPageBlock>[];
+    for (final def in _defaultHomeLayout) {
+      merged.add(byId.remove(def.id) ?? CmsPageBlock(id: def.id, label: def.label));
+    }
+    // Keep any unknown custom blocks before extras.
+    final extrasIdx = merged.indexWhere((b) => b.id == 'extras');
+    final insertAt = extrasIdx >= 0 ? extrasIdx : merged.length;
+    merged.insertAll(insertAt, byId.values);
+    homeLayout
+      ..clear()
+      ..addAll(merged);
+  }
 
   /// Site brand colors (hex, e.g. `#1E1E1E`).
   String sitePrimaryColor = '#1E1E1E';
@@ -688,13 +715,13 @@ class WebsiteContentStore extends ChangeNotifier {
     await _resolveList(eventDesignImageBase64, eventDesignMediaIds);
     for (final cat in galleryCategories) {
       for (final img in cat.images) {
-        if ((img.imageBase64.isEmpty) &&
-            img.mediaId != null &&
-            img.mediaId!.isNotEmpty) {
-          img.imageBase64 = (await resolveMediaId(img.mediaId)) ?? '';
-        }
+        final mid = img.mediaId?.trim() ?? '';
+        if (mid.isEmpty) continue;
+        if (img.imageBase64.trim().isNotEmpty) continue;
+        img.imageBase64 = (await resolveMediaId(mid)) ?? '';
       }
     }
+    notifyListeners();
   }
 
   Future<void> _resolveList(List<String> base64List, List<String?> mediaIds) async {
@@ -907,12 +934,15 @@ class WebsiteContentStore extends ChangeNotifier {
             final images = m['images'];
             if (images is List) {
               m['images'] =
-                  images.map((img) {
-                    if (img is! Map) return <String, dynamic>{};
-                    final mid = (img['mediaId'] ?? '').toString().trim();
-                    if (mid.isEmpty) return <String, dynamic>{};
-                    return <String, dynamic>{'mediaId': mid};
-                  }).toList();
+                  images
+                      .map((img) {
+                        if (img is! Map) return null;
+                        final mid = (img['mediaId'] ?? '').toString().trim();
+                        if (mid.isEmpty) return null;
+                        return <String, dynamic>{'mediaId': mid};
+                      })
+                      .whereType<Map<String, dynamic>>()
+                      .toList();
             } else {
               m['images'] = <dynamic>[];
             }
@@ -1135,6 +1165,7 @@ class WebsiteContentStore extends ChangeNotifier {
           ..addAll(parsed);
       }
     }
+    _ensureHomeLayoutBlocks();
 
     final g = map['galleryCategories'];
     if (g is List) {

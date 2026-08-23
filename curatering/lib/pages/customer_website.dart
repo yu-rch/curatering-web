@@ -373,6 +373,8 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
       if (MenuStore.instance.activeDishes.isEmpty) {
         await MenuStore.instance.loadDishes();
       }
+      // Await photos so Macrina's Kitchen slideshow has images on first paint.
+      await MenuStore.instance.ensureImagesLoaded();
       await CartStore.instance.init();
       await _checkCustomerAuth();
       unawaited(_loadHomepageHighlights());
@@ -690,9 +692,11 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
 
   void _onMenuChanged() {
     if (!mounted) return;
-    // Avoid rebuilding the whole site (and re-decoding home images) for every
-    // menu notify — only refresh when a dish grid tab is visible.
-    if (_navIndex == 2 || _navIndex == 3 || _isCustomerLoggedIn) {
+    // Refresh dish grids and home kitchen slideshow when menu photos arrive.
+    if (_navIndex == 0 ||
+        _navIndex == 2 ||
+        _navIndex == 3 ||
+        _isCustomerLoggedIn) {
       setState(() {});
     }
     if (_isCustomerLoggedIn) {
@@ -2344,18 +2348,29 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
 
   Widget _buildOwnerBlurb(WebsiteContentStore w) {
     final blurb = w.ownerBlurb.trim();
-    if (blurb.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: WebsiteRichText(
-        value: blurb,
-        style: TextStyle(
-          fontSize: 13,
-          height: 1.45,
-          color: Colors.grey.shade800,
-          fontStyle: FontStyle.italic,
-        ),
-      ),
+    if (blurb.isEmpty && !widget.contentEditable) {
+      return const SizedBox.shrink();
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _homeSectionTag('ABOUT'),
+        const SizedBox(height: 8),
+        if (blurb.isEmpty)
+          Text(
+            'Add an About section from the website CMS.',
+            style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+          )
+        else
+          WebsiteRichText(
+            value: blurb,
+            style: TextStyle(
+              fontSize: 14,
+              height: 1.5,
+              color: Colors.grey.shade800,
+            ),
+          ),
+      ],
     );
   }
 
@@ -2391,7 +2406,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
           _buildKitchenDishSlideshow(),
           const SizedBox(height: 10),
           Align(
-            alignment: Alignment.centerLeft,
+            alignment: Alignment.center,
             child: OutlinedButton(
             onPressed:
                 () => Navigator.pushReplacementNamed(
@@ -2429,7 +2444,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
           _buildEtdAdvertCard(compact: true),
           const SizedBox(height: 8),
           Align(
-            alignment: Alignment.centerLeft,
+            alignment: Alignment.center,
             child: OutlinedButton(
             onPressed:
                 () => Navigator.pushReplacementNamed(
@@ -2500,7 +2515,6 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  _buildOwnerBlurb(w),
                   Stack(
                     children: [
                       _buildLatestEventCollage(w),
@@ -2521,8 +2535,6 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                       }),
                     ],
                   ),
-                  const SizedBox(height: 24),
-                  _buildPopularDishesCarousel(w),
                 ],
               ),
             ),
@@ -2568,6 +2580,8 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                 CmsPageBlock(id: 'hero', label: 'Hero'),
                 CmsPageBlock(id: 'banner', label: 'Banner'),
                 CmsPageBlock(id: 'latestEvent', label: 'Latest event'),
+                CmsPageBlock(id: 'about', label: 'About'),
+                CmsPageBlock(id: 'popularDishes', label: 'Popular dishes'),
                 CmsPageBlock(id: 'eventDesigns', label: 'Event designs'),
                 CmsPageBlock(id: 'extras', label: 'Extra sections'),
               ]
@@ -2597,6 +2611,30 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                         _buildLatestEventSection(w),
                       ],
                     ),
+                  ),
+                ),
+              );
+            case 'about':
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: websiteContentMaxWidth(context),
+                    ),
+                    child: _buildOwnerBlurb(w),
+                  ),
+                ),
+              );
+            case 'popularDishes':
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: websiteContentMaxWidth(context),
+                    ),
+                    child: _buildPopularDishesCarousel(w),
                   ),
                 ),
               );
@@ -2677,10 +2715,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     if (_reorderDishes.isNotEmpty) {
       return _reorderDishes
           .map((row) => row['dish'] as MenuDish)
-          .take(5)
+          .take(10)
           .toList();
     }
-    return MenuStore.instance.activeDishes.take(5).toList();
+    return MenuStore.instance.activeDishes.take(10).toList();
   }
 
   Widget _buildPopularDishesCarousel(WebsiteContentStore w) {
@@ -2757,7 +2795,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                           [
                             cmsCount,
                             w.popularDishLabels.length,
-                            5,
+                            10,
                           ].reduce(math.max),
                           (i) {
                           final label = _popularDishLabel(w, i);
@@ -2797,7 +2835,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                             )
                             .toList()
                         : List.generate(
-                          5,
+                          10,
                           (i) => _popularDishCarouselTile(
                             imageB64: null,
                             label: _popularDishLabel(w, i),
@@ -5096,13 +5134,26 @@ class _HomeKitchenDishCarouselState extends State<_HomeKitchenDishCarousel> {
   @override
   void didUpdateWidget(covariant _HomeKitchenDishCarousel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.dishes.length != widget.dishes.length) {
+    final lengthChanged = oldWidget.dishes.length != widget.dishes.length;
+    final imagesChanged = !_sameDishImages(oldWidget.dishes, widget.dishes);
+    if (lengthChanged || imagesChanged) {
       _page = 0;
       if (_controller.hasClients) {
         _controller.jumpToPage(0);
       }
       _restartTimer();
+      // Force PageView children to rebuild when photos arrive after first paint.
+      setState(() {});
     }
+  }
+
+  bool _sameDishImages(List<MenuDish> a, List<MenuDish> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if ((a[i].imageBase64 ?? '') != (b[i].imageBase64 ?? '')) return false;
+      if (a[i].id != b[i].id) return false;
+    }
+    return true;
   }
 
   void _restartTimer() {
@@ -5134,6 +5185,11 @@ class _HomeKitchenDishCarouselState extends State<_HomeKitchenDishCarousel> {
         SizedBox(
           height: 148,
           child: PageView.builder(
+            key: ValueKey(
+              dishes
+                  .map((d) => '${d.id}:${(d.imageBase64 ?? '').length}')
+                  .join('|'),
+            ),
             controller: _controller,
             itemCount: dishes.length,
             onPageChanged: (i) => setState(() => _page = i),

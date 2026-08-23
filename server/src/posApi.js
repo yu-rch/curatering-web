@@ -767,13 +767,13 @@ export function registerPosRoutes(app, {
            order_status, payment_method,
            order_source, pos_customer_label, payment_proof, payment_reference_initial,
            payment_uploaded, cashier_amount_received_initial, amount_paid,
-           change_given, pos_claimed_at, note
+           change_given, pos_claimed, note
          ) VALUES (
            $1, $2, '', ${itemsSql}, $4,
            'Walk-in', NULL, NULL,
            'in_preparation', $5,
            'POS_WEB', $6, $7, $8,
-           $11, $9, $9, $10, now(), $12
+           $11, $9, $9, $10, FALSE, $12
          )
          RETURNING *`,
         [

@@ -62,16 +62,28 @@ class _GalleryPageState extends State<GalleryPage> {
   @override
   void initState() {
     super.initState();
-    final load = widget.contentEditable
-        ? WebsiteContentStore.instance.loadDraft()
-        : WebsiteContentStore.instance.ensureLoaded();
-    load.then((_) {
-      if (mounted) setState(() {});
-    }).catchError((_) {
-      return WebsiteContentStore.instance.ensureLoaded().then((_) {
-        if (mounted) setState(() {});
-      });
-    });
+    unawaited(_bootstrapGallery());
+  }
+
+  Future<void> _bootstrapGallery() async {
+    try {
+      if (widget.contentEditable) {
+        try {
+          await WebsiteContentStore.instance.loadDraft();
+        } catch (_) {
+          await WebsiteContentStore.instance.ensureLoaded();
+        }
+      } else {
+        await WebsiteContentStore.instance.ensureLoaded();
+      }
+      await WebsiteContentStore.instance.resolveMediaRefs();
+    } catch (_) {
+      try {
+        await WebsiteContentStore.instance.ensureLoaded();
+        await WebsiteContentStore.instance.resolveMediaRefs();
+      } catch (_) {}
+    }
+    if (mounted) setState(() {});
     if (!widget.contentEditable) {
       unawaited(_loadFallbackGalleryImages());
     }
@@ -108,6 +120,23 @@ class _GalleryPageState extends State<GalleryPage> {
           ),
         );
       }
+      // Also fold in CMS event-design stills when highlights are sparse.
+      final cmsDesigns = WebsiteContentStore.instance.eventDesignImageBase64;
+      if (cmsDesigns.isNotEmpty) {
+        byType.putIfAbsent('Event Designs', () => <GalleryImageData>[]);
+        final list = byType['Event Designs']!;
+        for (var i = 0; i < cmsDesigns.length; i++) {
+          final image = cmsDesigns[i].trim();
+          if (image.isEmpty) continue;
+          list.add(
+            GalleryImageData(
+              id: 'cms-design-$i',
+              imageBase64: image,
+              tags: const ['Event Designs'],
+            ),
+          );
+        }
+      }
       if (byType.isEmpty || !mounted) return;
       setState(() {
         _fallbackCategories =
@@ -123,12 +152,34 @@ class _GalleryPageState extends State<GalleryPage> {
       });
     } catch (_) {
       // Keep CMS-only gallery when highlights are unavailable.
+      final cmsDesigns = WebsiteContentStore.instance.eventDesignImageBase64
+          .where((e) => e.trim().isNotEmpty)
+          .toList();
+      if (cmsDesigns.isEmpty || !mounted) return;
+      setState(() {
+        _fallbackCategories = [
+          GalleryCategoryData(
+            id: 'fallback-event-designs',
+            label: 'Event Designs',
+            images: [
+              for (var i = 0; i < cmsDesigns.length; i++)
+                GalleryImageData(
+                  id: 'cms-design-$i',
+                  imageBase64: cmsDesigns[i],
+                  tags: const ['Event Designs'],
+                ),
+            ],
+          ),
+        ];
+      });
     }
   }
 
   List<GalleryCategoryData> _effectiveCategories(WebsiteContentStore w) {
-    final cmsHasImages = w.galleryCategories.any((c) => c.images.isNotEmpty);
-    if (cmsHasImages || widget.contentEditable) return w.galleryCategories;
+    final cmsResolved = w.galleryCategories.any(
+      (c) => c.images.any((img) => img.imageBase64.trim().isNotEmpty),
+    );
+    if (cmsResolved || widget.contentEditable) return w.galleryCategories;
     if (_fallbackCategories.isNotEmpty) return _fallbackCategories;
     return w.galleryCategories;
   }
@@ -291,19 +342,22 @@ class _GalleryPageState extends State<GalleryPage> {
   }
 
   Widget _buildGallerySearchField({required String hintText}) {
-    return TextField(
-      onChanged:
-          (v) => setState(() => _gallerySearchQuery = v.trim().toLowerCase()),
-      style: const TextStyle(fontSize: 12),
-      decoration: InputDecoration(
-        hintText: hintText,
-        hintStyle: const TextStyle(fontSize: 11),
-        prefixIcon: const Icon(Icons.search, size: 16),
-        isDense: true,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 4,
-          vertical: 4,
+    return SizedBox(
+      height: 48,
+      child: TextField(
+        onChanged:
+            (v) => setState(() => _gallerySearchQuery = v.trim().toLowerCase()),
+        style: const TextStyle(fontSize: 12),
+        decoration: InputDecoration(
+          hintText: hintText,
+          hintStyle: const TextStyle(fontSize: 11),
+          prefixIcon: const Icon(Icons.search, size: 16),
+          isDense: true,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 8,
+            vertical: 12,
+          ),
         ),
       ),
     );

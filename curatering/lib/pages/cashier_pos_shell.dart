@@ -14,6 +14,7 @@ import '../services/menu_store.dart';
 import '../models/menu_dish.dart';
 import '../utils/cashier_pos_filters.dart';
 import '../utils/payment_proof_image.dart';
+import '../widgets/antd_dialog.dart';
 import '../widgets/antd_tokens.dart';
 import '../widgets/confirm_logout_dialog.dart';
 
@@ -234,8 +235,42 @@ class _CashierPosShellState extends State<CashierPosShell> {
   int get _trayItemCount =>
       _tray.fold<int>(0, (s, it) => s + _toQty(it['qty']));
 
-  void _snack(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  Future<void> _snack(String msg, {bool success = false}) async {
+    if (!mounted) return;
+    if (success) {
+      await showCurateringSuccessDialog(
+        context: context,
+        title: 'Success',
+        body: msg,
+      );
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: const Text('Notice'),
+        content: Text(msg),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            style: FilledButton.styleFrom(
+              backgroundColor: AntdTokens.brandPrimary,
+              foregroundColor: AntdTokens.brandOnPrimary,
+            ),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String? _posOrderId(Map<String, dynamic> raw) {
+    for (final key in ['id', 'order_id', 'order_no']) {
+      final v = raw[key]?.toString().trim() ?? '';
+      if (v.isNotEmpty && v.toLowerCase() != 'null') return v;
+    }
+    return null;
   }
 
   List<dynamic> _orderItems(Map<String, dynamic> raw) {
@@ -739,10 +774,13 @@ class _CashierPosShellState extends State<CashierPosShell> {
       await _refreshWalkIn();
       if (mounted) {
         final change = result['change'] ?? 0;
-        _snack('Walk-in ${result['order_no']} submitted · change ₱$change');
+        await _snack(
+          'Walk-in ${result['order_no']} submitted · change ₱$change',
+          success: true,
+        );
       }
     } catch (e) {
-      if (mounted) _snack('$e');
+      if (mounted) await _snack('$e');
     }
   }
 
@@ -921,16 +959,17 @@ class _CashierPosShellState extends State<CashierPosShell> {
 
     await _withStatusUpdate(() async {
       await CashierPosApi.instance.reviewOnlineOrder(
-        order.raw['order_id'] ?? order.raw['order_no'] ?? order.raw['id'],
+        _posOrderId(order.raw) ?? order.orderNo,
         action: dialogAction!,
         amountReceived: paid,
       );
       await _refreshOnline();
       if (mounted) {
-        _snack(
+        await _snack(
           dialogAction == 'insufficient'
               ? 'Marked as insufficient'
               : 'Payment confirmed',
+          success: dialogAction != 'insufficient',
         );
       }
     });
@@ -1007,15 +1046,15 @@ class _CashierPosShellState extends State<CashierPosShell> {
     try {
       await _withStatusUpdate(() async {
         await CashierPosApi.instance.patchFulfillment(
-          order.raw['order_id'] ?? order.raw['order_no'] ?? order.raw['id'],
+          _posOrderId(order.raw) ?? order.orderNo,
           fulfillmentStage: 'OUT_FOR_DELIVERY',
           deliveryTrackingUrl: trackingUrl,
         );
         await _refreshOnline();
       });
-      if (mounted) _snack('Marked Out for Delivery');
+      if (mounted) await _snack('Marked Out for Delivery', success: true);
     } catch (e) {
-      if (mounted) _snack('$e');
+      if (mounted) await _snack('$e');
     }
   }
 
@@ -1042,19 +1081,24 @@ class _CashierPosShellState extends State<CashierPosShell> {
     try {
       await _withStatusUpdate(() async {
         await CashierPosApi.instance.patchFulfillment(
-          order.raw['order_id'] ?? order.raw['order_no'] ?? order.raw['id'],
+          _posOrderId(order.raw) ?? order.orderNo,
           fulfillmentStage: 'DELIVERED',
         );
         await _refreshOnline();
       });
-      if (mounted) _snack('Marked as Delivered');
+      if (mounted) await _snack('Marked as Delivered', success: true);
     } catch (e) {
-      if (mounted) _snack('$e');
+      if (mounted) await _snack('$e');
     }
   }
 
   Future<void> _claimWalkIn(Map<String, dynamic> raw) async {
     final o = PosOrderView(raw);
+    final orderId = _posOrderId(raw);
+    if (orderId == null) {
+      await _snack('Missing order id — refresh the walk-in queue and try again.');
+      return;
+    }
     final yes = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1076,19 +1120,28 @@ class _CashierPosShellState extends State<CashierPosShell> {
     if (yes != true) return;
     try {
       await _withStatusUpdate(() async {
-        await CashierPosApi.instance.claimWalkIn(
-          raw['order_id'] ?? raw['order_no'] ?? raw['id'],
-        );
+        await CashierPosApi.instance.claimWalkIn(orderId);
         await _refreshWalkIn();
       });
-      if (mounted) _snack('Order claimed');
+      if (mounted) {
+        setState(() {
+          _selectedWalkIn = null;
+          _walkInSubTab = 1;
+        });
+        await _snack('Order claimed', success: true);
+      }
     } catch (e) {
-      if (mounted) _snack('$e');
+      if (mounted) await _snack('$e');
     }
   }
 
   Future<void> _cancelWalkIn(Map<String, dynamic> raw) async {
     final o = PosOrderView(raw);
+    final orderId = _posOrderId(raw);
+    if (orderId == null) {
+      await _snack('Missing order id — refresh the walk-in queue and try again.');
+      return;
+    }
     final yes = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1109,14 +1162,15 @@ class _CashierPosShellState extends State<CashierPosShell> {
     if (yes != true) return;
     try {
       await _withStatusUpdate(() async {
-        await CashierPosApi.instance.cancelWalkIn(
-          raw['order_id'] ?? raw['order_no'] ?? raw['id'],
-        );
+        await CashierPosApi.instance.cancelWalkIn(orderId);
         await _refreshWalkIn();
       });
-      if (mounted) _snack('Order cancelled');
+      if (mounted) {
+        setState(() => _selectedWalkIn = null);
+        await _snack('Order cancelled', success: true);
+      }
     } catch (e) {
-      if (mounted) _snack('$e');
+      if (mounted) await _snack('$e');
     }
   }
 

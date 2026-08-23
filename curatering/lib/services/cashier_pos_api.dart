@@ -136,11 +136,13 @@ class CashierPosApi {
   }
 
   Future<void> claimWalkIn(dynamic orderId) async {
-    await _patch('/api/cashier/pos/walkin-orders/$orderId/claim', {});
+    final id = Uri.encodeComponent(orderId.toString().trim());
+    await _patch('/api/cashier/pos/walkin-orders/$id/claim', {});
   }
 
   Future<void> cancelWalkIn(dynamic orderId) async {
-    await _patch('/api/cashier/pos/walkin-orders/$orderId/cancel', {});
+    final id = Uri.encodeComponent(orderId.toString().trim());
+    await _patch('/api/cashier/pos/walkin-orders/$id/cancel', {});
   }
 
   Future<List<Map<String, dynamic>>> orderHistory() async {
