@@ -3,6 +3,7 @@ import 'dart:convert';
 import '../models/event_order.dart';
 import '../models/seating_plan.dart';
 import 'api_client.dart';
+import '../utils/api_cache.dart';
 import 'public_events_api.dart';
 
 class EventsApi {
@@ -167,6 +168,8 @@ class EventsApi {
       '/api/events/orders/$encoded/checklist',
       body: {'checklist': items, if (deductInventory) 'deductInventory': true},
     );
+    ApiCache().invalidate('/api/manager/events/orders');
+    ApiCache().invalidate('/api/supervisor/events/orders');
   }
 
   Future<void> sendOrderSummaryEmail({

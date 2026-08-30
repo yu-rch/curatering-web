@@ -69,9 +69,9 @@ Future<void> main() async {
   // Avoid runtime Google Fonts fetches on the customer storefront critical path.
   if (isCustomerSiteHost) {
     GoogleFonts.config.allowRuntimeFetching = false;
+  } else {
+    await DataStore.loadTheme();
   }
-
-  await DataStore.loadTheme();
 
   if (kIsWeb) {
     BrowserContextMenu.enableContextMenu();

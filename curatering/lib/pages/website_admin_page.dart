@@ -77,7 +77,7 @@ class _WebsiteAdminPageState extends State<WebsiteAdminPage> {
   }
 
   void _markDirty() {
-    if (!_dirty) setState(() => _dirty = true);
+    setState(() => _dirty = true);
   }
 
   @override
@@ -664,6 +664,7 @@ class _HomepageEditor extends StatelessWidget {
                   value: block.visible,
                   onChanged: (v) {
                     block.visible = v;
+                    w.touch();
                     onChanged();
                   },
                 ),
@@ -1634,6 +1635,7 @@ class _NavigationEditor extends StatelessWidget {
                         value: item.visible,
                         onChanged: (v) {
                           item.visible = v;
+                          w.touch();
                           onChanged();
                         },
                       ),

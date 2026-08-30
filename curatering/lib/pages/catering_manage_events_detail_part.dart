@@ -34,38 +34,31 @@ extension _ManageEventsDetailExt on _ManageEventsState {
   }
 
   List<Map<String, dynamic>> _checklistRowsFromOrder(EventOrderDto order) {
-    final fromMenu =
-        _buildChecklistFromMenuWithIngredients(order.menu)
-            .map(
-              (c) => {
-                'item': c.item,
-                'description': c.description,
-                'quantity': c.quantity,
-                'cost': c.cost,
-                'status': c.isCompleted ? 'completed' : 'not done',
-              },
-            )
-            .toList();
-    if (order.checklist.isEmpty) return fromMenu;
-    final saved = order.checklist
+    if (order.checklist.isNotEmpty) {
+      return order.checklist
+          .map(
+            (c) => {
+              'item': c.title.trim().isEmpty ? c.description : c.title,
+              'description': c.description,
+              'quantity': c.quantity,
+              'cost': c.price,
+              'status': c.isCompleted ? 'completed' : 'not done',
+            },
+          )
+          .where((row) => '${row['item']}'.trim().isNotEmpty)
+          .toList();
+    }
+    return _buildChecklistFromMenuWithIngredients(order.menu)
         .map(
           (c) => {
-            'item': c.title.trim().isEmpty ? c.description : c.title,
+            'item': c.item,
             'description': c.description,
             'quantity': c.quantity,
-            'cost': c.price,
+            'cost': c.cost,
             'status': c.isCompleted ? 'completed' : 'not done',
           },
         )
-        .where((row) => '${row['item']}'.trim().isNotEmpty)
         .toList();
-    if (saved.isEmpty) return fromMenu;
-    final savedNames = saved.map((r) => '${r['item']}'.toLowerCase()).toSet();
-    final extras = fromMenu.where((row) {
-      final name = '${row['item']}'.toLowerCase();
-      return name.contains('ingredient') || !savedNames.contains(name);
-    });
-    return [...saved, ...extras];
   }
 
   List<Map<String, dynamic>> _blankTaskAssignmentRows() {

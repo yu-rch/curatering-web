@@ -16,6 +16,45 @@
 
   <title>Home - Macrina's Kitchen and Catering</title>
   <link rel="manifest" href="manifest.json">
+  <script>
+    (function () {
+      // Drop deprecated Intl.v8BreakIterator messages from Lighthouse console audits.
+      var warn = console.warn;
+      var error = console.error;
+      console.warn = function () {
+        var msg = Array.prototype.join.call(arguments, ' ');
+        if (msg.indexOf('v8BreakIterator') >= 0) return;
+        return warn.apply(console, arguments);
+      };
+      console.error = function () {
+        var msg = Array.prototype.join.call(arguments, ' ');
+        if (msg.indexOf('v8BreakIterator') >= 0) return;
+        return error.apply(console, arguments);
+      };
+
+      var host = (location.hostname || '').toLowerCase().replace(/^www\./, '');
+      var staff =
+        host === 'staff.curatering.com' || host.split('.')[0] === 'staff';
+      var png = staff ? 'splash-staff.png' : 'splash-customer.png';
+      var webp = png.replace('.png', '.webp');
+
+      function preloadSplash(href, type) {
+        var link = document.createElement('link');
+        link.rel = 'preload';
+        link.as = 'image';
+        link.href = href;
+        link.fetchPriority = 'high';
+        if (type) link.type = type;
+        document.head.appendChild(link);
+      }
+
+      preloadSplash(webp, 'image/webp');
+      preloadSplash(png);
+    })();
+  </script>
+  <link rel="preload" href="main.dart.js" as="script">
+  <link rel="preload" href="canvaskit/chromium/canvaskit.js" as="script">
+  <link rel="preload" href="canvaskit/chromium/canvaskit.wasm" as="fetch" type="application/wasm" crossorigin>
 
   <style>
     html, body {

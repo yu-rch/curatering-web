@@ -154,7 +154,9 @@ class ApiClient {
         )
         .timeout(_requestTimeout);
 
-    return _handleResponse(res, uri);
+    final decoded = _handleResponse(res, uri);
+    ApiCache().invalidate(path);
+    return decoded;
   }
 
   Future<Map<String, dynamic>> delete(

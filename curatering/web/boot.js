@@ -38,7 +38,11 @@
     return staffHost ? 'splash-staff.png' : 'splash-customer.png';
   }
 
-  function ensurePreload(href) {
+  function splashLogoWebpSrc() {
+    return splashLogoSrc().replace('.png', '.webp');
+  }
+
+  function ensurePreload(href, type) {
     var existing = document.querySelector(
       'link[rel="preload"][as="image"][href="' + href + '"]',
     );
@@ -47,18 +51,28 @@
     link.rel = 'preload';
     link.as = 'image';
     link.href = href;
+    link.fetchPriority = 'high';
+    if (type) link.type = type;
     document.head.appendChild(link);
   }
 
   function setupSplashLogo() {
-    var src = splashLogoSrc();
-    ensurePreload(src);
+    var png = splashLogoSrc();
+    var webp = splashLogoWebpSrc();
+    ensurePreload(webp, 'image/webp');
+    ensurePreload(png);
     var img = document.getElementById('app-splash-logo');
     if (!img) return;
-    img.src = src;
     img.alt = staffHost
       ? 'CURATERING'
       : "Macrina's Kitchen and Catering";
+    img.onerror = function () {
+      if (img.dataset.fallback !== '1') {
+        img.dataset.fallback = '1';
+        img.src = png;
+      }
+    };
+    img.src = webp;
   }
 
   function setPageBackground(color) {
@@ -168,6 +182,7 @@
   window.addEventListener('error', function (event) {
     var src = event.filename || '';
     if (src.indexOf('main.dart.js') >= 0 || src.indexOf('flutter') >= 0) {
+      event.preventDefault();
       showLoadError('A script failed to load. Try a hard refresh (Ctrl+F5).');
     }
   });

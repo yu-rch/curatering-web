@@ -1,4 +1,5 @@
 import 'api_client.dart';
+import '../utils/api_cache.dart';
 
 /// Manager helpers for catering/event stage metadata (additional costs, tasks).
 class ManagerCateringApi {
@@ -18,5 +19,7 @@ class ManagerCateringApi {
         'patch': patch,
       },
     );
+    ApiCache().invalidate('/api/manager/events/orders');
+    ApiCache().invalidate('/api/supervisor/events/orders');
   }
 }
