@@ -2,6 +2,10 @@
   var VIEWPORT =
     'width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=5, user-scalable=yes';
   var SPLASH_TIMEOUT_MS = 14000;
+  var UI_READY_FALLBACK_MS = 8000;
+  var staffHost = false;
+  var pageBgApplied = false;
+  var uiReadyTimer = null;
 
   function applyViewport() {
     var meta = document.querySelector('meta[name="viewport"]');
@@ -31,13 +35,13 @@
   }
 
   function splashLogoSrc() {
-    return isStaffHost(location.hostname)
-      ? 'splash-staff.png'
-      : 'splash-customer.png';
+    return staffHost ? 'splash-staff.png' : 'splash-customer.png';
   }
 
   function ensurePreload(href) {
-    var existing = document.querySelector('link[rel="preload"][as="image"][href="' + href + '"]');
+    var existing = document.querySelector(
+      'link[rel="preload"][as="image"][href="' + href + '"]',
+    );
     if (existing) return;
     var link = document.createElement('link');
     link.rel = 'preload';
@@ -52,13 +56,49 @@
     var img = document.getElementById('app-splash-logo');
     if (!img) return;
     img.src = src;
-    img.alt = isStaffHost(location.hostname)
-      ? "CURATERING"
+    img.alt = staffHost
+      ? 'CURATERING'
       : "Macrina's Kitchen and Catering";
   }
 
+  function setPageBackground(color) {
+    document.documentElement.style.background = color;
+    document.body.style.background = color;
+  }
+
+  function applyLightPageBackground() {
+    if (pageBgApplied) return;
+    pageBgApplied = true;
+    if (uiReadyTimer) {
+      clearTimeout(uiReadyTimer);
+      uiReadyTimer = null;
+    }
+    setPageBackground('#f5f5f5');
+  }
+
+  function holdBlackUntilUiReady() {
+    setPageBackground('#000000');
+    if (uiReadyTimer) clearTimeout(uiReadyTimer);
+    uiReadyTimer = setTimeout(applyLightPageBackground, UI_READY_FALLBACK_MS);
+  }
+
+  staffHost = isStaffHost(location.hostname);
   applyViewport();
   setupSplashLogo();
+
+  // Flutter often rewrites viewport to user-scalable=no — keep locking it.
+  if (typeof MutationObserver !== 'undefined') {
+    var headObserver = new MutationObserver(function () {
+      applyViewport();
+    });
+    headObserver.observe(document.head, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['content'],
+    });
+  }
+  setInterval(applyViewport, 1500);
 
   // Drop stale service workers that can serve broken cached bundles.
   if ('serviceWorker' in navigator) {
@@ -79,14 +119,18 @@
       clearTimeout(splashTimer);
       splashTimer = null;
     }
+    applyViewport();
     var el = document.getElementById('app-splash');
-    if (!el) return;
+    if (!el) {
+      holdBlackUntilUiReady();
+      return;
+    }
     el.classList.add('app-splash-hide');
     el.setAttribute('aria-busy', 'false');
     setTimeout(function () {
       if (el.parentNode) el.parentNode.removeChild(el);
-      document.documentElement.style.background = '#f5f5f5';
-      document.body.style.background = '#f5f5f5';
+      // Stay black until deferred UI (staff login / customer home) signals ready.
+      holdBlackUntilUiReady();
     }, 280);
   }
 
@@ -106,15 +150,20 @@
         message ||
         'The app is taking longer than expected. Please refresh the page.';
     }
-    // Uncover Flutter if it mounted under the splash.
     setTimeout(function () {
       if (el.parentNode) el.parentNode.removeChild(el);
-      document.documentElement.style.background = '#f5f5f5';
-      document.body.style.background = '#f5f5f5';
+      applyLightPageBackground();
     }, 2500);
   }
 
-  window.addEventListener('flutter-first-frame', hideSplash);
+  window.addEventListener('flutter-first-frame', function () {
+    applyViewport();
+    hideSplash();
+  });
+
+  window.addEventListener('curatering-ui-ready', function () {
+    applyLightPageBackground();
+  });
 
   window.addEventListener('error', function (event) {
     var src = event.filename || '';

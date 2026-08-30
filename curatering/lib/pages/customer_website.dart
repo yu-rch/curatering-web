@@ -373,8 +373,8 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
       if (MenuStore.instance.activeDishes.isEmpty) {
         await MenuStore.instance.loadDishes();
       }
-      // Await photos so Macrina's Kitchen slideshow has images on first paint.
-      await MenuStore.instance.ensureImagesLoaded();
+      // Dish photos fill in via MenuStore listeners — don't block home ready.
+      unawaited(MenuStore.instance.ensureImagesLoaded());
       await CartStore.instance.init();
       await _checkCustomerAuth();
       unawaited(_loadHomepageHighlights());

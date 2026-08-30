@@ -609,9 +609,9 @@ class WebsiteContentStore extends ChangeNotifier {
     await _loadFromLocalCache();
     _hydratedFromLocalCache = true;
     notifyListeners();
-    // Resolve media IDs from cache refs so hero/collage aren't empty placeholders.
+    // Resolve home media only — gallery refs load on Gallery page.
     try {
-      await resolveMediaRefs();
+      await resolveHomeMediaRefs();
       notifyListeners();
     } catch (e) {
       debugPrint('[website-content] hydrate media resolve failed: $e');
@@ -626,7 +626,7 @@ class WebsiteContentStore extends ChangeNotifier {
       _hydratedFromLocalCache = true;
       notifyListeners();
       try {
-        await resolveMediaRefs();
+        await resolveHomeMediaRefs();
         notifyListeners();
       } catch (_) {
         /* keep text/metadata already applied */
@@ -644,7 +644,7 @@ class WebsiteContentStore extends ChangeNotifier {
         _applyMap(Map<String, dynamic>.from(content));
         publishedAt = DateTime.tryParse('${decoded['publishedAt'] ?? ''}');
         await _writeLocalCacheBestEffort(_toMap());
-        await resolveMediaRefs();
+        await resolveHomeMediaRefs();
       }
     } catch (_) {
       // Keep local/defaults already applied above.
@@ -705,7 +705,7 @@ class WebsiteContentStore extends ChangeNotifier {
     return null;
   }
 
-  Future<void> resolveMediaRefs() async {
+  Future<void> resolveHomeMediaRefs() async {
     if (homeHeroMediaId != null && homeHeroMediaId!.isNotEmpty) {
       homeHeroImageBase64 =
           (await resolveMediaId(homeHeroMediaId)) ?? homeHeroImageBase64;
@@ -713,6 +713,10 @@ class WebsiteContentStore extends ChangeNotifier {
     await _resolveList(latestEventCollageBase64, latestEventCollageMediaIds);
     await _resolveList(popularDishImageBase64, popularDishMediaIds);
     await _resolveList(eventDesignImageBase64, eventDesignMediaIds);
+    notifyListeners();
+  }
+
+  Future<void> resolveGalleryMediaRefs() async {
     for (final cat in galleryCategories) {
       for (final img in cat.images) {
         final mid = img.mediaId?.trim() ?? '';
@@ -722,6 +726,11 @@ class WebsiteContentStore extends ChangeNotifier {
       }
     }
     notifyListeners();
+  }
+
+  Future<void> resolveMediaRefs() async {
+    await resolveHomeMediaRefs();
+    await resolveGalleryMediaRefs();
   }
 
   Future<void> _resolveList(List<String> base64List, List<String?> mediaIds) async {

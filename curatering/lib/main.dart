@@ -13,12 +13,15 @@ import 'customer_extra_pages.dart' deferred as customer_extra
     show customerExtraPageFor;
 import 'staff_app.dart' deferred as staff_app show staffPageFor;
 import 'widgets/app_root_route.dart';
+import 'widgets/brand_splash_placeholder.dart';
 import 'widgets/external_host_redirect.dart';
 import 'widgets/legacy_path_redirect.dart';
 import 'auth/auth_session.dart';
 import 'auth/roles.dart';
 import 'auth/staff_permission_refresh.dart';
 import 'data_store.dart';
+import 'utils/web_boot_bridge.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 const _customerExtraPaths = {
   '/gallery',
@@ -62,6 +65,11 @@ Future<void> main() async {
   if (redirectApexHostToSubdomain(currentWebPath())) return;
 
   if (bootstrapWebRouting()) return;
+
+  // Avoid runtime Google Fonts fetches on the customer storefront critical path.
+  if (isCustomerSiteHost) {
+    GoogleFonts.config.allowRuntimeFetching = false;
+  }
 
   await DataStore.loadTheme();
 
@@ -160,7 +168,9 @@ class _DeferredStaffPageState extends State<_DeferredStaffPage> {
     _loading ??= staff_app.loadLibrary();
     _loading!
         .then((_) {
-          if (mounted) setState(() => _ready = true);
+          if (!mounted) return;
+          setState(() => _ready = true);
+          signalCurateringUiReady();
         })
         .catchError((Object e) {
           if (mounted) setState(() => _error = e);
@@ -170,14 +180,13 @@ class _DeferredStaffPageState extends State<_DeferredStaffPage> {
   @override
   Widget build(BuildContext context) {
     if (_error != null) {
-      return const Scaffold(
-        body: Center(child: Text('Failed to load staff page.')),
+      return const BrandSplashPlaceholder(
+        error: true,
+        message: 'Failed to load staff page. Please refresh.',
       );
     }
     if (!_ready) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const BrandSplashPlaceholder();
     }
     return staff_app.staffPageFor(widget.path);
   }
@@ -214,14 +223,13 @@ class _DeferredCustomerExtraPageState extends State<_DeferredCustomerExtraPage> 
   @override
   Widget build(BuildContext context) {
     if (_error != null) {
-      return const Scaffold(
-        body: Center(child: Text('Failed to load page.')),
+      return const BrandSplashPlaceholder(
+        error: true,
+        message: 'Failed to load page. Please refresh.',
       );
     }
     if (!_ready) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const BrandSplashPlaceholder();
     }
     return customer_extra.customerExtraPageFor(widget.path);
   }

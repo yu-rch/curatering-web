@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../config/site_routes.dart';
-import '../pages/customer_website.dart';
+import '../customer_home.dart' deferred as customer_home
+    show CustomerWebsiteScreen;
 import '../utils/browser_tab_title.dart';
+import '../utils/web_boot_bridge.dart';
+import 'brand_splash_placeholder.dart';
 
 /// Host-aware `/` entry.
 class AppRootRoute extends StatefulWidget {
@@ -13,6 +16,10 @@ class AppRootRoute extends StatefulWidget {
 }
 
 class _AppRootRouteState extends State<AppRootRoute> {
+  static Future<void>? _homeLoading;
+  bool _homeReady = false;
+  Object? _homeError;
+
   @override
   void initState() {
     super.initState();
@@ -25,16 +32,33 @@ class _AppRootRouteState extends State<AppRootRoute> {
       return;
     }
     setBrowserTabTitle('Home', staff: false);
+    _homeLoading ??= customer_home.loadLibrary();
+    _homeLoading!
+        .then((_) {
+          if (!mounted) return;
+          setState(() => _homeReady = true);
+          signalCurateringUiReady();
+        })
+        .catchError((Object e) {
+          if (mounted) setState(() => _homeError = e);
+        });
   }
 
   @override
   Widget build(BuildContext context) {
     if (isStaffSiteHost) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+      return const BrandSplashPlaceholder();
+    }
+    if (_homeError != null) {
+      return const BrandSplashPlaceholder(
+        error: true,
+        message: 'Failed to load home. Please refresh.',
       );
     }
-    return const CustomerWebsiteScreen(
+    if (!_homeReady) {
+      return const BrandSplashPlaceholder();
+    }
+    return customer_home.CustomerWebsiteScreen(
       contentEditable: false,
       showStaffChrome: false,
     );

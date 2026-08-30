@@ -76,11 +76,11 @@ class _GalleryPageState extends State<GalleryPage> {
       } else {
         await WebsiteContentStore.instance.ensureLoaded();
       }
-      await WebsiteContentStore.instance.resolveMediaRefs();
+      await WebsiteContentStore.instance.resolveGalleryMediaRefs();
     } catch (_) {
       try {
         await WebsiteContentStore.instance.ensureLoaded();
-        await WebsiteContentStore.instance.resolveMediaRefs();
+        await WebsiteContentStore.instance.resolveGalleryMediaRefs();
       } catch (_) {}
     }
     if (mounted) setState(() {});
