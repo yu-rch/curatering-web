@@ -32,6 +32,12 @@ class _AppRootRouteState extends State<AppRootRoute> {
       return;
     }
     setBrowserTabTitle('Home', staff: false);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _startHomeLoad();
+    });
+  }
+
+  void _startHomeLoad() {
     _homeLoading ??= customer_home.loadLibrary();
     _homeLoading!
         .then((_) {

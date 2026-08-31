@@ -16,16 +16,11 @@
 
   <title>Home - Macrina's Kitchen and Catering</title>
   <link rel="manifest" href="manifest.json">
+  <script src="console_filter.js"></script>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Pacifico&family=Playfair+Display:wght@400;700&family=Poppins:wght@400;500;600;700&family=Scheherazade+New:wght@400;700&display=swap" media="print" onload="this.media='all'">
+  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Pacifico&family=Playfair+Display:wght@400;700&family=Poppins:wght@400;500;600;700&family=Scheherazade+New:wght@400;700&display=swap"></noscript>
   <script>
     (function () {
-      // Drop deprecated Intl.v8BreakIterator warnings from Lighthouse console audits.
-      var warn = console.warn;
-      console.warn = function () {
-        var msg = Array.prototype.join.call(arguments, ' ');
-        if (msg.indexOf('v8BreakIterator') >= 0) return;
-        return warn.apply(console, arguments);
-      };
-
       var host = (location.hostname || '').toLowerCase().replace(/^www\./, '');
       var staff =
         host === 'staff.curatering.com' || host.split('.')[0] === 'staff';
@@ -46,9 +41,6 @@
       preloadSplash(png);
     })();
   </script>
-  <link rel="preload" href="main.dart.js" as="script">
-  <link rel="preload" href="canvaskit/chromium/canvaskit.js" as="script">
-  <link rel="preload" href="canvaskit/chromium/canvaskit.wasm" as="fetch" type="application/wasm" crossorigin>
 
   <style>
     html, body {
@@ -73,7 +65,7 @@
       color: #ffffff;
       font-family: system-ui, -apple-system, Segoe UI, sans-serif;
       text-align: center;
-      padding: 24px;
+      padding: clamp(12px, 4vw, 24px);
       transition: opacity 220ms ease;
     }
     #app-splash.app-splash-hide {
@@ -81,11 +73,12 @@
       pointer-events: none;
     }
     #app-splash-logo {
-      width: min(72vw, 320px);
-      height: auto;
-      max-height: 40vh;
-      object-fit: contain;
       display: block;
+      width: min(90vw, 320px);
+      height: auto;
+      aspect-ratio: 320 / 160;
+      max-height: min(45vw, 160px);
+      object-fit: contain;
     }
     #app-splash-error {
       display: none;

@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
+import '../theme/customer_fonts.dart';
 import 'package:http/http.dart' as http;
 
 import '../config.dart';
@@ -575,7 +575,7 @@ class _GalleryPageState extends State<GalleryPage> {
                           children: [
                             Text(
                               cat.label,
-                              style: GoogleFonts.getFont(
+                              style: CustomerFonts.getFont(
                                 _primaryFont,
                                 fontSize: 20,
                                 fontWeight: FontWeight.bold,

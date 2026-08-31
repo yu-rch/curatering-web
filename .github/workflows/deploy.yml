@@ -29,10 +29,11 @@ jobs:
         working-directory: curatering
         run: |
           python tool/optimize_splash.py
+          python tool/optimize_home_assets.py
           flutter build web --release \
             --tree-shake-icons \
             --no-wasm-dry-run \
-            --source-maps \
+            --optimization-level=4 \
             --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
             --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
 

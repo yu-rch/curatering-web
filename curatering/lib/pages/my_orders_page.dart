@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
+import '../theme/customer_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config.dart';
@@ -714,7 +714,7 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
                   const SizedBox(height: 16),
                   Text(
                     'Initial Payment Proof',
-                    style: GoogleFonts.poppins(
+                    style: CustomerFonts.poppins(
                       fontWeight: FontWeight.w600,
                       fontSize: 13,
                     ),
@@ -725,7 +725,7 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
                   const SizedBox(height: 16),
                   Text(
                     'Initial Payment Proof',
-                    style: GoogleFonts.poppins(
+                    style: CustomerFonts.poppins(
                       fontWeight: FontWeight.w600,
                       fontSize: 13,
                     ),
@@ -737,7 +737,7 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
                   const SizedBox(height: 16),
                   Text(
                     'Balance Payment Proof',
-                    style: GoogleFonts.poppins(
+                    style: CustomerFonts.poppins(
                       fontWeight: FontWeight.w600,
                       fontSize: 13,
                     ),
@@ -1147,11 +1147,11 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
           children: [
             Text(
               'Order History',
-              style: GoogleFonts.poppins(fontWeight: FontWeight.w700),
+              style: CustomerFonts.poppins(fontWeight: FontWeight.w700),
             ),
             Text(
               'Easily view and manage all your previous orders.',
-              style: GoogleFonts.poppins(
+              style: CustomerFonts.poppins(
                 fontSize: 12,
                 fontWeight: FontWeight.w400,
                 color: Colors.white70,
@@ -1315,7 +1315,7 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
                                         ),
                                         child: Text(
                                           t,
-                                          style: GoogleFonts.poppins(
+                                          style: CustomerFonts.poppins(
                                             fontSize: 14,
                                             fontWeight: FontWeight.w700,
                                           ),
@@ -1355,7 +1355,7 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
                                             ),
                                             child: Text(
                                               'Order history',
-                                              style: GoogleFonts.poppins(
+                                              style: CustomerFonts.poppins(
                                                 fontSize: 14,
                                                 fontWeight: FontWeight.w700,
                                               ),

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
+import '../theme/customer_fonts.dart';
 
 /// Centered Ant Design–inspired page hero used on Catering / Gallery / Restaurant.
 class CustomerAntdPageHero extends StatelessWidget {
@@ -28,7 +28,7 @@ class CustomerAntdPageHero extends StatelessWidget {
         Text(
           title.trim().isEmpty ? title : title.toUpperCase(),
           textAlign: TextAlign.center,
-          style: GoogleFonts.inter(
+          style: CustomerFonts.inter(
             fontSize: titleFontSize,
             fontWeight: FontWeight.w800,
             color: titleColor,

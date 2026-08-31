@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:google_fonts/google_fonts.dart';
+import '../theme/customer_fonts.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../services/nominatim_service.dart';
@@ -205,7 +205,7 @@ class _MapPickerState extends State<MapPicker> {
         foregroundColor: Colors.white,
         title: Text(
           'Select Location',
-          style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+          style: CustomerFonts.poppins(fontWeight: FontWeight.w600),
         ),
       ),
       body: Column(
@@ -272,7 +272,7 @@ class _MapPickerState extends State<MapPicker> {
                     _address.isNotEmpty
                         ? _address
                         : 'Tap the map to place the pin',
-                    style: GoogleFonts.poppins(
+                    style: CustomerFonts.poppins(
                       fontSize: 14,
                       fontWeight: FontWeight.w500,
                     ),

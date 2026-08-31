@@ -18,10 +18,17 @@ def patch_loader_js(text: str) -> str:
 
 
 def patch_main_dart_js(text: str) -> str:
-    return text.replace(
+    text = text.replace(
         "s.Intl.v8BreakIterator!=null&&s.Intl.Segmenter!=null",
         "s.Intl.Segmenter!=null",
     )
+    text = text.replace("Intl.v8BreakIterator", "Intl.Segmenter")
+    text = text.replace('"v8BreakIterator"', '"Segmenter"')
+    text = text.replace(
+        "v8BreakIterator is not supported.",
+        "Segmenter is not supported.",
+    )
+    return text
 
 
 def patch_v8_break_iterator(text: str, *, is_main: bool = False) -> str:
@@ -60,12 +67,15 @@ def main() -> None:
         raise SystemExit(f"Build output not found: {ROOT}")
 
     for path in ROOT.rglob("*.js"):
-        if path.name == "boot.js":
+        if path.name in {"boot.js", "console_filter.js"}:
             continue
         original = path.read_text(encoding="utf-8")
+        is_main_bundle = path.name == "main.dart.js" or path.name.startswith(
+            "main.dart.js_"
+        )
         patched = patch_v8_break_iterator(
             original,
-            is_main=path.name == "main.dart.js",
+            is_main=is_main_bundle,
         )
         if path.name == "flutter_bootstrap.js":
             patched = patch_flutter_bootstrap(patched)

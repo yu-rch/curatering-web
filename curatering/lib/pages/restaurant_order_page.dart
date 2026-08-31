@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
+import '../theme/customer_fonts.dart';
 import '../constants/catering_meal_types.dart';
 import '../services/menu_store.dart';
 import '../services/cart_store.dart';
@@ -131,7 +131,7 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
               const SizedBox(height: 24),
               Text(
                 'Loading our delicious menu...',
-                style: GoogleFonts.getFont(
+                style: CustomerFonts.getFont(
                   _primaryFont,
                   fontSize: 16,
                   color: Colors.grey.shade600,

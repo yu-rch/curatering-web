@@ -9561,8 +9561,11 @@ async function registerRoutesAfterDbInit() {
     });
 
     // Homepage popular dishes + event designs from completed/successful orders.
-    app.get('/api/public/homepage-highlights', async (_req, res) => {
+    app.get('/api/public/homepage-highlights', async (req, res) => {
       try {
+        const lite =
+          String(req.query.lite || '').toLowerCase() === '1' ||
+          String(req.query.lite || '').toLowerCase() === 'true';
         const dishCounts = {};
         const pushMenuItem = (item, qtyFallback = 1) => {
           const name = String(
@@ -9701,7 +9704,7 @@ async function registerRoutesAfterDbInit() {
           popularDishes.push({
             name: entry.name,
             count: entry.count,
-            imageBase64,
+            imageBase64: lite ? null : imageBase64,
             description,
           });
         }
@@ -9814,16 +9817,35 @@ async function registerRoutesAfterDbInit() {
 
         const pushDesign = (image, label, description) => {
           const img = String(image || '').trim();
-          if (!img || !looksLikeImageBase64(img) || eventDesigns.length >= 8) {
+          if (!lite) {
+            if (
+              !img ||
+              !looksLikeImageBase64(img) ||
+              eventDesigns.length >= 8
+            ) {
+              return;
+            }
+            const key = img.slice(0, 120);
+            if (seenDesignImages.has(key)) return;
+            seenDesignImages.add(key);
+            eventDesigns.push({
+              imageBase64: img,
+              label: String(label || '').trim() || 'Featured Event Design',
+              description: String(description || '').trim(),
+            });
             return;
           }
-          const key = img.slice(0, 120);
+          if (eventDesigns.length >= 8) return;
+          const labelText =
+            String(label || '').trim() || 'Featured Event Design';
+          const descText = String(description || '').trim();
+          const key = `${labelText}|${descText}`;
           if (seenDesignImages.has(key)) return;
           seenDesignImages.add(key);
           eventDesigns.push({
-            imageBase64: img,
-            label: String(label || '').trim() || 'Featured Event Design',
-            description: String(description || '').trim(),
+            imageBase64: null,
+            label: labelText,
+            description: descText,
           });
         };
 

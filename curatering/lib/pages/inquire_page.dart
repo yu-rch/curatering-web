@@ -7,7 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
+import '../theme/customer_fonts.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -1651,7 +1651,7 @@ class _InquirePageState extends State<InquirePage> {
       padding: const EdgeInsets.only(bottom: 8, top: 4),
       child: Text(
         title,
-        style: GoogleFonts.getFont(
+        style: CustomerFonts.getFont(
           _primaryFont,
           fontSize: 22,
           fontWeight: FontWeight.bold,
@@ -1778,7 +1778,7 @@ class _InquirePageState extends State<InquirePage> {
                       Text(
                         content.inquiryPageTitle,
                         textAlign: TextAlign.center,
-                        style: GoogleFonts.getFont(
+                        style: CustomerFonts.getFont(
                           _primaryFont,
                           fontSize: 22,
                           fontWeight: FontWeight.bold,
@@ -1940,7 +1940,7 @@ class _InquirePageState extends State<InquirePage> {
                   Text(
                     'How many guests will you have?',
                     textAlign: TextAlign.center,
-                    style: GoogleFonts.getFont(
+                    style: CustomerFonts.getFont(
                       _primaryFont,
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
@@ -4161,7 +4161,7 @@ class _InquirePageState extends State<InquirePage> {
                 const SizedBox(height: 16),
                 Text(
                   'Inquiry submitted',
-                  style: GoogleFonts.getFont(
+                  style: CustomerFonts.getFont(
                     _primaryFont,
                     fontSize: 28,
                     fontWeight: FontWeight.bold,

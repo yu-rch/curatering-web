@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
+import '../theme/customer_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config.dart';
@@ -403,7 +403,7 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
         automaticallyImplyLeading: false,
         title: Text(
           'Order Tracking',
-          style: GoogleFonts.poppins(fontWeight: FontWeight.w700),
+          style: CustomerFonts.poppins(fontWeight: FontWeight.w700),
         ),
         actions: [
           IconButton(

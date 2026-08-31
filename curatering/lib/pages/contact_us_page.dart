@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
+import '../theme/customer_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
@@ -326,7 +326,7 @@ class _ContactUsPageState extends State<ContactUsPage> {
                             children: [
                               Text(
                                 'GET IN TOUCH',
-                                style: GoogleFonts.getFont(
+                                style: CustomerFonts.getFont(
                                   _primaryFont,
                                   fontSize: 28,
                                   fontWeight: FontWeight.bold,
@@ -363,7 +363,7 @@ class _ContactUsPageState extends State<ContactUsPage> {
                       children: [
                         Text(
                           'GET IN TOUCH',
-                          style: GoogleFonts.getFont(
+                          style: CustomerFonts.getFont(
                             _primaryFont,
                             fontSize: 28,
                             fontWeight: FontWeight.bold,
@@ -428,7 +428,7 @@ class _ContactUsPageState extends State<ContactUsPage> {
                       children: [
                         Text(
                           'Mail us',
-                          style: GoogleFonts.getFont(
+                          style: CustomerFonts.getFont(
                             _primaryFont,
                             fontSize: 18,
                             fontWeight: FontWeight.w800,
@@ -532,7 +532,7 @@ class _ContactUsPageState extends State<ContactUsPage> {
       children: [
         Text(
           'Frequently asked questions',
-          style: GoogleFonts.getFont(
+          style: CustomerFonts.getFont(
             _primaryFont,
             fontSize: 20,
             fontWeight: FontWeight.bold,
@@ -605,7 +605,7 @@ class _ContactUsPageState extends State<ContactUsPage> {
             children: [
               Text(
                 'Share your feedback',
-                style: GoogleFonts.getFont(
+                style: CustomerFonts.getFont(
                   _primaryFont,
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
@@ -782,7 +782,7 @@ class _ContactUsPageState extends State<ContactUsPage> {
       children: [
         Text(
           'Contact Information',
-          style: GoogleFonts.getFont(
+          style: CustomerFonts.getFont(
             _primaryFont,
             fontSize: 20,
             fontWeight: FontWeight.bold,

@@ -1,6 +1,6 @@
-part of 'customer_website.dart';
+part of 'customer_inquire_form.dart';
 
-extension _ThemeEditorPageExtraction on _InquireFormState {
+extension _ThemeEditorPageExtraction on _CustomerInquireFormState {
   static const Duration _aiRequestTimeout = Duration(seconds: 180);
   void _showDesignMyEventEditorPage() {
     final baseCarouselCtrl = PageController(

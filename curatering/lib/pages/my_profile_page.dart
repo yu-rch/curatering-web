@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
+import '../theme/customer_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config.dart';
@@ -786,7 +786,7 @@ class _MyProfilePageState extends State<MyProfilePage> {
         automaticallyImplyLeading: false,
         title: Text(
           'My Profile',
-          style: GoogleFonts.poppins(fontWeight: FontWeight.w700),
+          style: CustomerFonts.poppins(fontWeight: FontWeight.w700),
         ),
         actions: [
           IconButton(
@@ -1016,7 +1016,7 @@ class _MyProfilePageState extends State<MyProfilePage> {
                           // Profile Information Section
                           Text(
                             'Profile Information',
-                            style: GoogleFonts.poppins(
+                            style: CustomerFonts.poppins(
                               fontSize: 18,
                               fontWeight: FontWeight.w600,
                             ),
@@ -1062,7 +1062,7 @@ class _MyProfilePageState extends State<MyProfilePage> {
                               Expanded(
                                 child: Text(
                                   'Delivery Addresses',
-                                  style: GoogleFonts.poppins(
+                                  style: CustomerFonts.poppins(
                                     fontSize: 18,
                                     fontWeight: FontWeight.w600,
                                   ),
@@ -1262,7 +1262,7 @@ class _MyProfilePageState extends State<MyProfilePage> {
                           // Security Section
                           Text(
                             'Security',
-                            style: GoogleFonts.poppins(
+                            style: CustomerFonts.poppins(
                               fontSize: 18,
                               fontWeight: FontWeight.w600,
                             ),
@@ -1300,7 +1300,7 @@ class _MyProfilePageState extends State<MyProfilePage> {
                           // Account Info
                           Text(
                             'Account Information',
-                            style: GoogleFonts.poppins(
+                            style: CustomerFonts.poppins(
                               fontSize: 18,
                               fontWeight: FontWeight.w600,
                             ),

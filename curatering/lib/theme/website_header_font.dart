@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
+
+import 'customer_fonts.dart';
 
 /// Display font for customer-facing headings (replaces Dancing Script).
 TextStyle websiteHeaderStyle({
@@ -9,7 +10,7 @@ TextStyle websiteHeaderStyle({
   double? height,
   double? letterSpacing,
 }) {
-  return GoogleFonts.scheherazadeNew(
+  return CustomerFonts.scheherazadeNew(
     fontSize: fontSize,
     fontWeight: fontWeight,
     color: color,

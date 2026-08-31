@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
+import '../theme/customer_fonts.dart';
 
 import '../models/menu_dish.dart';
 import '../constants/catering_meal_types.dart';
@@ -209,7 +209,7 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
               const SizedBox(height: 24),
               Text(
                 'Loading our delicious menu...',
-                style: GoogleFonts.getFont(
+                style: CustomerFonts.getFont(
                   _primaryFont,
                   fontSize: 16,
                   color: Colors.grey.shade600,
@@ -248,7 +248,7 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
                 Text(
                   'Oops, there was an error loading the website.',
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.getFont(
+                  style: CustomerFonts.getFont(
                     _primaryFont,
                     fontSize: 18,
                     color: Colors.grey.shade800,
@@ -259,7 +259,7 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
                 Text(
                   'Try reloading the page.',
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.getFont(
+                  style: CustomerFonts.getFont(
                     _primaryFont,
                     fontSize: 14,
                     color: Colors.grey.shade600,
@@ -288,7 +288,7 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
                     ),
                     label: Text(
                       'Reload Page',
-                      style: GoogleFonts.inter(
+                      style: CustomerFonts.inter(
                         color: Colors.white,
                         fontWeight: FontWeight.w600,
                       ),

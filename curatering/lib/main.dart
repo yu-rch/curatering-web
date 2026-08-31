@@ -21,7 +21,6 @@ import 'auth/roles.dart';
 import 'auth/staff_permission_refresh.dart';
 import 'data_store.dart';
 import 'utils/web_boot_bridge.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 const _customerExtraPaths = {
   '/gallery',
@@ -66,10 +65,7 @@ Future<void> main() async {
 
   if (bootstrapWebRouting()) return;
 
-  // Avoid runtime Google Fonts fetches on the customer storefront critical path.
-  if (isCustomerSiteHost) {
-    GoogleFonts.config.allowRuntimeFetching = false;
-  } else {
+  if (!isCustomerSiteHost) {
     await DataStore.loadTheme();
   }
 

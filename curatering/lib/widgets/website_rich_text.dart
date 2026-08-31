@@ -1,8 +1,8 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../theme/customer_fonts.dart';
 import '../theme/website_header_font.dart';
 
 class _MarkupState {
@@ -159,7 +159,7 @@ TextStyle _activeStyle(TextStyle base, _MarkupState state) {
       family.isNotEmpty &&
       family.toLowerCase() != 'default') {
     try {
-      style = GoogleFonts.getFont(family, textStyle: style);
+      style = CustomerFonts.getFont(family, textStyle: style);
     } catch (_) {}
   }
   return style;
