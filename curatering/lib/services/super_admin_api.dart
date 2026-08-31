@@ -574,13 +574,21 @@ class SuperAdminApi {
         request: r['request'] as String,
         createdAt: DateTime.parse(r['createdAt'] as String),
         status: helpRequestStatusFromString(r['status'] as String),
+        resolutionNotes: (r['resolutionNotes'] ?? '').toString(),
       );
     }).toList();
   }
 
-  Future<void> resolveHelpRequest({required String requestId}) async {
+  Future<void> resolveHelpRequest({
+    required String requestId,
+    String? resolutionNotes,
+  }) async {
     await ApiClient.instance.postJson(
       '/api/super-admin/help-requests/$requestId/resolve',
+      body: {
+        if (resolutionNotes != null && resolutionNotes.trim().isNotEmpty)
+          'resolutionNotes': resolutionNotes.trim(),
+      },
     );
   }
 

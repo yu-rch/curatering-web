@@ -1,0 +1,35 @@
+/// Software feature / functionality labels for help-request filtering.
+/// Help requests should describe system problems, not order follow-ups or feedback.
+const List<String> kHelpRequestFeatureFilterOptions = [
+  'All',
+  // Staff portal
+  'Dashboard',
+  'Manage Events',
+  'Restaurant Orders',
+  'Order History',
+  'Inventory',
+  'Reports',
+  'Catering/Restaurant Menu',
+  'Loyalty Rewards',
+  'Archive',
+  'Settings',
+  'Login / Authentication',
+  'Manage Accounts',
+  'Customer Management',
+  'Website CMS',
+  'Action Logs',
+  // Customer website / app
+  'Homepage',
+  'Restaurant Menu (customer)',
+  'Catering Menu (customer)',
+  'Inquire / Book Event',
+  'Gallery',
+  'Contact Us',
+  'Checkout',
+  'My Orders',
+  'My Profile',
+  'Order Tracking',
+  'Customer Login / Sign up',
+  'Cart',
+  'Other software issue',
+];

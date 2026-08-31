@@ -29,7 +29,7 @@ class _LoginState extends State<Login> {
     final password = _passwordController.text;
 
     if (email.isEmpty || password.isEmpty) {
-      setState(() => _errorMessage = 'Email and Password is required');
+      setState(() => _errorMessage = 'Email Address and Password are required');
       return;
     }
 
@@ -84,7 +84,7 @@ class _LoginState extends State<Login> {
 
       await showCurateringSuccessDialog(
         context: context,
-        title: 'Successful login',
+        title: 'Successful login!',
       );
 
       if (!mounted) return;

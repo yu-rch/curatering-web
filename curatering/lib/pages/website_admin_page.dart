@@ -1,7 +1,10 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../config.dart';
 import '../config/site_routes.dart';
+import '../config/site_open_tab_stub.dart'
+    if (dart.library.html) '../config/site_open_tab_web.dart';
 import '../features/event_design/event_design_admin_screen.dart';
 import '../services/website_content_store.dart';
 import '../utils/gallery_search.dart';
@@ -87,6 +90,25 @@ class _WebsiteAdminPageState extends State<WebsiteAdminPage> {
   }
 
   Future<void> _saveDraft() async {
+    final ok = await showAntdModal<bool>(
+      context: context,
+      title: 'Save draft?',
+      body: const Text(
+        'Save your current changes to the draft? Customers will still see the last published version until you publish.',
+      ),
+      actions: [
+        AntdCancelButton(
+          label: 'Cancel',
+          onPressed: () => Navigator.pop(context, false),
+        ),
+        AntdPrimaryButton(
+          label: 'Save draft',
+          onPressed: () => Navigator.pop(context, true),
+        ),
+      ],
+    );
+    if (ok != true || !mounted) return;
+
     setState(() => _saving = true);
     try {
       await WebsiteContentStore.instance.saveDraft();
@@ -106,16 +128,42 @@ class _WebsiteAdminPageState extends State<WebsiteAdminPage> {
   }
 
   Future<void> _publish() async {
+    final store = WebsiteContentStore.instance;
+    final changes = store.pendingPublishChanges();
     final noteCtrl = TextEditingController(text: 'publish');
+
     final ok = await showAntdModal<bool>(
       context: context,
       title: 'Publish to live site',
+      maxWidth: 640,
+      scrollBody: true,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Text(
             'This replaces the public customer website with your current draft.',
           ),
+          const SizedBox(height: 12),
+          const Text(
+            'Changes to be published:',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 8),
+          if (changes.isEmpty)
+            const Text('No detectable changes from the live site.')
+          else
+            ...changes.map(
+              (item) => Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('• '),
+                    Expanded(child: Text(item)),
+                  ],
+                ),
+              ),
+            ),
           const SizedBox(height: 12),
           AntdFieldShell(
             label: 'Revision note',
@@ -156,6 +204,14 @@ class _WebsiteAdminPageState extends State<WebsiteAdminPage> {
     } finally {
       if (mounted) setState(() => _publishing = false);
     }
+  }
+
+  void _openLiveSite() {
+    if (kIsWeb) {
+      openAppRouteInNewTab(customerSiteOrigin, '/');
+      return;
+    }
+    redirectToSiteOrigin(customerSiteOrigin, '/');
   }
 
   void _previewDraft() {
@@ -276,13 +332,7 @@ class _WebsiteAdminPageState extends State<WebsiteAdminPage> {
                     alignment: WrapAlignment.end,
                     children: [
                       OutlinedButton.icon(
-                        onPressed: () {
-                          if (isStaffSiteHost) {
-                            redirectToSiteOrigin(customerSiteOrigin, '/');
-                          } else {
-                            Navigator.of(context).pushNamed(customerRoute('/'));
-                          }
-                        },
+                        onPressed: _openLiveSite,
                         icon: const Icon(Icons.public, size: 18),
                         label: const Text('Live site'),
                       ),

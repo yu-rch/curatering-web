@@ -28,6 +28,7 @@ class HelpRequestDto {
   final String request;
   final DateTime createdAt;
   final HelpRequestStatus status;
+  final String resolutionNotes;
 
   const HelpRequestDto({
     required this.id,
@@ -38,6 +39,7 @@ class HelpRequestDto {
     required this.request,
     required this.createdAt,
     required this.status,
+    this.resolutionNotes = '',
   });
 }
 

@@ -626,6 +626,11 @@ export async function initDb() {
   }
 
   await pool.query(`
+    ALTER TABLE help_requests
+    ADD COLUMN IF NOT EXISTS resolution_notes TEXT;
+  `);
+
+  await pool.query(`
     ALTER TABLE event_orders
     ADD COLUMN IF NOT EXISTS actual_event_images JSONB NOT NULL DEFAULT '[]'::jsonb;
   `);

@@ -68,6 +68,7 @@ class _DashboardState extends State<Dashboard> {
   DateTime? _lastRefreshAt;
   String? _errorMessage;
   String? _insightError;
+  String? _insightPromptError;
   String? _dishTrendError;
   String? _healthError;
   DashboardSummary? _summary;
@@ -192,14 +193,25 @@ class _DashboardState extends State<Dashboard> {
 
   Future<void> _generateInsight() async {
     if (!AuthSession.instance.hasToken || _isAiBusy(_insightState)) return;
+
+    final prompt = _insightPromptController.text.trim();
+    if (prompt.isEmpty) {
+      setState(() {
+        _insightPromptError = 'Field must not be empty.';
+        _insightError = null;
+      });
+      return;
+    }
+
     setState(() {
       _insightState = AiTaskState.processing;
       _insightError = null;
+      _insightPromptError = null;
     });
     try {
       final insight = await DashboardApi.instance.analyzeDashboard(
         range: _insightRange,
-        prompt: _insightPromptController.text,
+        prompt: prompt,
         dashboardData: _summary,
         filters: _dashboardFilters,
         onStateChanged:
@@ -1100,12 +1112,25 @@ class _DashboardState extends State<Dashboard> {
               controller: _insightPromptController,
               minLines: 2,
               maxLines: 4,
-              decoration: const InputDecoration(
+              onChanged: (_) {
+                if (_insightPromptError != null) {
+                  setState(() => _insightPromptError = null);
+                }
+              },
+              decoration: InputDecoration(
                 labelText: 'AI analysis prompt',
                 hintText:
                     'Tell the AI what to focus on, such as complaints, sales risks, operations, or next actions.',
-                border: OutlineInputBorder(),
+                border: const OutlineInputBorder(),
                 isDense: true,
+                errorText: _insightPromptError,
+                errorStyle: TextStyle(color: Colors.red.shade700, fontSize: 12),
+                errorBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: Colors.red.shade700),
+                ),
+                focusedErrorBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: Colors.red.shade700, width: 1.5),
+                ),
               ),
             ),
             if (_insightError != null) ...[

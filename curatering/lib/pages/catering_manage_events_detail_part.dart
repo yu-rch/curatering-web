@@ -125,54 +125,7 @@ extension _ManageEventsDetailExt on _ManageEventsState {
   }
 
   Future<void> _printPdfBytes(Uint8List bytes, {String name = 'document.pdf'}) async {
-    await _previewPdfBytes(bytes, title: name.replaceAll('.pdf', '').replaceAll('-', ' '));
-  }
-
-  Future<void> _previewPdfBytes(
-    Uint8List bytes, {
-    required String title,
-  }) async {
-    if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) {
-        final size = MediaQuery.sizeOf(ctx);
-        return Dialog(
-          insetPadding: const EdgeInsets.all(12),
-          child: SizedBox(
-            width: size.width * 0.94,
-            height: size.height * 0.88,
-            child: Column(
-              children: [
-                Material(
-                  color: const Color(0xFF1E1E1E),
-                  child: ListTile(
-                    title: Text(
-                      title,
-                      style: const TextStyle(color: Colors.white),
-                    ),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.close, color: Colors.white),
-                      onPressed: () => Navigator.of(ctx).pop(),
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: PdfPreview(
-                    build: (_) async => bytes,
-                    canChangeOrientation: false,
-                    canChangePageFormat: false,
-                    canDebug: false,
-                    allowPrinting: true,
-                    allowSharing: true,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
+    await printPdfBytes(bytes, name: name);
   }
 
   Future<void> _generateOrderSummaryPdf(

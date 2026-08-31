@@ -6,6 +6,7 @@ import '../models/customer_feedback.dart';
 import '../services/super_admin_api.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/antd_buttons.dart';
+import '../widgets/antd_dialog.dart';
 import '../widgets/antd_message.dart';
 import '../widgets/antd_staff.dart';
 import '../widgets/antd_tokens.dart';
@@ -67,12 +68,7 @@ class _CustomerFeedbackPageState extends State<CustomerFeedbackPage> {
       );
       if (!mounted) return;
       setState(() => _analysis = result);
-      showAntdMessage(
-        context,
-        result.source == 'runpod_nlp'
-            ? 'NLP analysis ready.'
-            : 'Analysis ready using ${result.source} insights.',
-      );
+      await _showAnalysisDialog(result);
     } catch (_) {
       if (!mounted) return;
       showAntdMessage(
@@ -83,6 +79,118 @@ class _CustomerFeedbackPageState extends State<CustomerFeedbackPage> {
     } finally {
       if (mounted) setState(() => _analyzing = false);
     }
+  }
+
+  Future<void> _showAnalysisDialog(CustomerFeedbackAnalysis analysis) async {
+    await showAntdModal<void>(
+      context: context,
+      title: 'NLP feedback analysis',
+      maxWidth: 720,
+      scrollBody: true,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              if (analysis.sentiment.trim().isNotEmpty) ...[
+                AntdStatusTag(
+                  label: analysis.sentiment,
+                  color: AntdTokens.info,
+                ),
+                const SizedBox(width: 8),
+              ],
+              if (analysis.averageStars != null)
+                AntdStatusTag(
+                  label:
+                      'Avg ${analysis.averageStars!.toStringAsFixed(1)} stars · ${analysis.feedbackCount} reviews',
+                  color: AntdTokens.warning,
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            analysis.summary,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 8),
+          Text(analysis.interpretation),
+          _analysisListSection('Key topics', analysis.keyTopics),
+          _analysisListSection('Complaints', analysis.complaints),
+          _analysisListSection('Praises', analysis.praises),
+          _analysisListSection('Insights', analysis.insights),
+          _analysisListSection('Recommendations', analysis.recommendations),
+        ],
+      ),
+      actions: [
+        AntdPrimaryButton(
+          label: 'Close',
+          onPressed: () => Navigator.pop(context),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _showFeedbackDetail(CustomerFeedbackDto feedback) async {
+    await showAntdModal<void>(
+      context: context,
+      title: 'Customer feedback',
+      maxWidth: 640,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _detailRow('Order', feedback.orderNo),
+          _detailRow('Customer', feedback.customerName),
+          _detailRow('Email', feedback.customerEmail),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Rating',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: AntdTokens.labelMuted,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                _starsCell(feedback.stars),
+              ],
+            ),
+          ),
+          _detailRow('Remarks', feedback.remarks.isEmpty ? '—' : feedback.remarks),
+          _detailRow('Submitted', _fmt(feedback.submittedAt)),
+        ],
+      ),
+      actions: [
+        AntdPrimaryButton(
+          label: 'Close',
+          onPressed: () => Navigator.pop(context),
+        ),
+      ],
+    );
+  }
+
+  Widget _detailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: AntdTokens.labelMuted,
+            ),
+          ),
+          const SizedBox(height: 4),
+          SelectableText(value),
+        ],
+      ),
+    );
   }
 
   List<CustomerFeedbackDto> get _filtered {
@@ -282,6 +390,7 @@ class _CustomerFeedbackPageState extends State<CustomerFeedbackPage> {
                               rows:
                                   filtered.map((f) {
                                     return DataRow(
+                                      onSelectChanged: (_) => _showFeedbackDetail(f),
                                       cells: [
                                         DataCell(Text(f.orderNo)),
                                         DataCell(Text(f.customerName)),

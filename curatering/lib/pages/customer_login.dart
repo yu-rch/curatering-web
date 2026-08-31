@@ -20,6 +20,42 @@ Uri _apiUri(String path) {
 const _requestTimeout = Duration(seconds: 30);
 
 final _nameAlphabetPattern = RegExp(r'^[A-Za-z]+(?:\s+[A-Za-z]+)*$');
+final _emailPattern = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
+final _phMobilePattern = RegExp(r'^09\d{9}$');
+
+InputDecoration _signupFieldDecoration({String? hintText}) {
+  final errorBorder = OutlineInputBorder(
+    borderRadius: BorderRadius.circular(6),
+    borderSide: BorderSide(color: Colors.red.shade700),
+  );
+  return InputDecoration(
+    isDense: true,
+    hintText: hintText,
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(6),
+    ),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(6),
+      borderSide: BorderSide(color: Colors.grey.shade400),
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(6),
+      borderSide: BorderSide(color: Colors.grey.shade700, width: 1.5),
+    ),
+    errorBorder: errorBorder,
+    focusedErrorBorder: errorBorder.copyWith(
+      borderSide: BorderSide(color: Colors.red.shade700, width: 1.5),
+    ),
+    errorStyle: TextStyle(
+      color: Colors.red.shade700,
+      fontSize: 11,
+    ),
+    contentPadding: const EdgeInsets.symmetric(
+      horizontal: 12,
+      vertical: 8,
+    ),
+  );
+}
 
 class CustomerLoginPage extends StatefulWidget {
   final bool? redirectToCheckout;
@@ -194,7 +230,7 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
     final password = _passwordController.text;
 
     if (email.isEmpty || password.isEmpty) {
-      _setError('Email and Password is required');
+      _setError('Email Address and Password are required');
       return;
     }
 
@@ -237,7 +273,7 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
         setState(() => _isLoading = false);
         await showCurateringSuccessDialog(
           context: context,
-          title: 'Successful login',
+          title: 'Successful login!',
         );
         if (mounted) {
           Navigator.of(context).pop(data);
@@ -293,12 +329,8 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
   }
 
   Future<void> _handleSignup() async {
+    setState(() => _errorMessage = null);
     if (!_formKey.currentState!.validate()) return;
-
-    if (_passwordController.text != _confirmPasswordController.text) {
-      setState(() => _errorMessage = 'Passwords do not match');
-      return;
-    }
 
     setState(() => _isLoading = true);
 
@@ -778,17 +810,7 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                                   RegExp(r'[A-Za-z\s]'),
                                 ),
                               ],
-                              decoration: InputDecoration(
-                                isDense: true,
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 8,
-                                ),
-                                hintText: 'Letters only',
-                              ),
+                              decoration: _signupFieldDecoration(hintText: 'Letters only'),
                               validator: (value) {
                                 final trimmed = value?.trim() ?? '';
                                 if (trimmed.isEmpty) {
@@ -824,26 +846,17 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                                 FilteringTextInputFormatter.digitsOnly,
                                 LengthLimitingTextInputFormatter(11),
                               ],
-                              decoration: InputDecoration(
-                                isDense: true,
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 8,
-                                ),
-                                hintText: '11 digits max',
+                              decoration: _signupFieldDecoration(hintText: '11 digits max').copyWith(
                                 counterText: '',
                               ),
                               validator: (value) {
                                 final digits =
                                     (value ?? '').replaceAll(RegExp(r'\D'), '');
                                 if (digits.isEmpty) {
-                                  return 'Required';
+                                  return 'required';
                                 }
-                                if (digits.length > 11) {
-                                  return 'Max 11 digits';
+                                if (!_phMobilePattern.hasMatch(digits)) {
+                                  return 'Invalid phone number';
                                 }
                                 return null;
                               },
@@ -868,17 +881,16 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                             controller: _emailController,
                             keyboardType: TextInputType.emailAddress,
                             style: const TextStyle(fontSize: 13),
-                            decoration: InputDecoration(
-                              isDense: true,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 8,
-                              ),
-                            ),
+                            decoration: _signupFieldDecoration(),
                             validator: (value) {
+                              if (!_isLoginMode) {
+                                final trimmed = value?.trim() ?? '';
+                                if (trimmed.isEmpty ||
+                                    !_emailPattern.hasMatch(trimmed)) {
+                                  return 'Invalid email';
+                                }
+                                return null;
+                              }
                               if (value == null ||
                                   value.isEmpty ||
                                   !value.contains('@')) {
@@ -915,15 +927,7 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                                 _handleSignup();
                               }
                             },
-                            decoration: InputDecoration(
-                              isDense: true,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 8,
-                              ),
+                            decoration: _signupFieldDecoration().copyWith(
                               suffixIcon: IconButton(
                                 icon: Icon(
                                   _obscurePassword
@@ -939,10 +943,18 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                               ),
                             ),
                             validator: (value) {
-                              if (value == null ||
-                                  value.isEmpty ||
-                                  value.length < 6) {
-                                return 'Min 6 chars';
+                              if (!_isLoginMode &&
+                                  (value == null ||
+                                      value.isEmpty ||
+                                      value.length < 6)) {
+                                return 'Min 6 characters';
+                              }
+                              if (_isLoginMode &&
+                                  (value == null || value.isEmpty)) {
+                                return 'Required';
+                              }
+                              if (value != null && value.length < 6) {
+                                return 'Min 6 characters';
                               }
                               return null;
                             },
@@ -967,15 +979,7 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                               controller: _confirmPasswordController,
                               obscureText: _obscureConfirmPassword,
                               style: const TextStyle(fontSize: 13),
-                              decoration: InputDecoration(
-                                isDense: true,
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 8,
-                                ),
+                              decoration: _signupFieldDecoration().copyWith(
                                 suffixIcon: IconButton(
                                   icon: Icon(
                                     _obscureConfirmPassword
@@ -1071,7 +1075,11 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                     style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
                   ),
                   GestureDetector(
-                    onTap: () => setState(() => _isLoginMode = !_isLoginMode),
+                    onTap: () => setState(() {
+                      _isLoginMode = !_isLoginMode;
+                      _errorMessage = null;
+                      _formKey.currentState?.reset();
+                    }),
                     child: Text(
                       _isLoginMode ? 'SIGN IN' : 'LOG IN',
                       style: const TextStyle(

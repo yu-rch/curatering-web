@@ -37,6 +37,7 @@ import '../utils/inquiry_pricing.dart';
 import '../utils/order_calculations.dart';
 import '../utils/order_type_utils.dart';
 import '../utils/web_html.dart' as html;
+import '../utils/pdf_print.dart';
 import 'customer_website.dart';
 
 part 'catering_manage_events_part.dart';
@@ -4435,7 +4436,7 @@ class _ManageEventsState extends State<ManageEvents>
           ? OrderSummaryPdfVariant.afterDownPayment
           : OrderSummaryPdfVariant.beforeDownPayment,
     );
-    await _previewPdfBytes(bytes, title: 'Order Summary');
+    await printPdfBytes(bytes, name: 'order-summary.pdf');
   }
 
   List<ChecklistItem> _buildChecklistFromMenuWithIngredients(
@@ -9040,7 +9041,7 @@ class _ManageEventsState extends State<ManageEvents>
         stageLabel: 'CHECKLIST',
         checklistRows: rows,
       );
-      await Printing.sharePdf(bytes: bytes, filename: 'checklist.pdf');
+      await printPdfBytes(bytes, name: 'checklist.pdf');
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

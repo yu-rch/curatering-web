@@ -3523,7 +3523,7 @@ function registerCustomerAuthRoutes(app, dbGate) {
       if (existingCustomer.rows.length > 0) {
         const row = existingCustomer.rows[0];
         if (!row.archived && row.is_verified) {
-          return res.status(400).json({ error: "Email already registered" });
+          return res.status(400).json({ error: "This email address is already registered." });
         }
 
         await pool.query(
@@ -4203,7 +4203,7 @@ app.post("/api/auth/login", async (req, res) => {
     if (!email || !password) {
       return res
         .status(400)
-        .json({ message: "Email and Password is required" });
+        .json({ message: "Email Address and Password are required" });
     }
 
     const emailNorm = String(email).trim().toLowerCase();
@@ -5431,6 +5431,7 @@ app.get(
       hr.problem,
       hr.request,
       hr.status,
+      hr.resolution_notes AS "resolutionNotes",
       hr.created_at AS "createdAt"
      FROM help_requests hr
      LEFT JOIN users u ON u.id = hr.user_id
@@ -5449,6 +5450,7 @@ app.get(
         problem: r.problem,
         request: r.request,
         status: r.status,
+        resolutionNotes: r.resolutionNotes ?? '',
         createdAt: r.createdAt.toISOString(),
       })),
     });
@@ -5462,6 +5464,7 @@ app.post(
     requireRoles(req, res, next, new Set(["manager", "supervisor", "admin"])),
   async (req, res) => {
     const { requestId } = req.params;
+    const resolutionNotes = String(req.body?.resolutionNotes ?? req.body?.resolution ?? '').trim();
 
     const client = await pool.connect();
     try {
@@ -5485,16 +5488,22 @@ app.post(
         `UPDATE help_requests
        SET status = 'resolved',
            resolved_at = now(),
-           resolved_by = $1
-       WHERE id = $2;`,
-        [req.user.id, requestId],
+           resolved_by = $1,
+           resolution_notes = $2
+       WHERE id = $3;`,
+        [req.user.id, resolutionNotes || null, requestId],
       );
+
+      const notificationMessage =
+        resolutionNotes.length > 0
+          ? `Your concern has been resolved. Resolution: ${resolutionNotes}`
+          : 'Your concern has been resolved. Thank you!';
 
       // Notification to the sender
       await client.query(
         `INSERT INTO notifications (user_id, message)
        VALUES ($1, $2);`,
-        [hr.user_id, "Your concern has been resolved. Thank you!"],
+        [hr.user_id, notificationMessage],
       );
 
       // Action log for the resolver
@@ -5503,7 +5512,11 @@ app.post(
         userId: req.user.id,
         feature: hr.feature,
         action: "resolved help request",
-        other: { helpRequestId: hr.id, resolvedUserId: hr.user_id },
+        other: {
+          helpRequestId: hr.id,
+          resolvedUserId: hr.user_id,
+          resolutionNotes: resolutionNotes || null,
+        },
       });
 
       await client.query("COMMIT;");

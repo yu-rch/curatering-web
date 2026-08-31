@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'api_client.dart';
 import 'mobile_ui_cms.dart';
 import '../utils/api_cache.dart';
+import '../utils/website_publish_diff.dart';
 
 /// Image that is either inline base64 (legacy) or a media-library id.
 class CmsImageRef {
@@ -599,8 +600,34 @@ class WebsiteContentStore extends ChangeNotifier {
   bool _draftMode = false;
   DateTime? publishedAt;
   DateTime? draftUpdatedAt;
+  Map<String, dynamic>? _publishedBaseline;
 
   bool get isDraftMode => _draftMode;
+
+  Map<String, dynamic>? get publishedBaseline => _publishedBaseline;
+
+  /// Compare current draft to last published live content.
+  List<String> pendingPublishChanges() {
+    return describeWebsitePublishChanges(
+      draft: _toMap(),
+      publishedBaseline: _publishedBaseline,
+    );
+  }
+
+  Future<void> refreshPublishedBaseline() async {
+    try {
+      final decoded = await ApiClient.instance.getJson(
+        '/api/website-content',
+        useCache: false,
+      );
+      final content = decoded['content'];
+      if (content is Map && content.isNotEmpty) {
+        _publishedBaseline = Map<String, dynamic>.from(content);
+      }
+    } catch (_) {
+      /* keep previous baseline */
+    }
+  }
 
   /// Apply persisted CMS content immediately so the homepage can paint without
   /// waiting for the network round-trip.
@@ -667,6 +694,7 @@ class WebsiteContentStore extends ChangeNotifier {
       }
       draftUpdatedAt = DateTime.tryParse('${decoded['draftUpdatedAt'] ?? ''}');
       publishedAt = DateTime.tryParse('${decoded['publishedAt'] ?? ''}');
+      await refreshPublishedBaseline();
       await resolveMediaRefs();
       _draftMode = true;
       _loaded = true;
@@ -798,6 +826,7 @@ class WebsiteContentStore extends ChangeNotifier {
       await resolveMediaRefs();
     }
     publishedAt = DateTime.tryParse('${result['publishedAt'] ?? ''}');
+    _publishedBaseline = Map<String, dynamic>.from(_toMap());
     _draftMode = false;
     notifyListeners();
   }
