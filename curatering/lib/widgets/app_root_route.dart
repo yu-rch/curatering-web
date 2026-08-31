@@ -33,7 +33,7 @@ class _AppRootRouteState extends State<AppRootRoute> {
     }
     setBrowserTabTitle('Home', staff: false);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _startHomeLoad();
+      scheduleWhenIdle(_startHomeLoad);
     });
   }
 

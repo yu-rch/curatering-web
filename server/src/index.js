@@ -9890,6 +9890,11 @@ async function registerRoutesAfterDbInit() {
           }
         }
 
+        if (lite) {
+          res.set('Cache-Control', 'public, max-age=300');
+        } else {
+          res.set('Cache-Control', 'public, max-age=60');
+        }
         res.json({ popularDishes, eventDesigns });
       } catch (e) {
         console.error('homepage-highlights', e);

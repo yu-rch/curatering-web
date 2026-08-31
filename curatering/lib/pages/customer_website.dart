@@ -6,7 +6,6 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import '../theme/customer_fonts.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -23,7 +22,6 @@ import '../services/website_content_store.dart';
 import '../services/cart_store.dart';
 import '../services/loyalty_rewards_store.dart';
 import '../services/api_client.dart';
-import '../widgets/contact_address_map.dart';
 import '../widgets/app_snackbar.dart';
 import '../widgets/antd_message.dart';
 import '../widgets/antd_profile_menu.dart';
@@ -36,6 +34,7 @@ import '../widgets/customer_site_footer.dart';
 import '../widgets/customer_website_topbar.dart';
 import '../widgets/lazy_home_etd_sampler.dart';
 import '../widgets/lazy_customer_inquire_form.dart';
+import '../widgets/lazy_customer_contact_section.dart';
 import '../widgets/customer_antd_page_hero.dart';
 import '../theme/website_header_font.dart';
 import '../constants/catering_meal_types.dart';
@@ -45,6 +44,7 @@ import '../utils/gallery_search.dart';
 import '../utils/image_cache.dart';
 import '../utils/responsive_layout.dart';
 import '../utils/lazy_customer_login.dart';
+import '../utils/lazy_image_picker.dart';
 
 
 class CustomerWebsiteScreen extends StatefulWidget {
@@ -164,11 +164,21 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   bool _loadingReorder = false;
   List<Map<String, dynamic>> _salesPopularDishes = [];
   List<Map<String, dynamic>> _salesEventDesigns = [];
+  bool _highlightsImagesRequested = false;
 
   @override
   void initState() {
     super.initState();
+    _pageScrollController.addListener(_maybeLoadHighlightImages);
     _initialize();
+  }
+
+  void _maybeLoadHighlightImages() {
+    if (_highlightsImagesRequested || !mounted) return;
+    if (!_pageScrollController.hasClients) return;
+    if (_pageScrollController.offset < 280) return;
+    _highlightsImagesRequested = true;
+    unawaited(_loadHomepageHighlights(lite: false));
   }
 
   void _recordPageView() {
@@ -218,20 +228,37 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     Future<void>.delayed(const Duration(seconds: 2), () {
       if (mounted) unawaited(_loadHomepageHighlights(lite: true));
     });
-    Future<void>.delayed(const Duration(seconds: 6), () {
-      if (mounted) unawaited(_loadHomepageHighlights(lite: false));
+    Future<void>.delayed(const Duration(seconds: 10), () {
+      if (mounted && !_highlightsImagesRequested) {
+        _highlightsImagesRequested = true;
+        unawaited(_loadHomepageHighlights(lite: false));
+      }
     });
   }
 
   Future<void> _bootstrapMenuAndCart() async {
     try {
+      if (widget.contentEditable) {
+        if (MenuStore.instance.activeDishes.isEmpty) {
+          await MenuStore.instance.loadDishes();
+        }
+        unawaited(MenuStore.instance.ensureImagesLoaded());
+      }
+      await CartStore.instance.init();
+    } catch (e) {
+      debugPrint('Deferred bootstrap error: $e');
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _ensureMenuLoaded() async {
+    try {
       if (MenuStore.instance.activeDishes.isEmpty) {
         await MenuStore.instance.loadDishes();
       }
       unawaited(MenuStore.instance.ensureImagesLoaded());
-      await CartStore.instance.init();
     } catch (e) {
-      debugPrint('Deferred bootstrap error: $e');
+      debugPrint('Menu load error: $e');
     }
     if (mounted) setState(() {});
   }
@@ -304,7 +331,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     });
     // Dish photos are heavy â€” fetch only when opening menu tabs.
     if (index == 2 || index == 3) {
-      unawaited(MenuStore.instance.ensureImagesLoaded());
+      unawaited(_ensureMenuLoaded());
     }
     if (index == 3) {
       unawaited(LoyaltyRewardsStore.instance.ensureLoaded());
@@ -1289,6 +1316,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
 
   @override
   void dispose() {
+    _pageScrollController.removeListener(_maybeLoadHighlightImages);
     MenuStore.instance.removeListener(_onMenuChanged);
     CartStore.instance.removeListener(_onCartChanged);
     _pageScrollController.dispose();
@@ -1304,30 +1332,9 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     };
   }
 
-  Future<String?> _pickImageB64() async {
-    final x = await ImagePicker().pickImage(
-      source: ImageSource.gallery,
-      maxWidth: 1800,
-      imageQuality: 82,
-    );
-    if (x == null) return null;
-    final bytes = await x.readAsBytes();
-    return base64Encode(bytes);
-  }
+  Future<String?> _pickImageB64() => pickImageBase64();
 
-  Future<List<String>> _pickMultipleImageB64() async {
-    final picked = await ImagePicker().pickMultiImage(
-      maxWidth: 1800,
-      imageQuality: 82,
-    );
-    if (picked.isEmpty) return const [];
-    final out = <String>[];
-    for (final x in picked) {
-      final bytes = await x.readAsBytes();
-      out.add(base64Encode(bytes));
-    }
-    return out;
-  }
+  Future<List<String>> _pickMultipleImageB64() => pickMultipleImagesBase64();
 
   Widget _b64Image(
     String? b64, {
@@ -4317,7 +4324,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
             2 => _buildCateringMenu(),
             3 => _buildRestaurantMenu(),
             4 => const LazyCustomerInquireForm(staffThemeStudioMode: false),
-            5 => _ContactSection(
+            5 => LazyCustomerContactSection(
               store: w,
               contentEditable: widget.contentEditable,
               pickB64: _pickImageB64,
@@ -5327,445 +5334,3 @@ class _RedBannerMarqueeState extends State<_RedBannerMarquee>
   }
 }
 
-class _ContactSection extends StatefulWidget {
-  const _ContactSection({
-    required this.store,
-    required this.contentEditable,
-    required this.pickB64,
-  });
-
-  final WebsiteContentStore store;
-  final bool contentEditable;
-  final Future<String?> Function() pickB64;
-
-  @override
-  State<_ContactSection> createState() => _ContactSectionState();
-}
-
-class _ContactSectionState extends State<_ContactSection> {
-  final _helpNameCtrl = TextEditingController();
-  final _helpEmailCtrl = TextEditingController();
-  final _helpMessageCtrl = TextEditingController();
-  bool _submittingHelp = false;
-
-  @override
-  void dispose() {
-    _helpNameCtrl.dispose();
-    _helpEmailCtrl.dispose();
-    _helpMessageCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submitHelpRequest() async {
-    if (_helpNameCtrl.text.trim().isEmpty ||
-        _helpEmailCtrl.text.trim().isEmpty ||
-        _helpMessageCtrl.text.trim().isEmpty) {
-      showAntdMessage(
-        context,
-        'Please fill in all message fields',
-        type: AntdMessageType.error,
-      );
-      return;
-    }
-
-    final ok = await showDialog<bool>(
-      context: context,
-      builder:
-          (ctx) => AlertDialog(
-            title: const Text('Send message?'),
-            content: const Text('Submit this message to Curatering?'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Send'),
-              ),
-            ],
-          ),
-    );
-    if (ok != true) return;
-
-    setState(() => _submittingHelp = true);
-    try {
-      await ApiClient.instance.postJson(
-        '/api/public/help-requests',
-        body: {
-          'name': _helpNameCtrl.text.trim(),
-          'email': _helpEmailCtrl.text.trim(),
-          'message': _helpMessageCtrl.text.trim(),
-        },
-      );
-      if (!mounted) return;
-      showAntdMessage(context, 'Message sent successfully');
-      _helpNameCtrl.clear();
-      _helpEmailCtrl.clear();
-      _helpMessageCtrl.clear();
-    } catch (e) {
-      if (!mounted) return;
-      showAntdMessage(
-        context,
-        'Failed to send message',
-        type: AntdMessageType.error,
-      );
-    } finally {
-      if (mounted) setState(() => _submittingHelp = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: widget.store,
-      builder: (context, _) {
-        return SingleChildScrollView(
-          padding: websitePagePadding(context, vertical: 32),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxWidth: websiteContentMaxWidth(context),
-              ),
-              child: Column(
-                children: [
-                  WebsiteRichText(
-                    value: widget.store.contactTitle,
-                    style: websiteHeaderStyle(
-                      fontSize: 42,
-                      color: Colors.red.shade400,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: const Color(0xFFFFC024)),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: WebsiteRichText(
-                      value: widget.store.contactBannerText,
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1.2,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  if (widget.store.contactPageIntro.trim().isNotEmpty) ...[
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 720),
-                      child: WebsiteRichText(
-                        value: widget.store.contactPageIntro,
-                        style: const TextStyle(fontSize: 15, height: 1.45),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                  ],
-                  Container(
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        WebsiteRichText(
-                          value: widget.store.contactReachUsLabel,
-                          style: websiteHeaderStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w700,
-                            color: const Color(0xFF1E1E1E),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        _contactRow(
-                          Icons.facebook,
-                          widget.store.contactFacebook,
-                          widget.contentEditable,
-                          context,
-                          (ctx) async {
-                            final t = TextEditingController(
-                              text: widget.store.contactFacebook,
-                            );
-                            await showDialog<void>(
-                              context: ctx,
-                              builder:
-                                  (dctx) => AlertDialog(
-                                    content: TextField(controller: t),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () => Navigator.pop(dctx),
-                                        child: const Text('Cancel'),
-                                      ),
-                                      TextButton(
-                                        onPressed: () {
-                                          widget.store.contactFacebook = t.text;
-                                          widget.store.saveDraft();
-                                          Navigator.pop(dctx);
-                                        },
-                                        child: const Text('Save'),
-                                      ),
-                                    ],
-                                  ),
-                            );
-                          },
-                        ),
-                        _contactRow(
-                          Icons.place,
-                          widget.store.contactAddress,
-                          widget.contentEditable,
-                          context,
-                          (ctx) async {
-                            final t = TextEditingController(
-                              text: widget.store.contactAddress,
-                            );
-                            await showDialog<void>(
-                              context: ctx,
-                              builder:
-                                  (dctx) => AlertDialog(
-                                    content: TextField(
-                                      controller: t,
-                                      maxLines: 2,
-                                    ),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () => Navigator.pop(dctx),
-                                        child: const Text('Cancel'),
-                                      ),
-                                      TextButton(
-                                        onPressed: () {
-                                          widget.store.contactAddress = t.text;
-                                          widget.store.saveDraft();
-                                          Navigator.pop(dctx);
-                                        },
-                                        child: const Text('Save'),
-                                      ),
-                                    ],
-                                  ),
-                            );
-                          },
-                        ),
-                        if (widget.store.contactAddress.trim().isNotEmpty) ...[
-                          const SizedBox(height: 12),
-                          ContactAddressMap(
-                            address: widget.store.contactAddress,
-                          ),
-                        ],
-                        _contactRow(
-                          Icons.schedule,
-                          widget.store.contactHours,
-                          widget.contentEditable,
-                          context,
-                          (ctx) async {
-                            final t = TextEditingController(
-                              text: widget.store.contactHours,
-                            );
-                            await showDialog<void>(
-                              context: ctx,
-                              builder:
-                                  (dctx) => AlertDialog(
-                                    title: const Text('Hours'),
-                                    content: TextField(controller: t),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () => Navigator.pop(dctx),
-                                        child: const Text('Cancel'),
-                                      ),
-                                      TextButton(
-                                        onPressed: () {
-                                          widget.store.contactHours = t.text;
-                                          widget.store.saveDraft();
-                                          Navigator.pop(dctx);
-                                        },
-                                        child: const Text('Save'),
-                                      ),
-                                    ],
-                                  ),
-                            );
-                          },
-                        ),
-                        _contactRow(
-                          Icons.phone,
-                          widget.store.contactPhone,
-                          widget.contentEditable,
-                          context,
-                          (ctx) async {
-                            final t = TextEditingController(
-                              text: widget.store.contactPhone,
-                            );
-                            await showDialog<void>(
-                              context: ctx,
-                              builder:
-                                  (dctx) => AlertDialog(
-                                    title: const Text('Phone'),
-                                    content: TextField(controller: t),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () => Navigator.pop(dctx),
-                                        child: const Text('Cancel'),
-                                      ),
-                                      TextButton(
-                                        onPressed: () {
-                                          widget.store.contactPhone = t.text;
-                                          widget.store.saveDraft();
-                                          Navigator.pop(dctx);
-                                        },
-                                        child: const Text('Save'),
-                                      ),
-                                    ],
-                                  ),
-                            );
-                          },
-                        ),
-                        _contactRow(
-                          Icons.email,
-                          widget.store.contactEmail,
-                          widget.contentEditable,
-                          context,
-                          (ctx) async {
-                            final t = TextEditingController(
-                              text: widget.store.contactEmail,
-                            );
-                            await showDialog<void>(
-                              context: ctx,
-                              builder:
-                                  (dctx) => AlertDialog(
-                                    title: const Text('Email'),
-                                    content: TextField(controller: t),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () => Navigator.pop(dctx),
-                                        child: const Text('Cancel'),
-                                      ),
-                                      TextButton(
-                                        onPressed: () {
-                                          widget.store.contactEmail = t.text;
-                                          widget.store.saveDraft();
-                                          Navigator.pop(dctx);
-                                        },
-                                        child: const Text('Save'),
-                                      ),
-                                    ],
-                                  ),
-                            );
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  // Message Us Form
-                  Container(
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(12),
-                      color: Colors.grey.shade50,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'MESSAGE US',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'Send us a message and we\'ll get back to you.',
-                          style: TextStyle(fontSize: 13, color: Colors.grey),
-                        ),
-                        const SizedBox(height: 16),
-                        TextField(
-                          controller: _helpNameCtrl,
-                          decoration: const InputDecoration(
-                            labelText: 'Your Name',
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: _helpEmailCtrl,
-                          decoration: const InputDecoration(
-                            labelText: 'Email Address',
-                            border: OutlineInputBorder(),
-                          ),
-                          keyboardType: TextInputType.emailAddress,
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: _helpMessageCtrl,
-                          decoration: const InputDecoration(
-                            labelText: 'How can we help you?',
-                            border: OutlineInputBorder(),
-                            alignLabelWithHint: true,
-                          ),
-                          maxLines: 4,
-                        ),
-                        const SizedBox(height: 16),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton(
-                            onPressed:
-                                _submittingHelp ? null : _submitHelpRequest,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFFFFC024),
-                              foregroundColor: Colors.black,
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                            ),
-                            child:
-                                _submittingHelp
-                                    ? const SizedBox(
-                                      height: 20,
-                                      width: 20,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                    : const Text('SEND MESSAGE'),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _contactRow(
-    IconData icon,
-    String text,
-    bool edit,
-    BuildContext context,
-    Future<void> Function(BuildContext ctx) onEdit,
-  ) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 22),
-          const SizedBox(width: 12),
-          Expanded(child: Text(text)),
-          if (edit)
-            IconButton(
-              icon: const Icon(Icons.edit, size: 18),
-              onPressed: () => onEdit(context),
-            ),
-        ],
-      ),
-    );
-  }
-}
