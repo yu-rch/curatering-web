@@ -25,6 +25,9 @@ jobs:
         working-directory: curatering
         run: flutter pub get
 
+      - name: Install Pillow (splash / home asset optimization)
+        run: python -m pip install --upgrade pip pillow
+
       - name: Build web
         working-directory: curatering
         run: |
