@@ -1,20 +1,27 @@
 import 'dart:async';
-import 'dart:html' as html;
-import 'dart:js_util' as js_util;
+import 'dart:js_interop';
+
+import 'package:web/web.dart';
 
 void signalCurateringUiReadyImpl() {
-  html.window.dispatchEvent(html.CustomEvent('curatering-ui-ready'));
+  window.dispatchEvent(CustomEvent('curatering-ui-ready'));
 }
+
+@JS('typeof window.requestIdleCallback === "function"')
+external bool get _hasRequestIdleCallback;
+
+@JS('window.requestIdleCallback')
+external void _requestIdleCallback(JSFunction callback, JSAny options);
 
 void scheduleWhenIdleImpl(
   void Function() callback,
   Duration fallbackDelay,
 ) {
-  if (js_util.hasProperty(html.window, 'requestIdleCallback')) {
-    js_util.callMethod(html.window, 'requestIdleCallback', [
-      js_util.allowInterop((_) => callback()),
-      js_util.jsify({'timeout': fallbackDelay.inMilliseconds}),
-    ]);
+  if (_hasRequestIdleCallback) {
+    _requestIdleCallback(
+      callback.toJS,
+      {'timeout': fallbackDelay.inMilliseconds}.jsify()!,
+    );
     return;
   }
   Timer(fallbackDelay, callback);

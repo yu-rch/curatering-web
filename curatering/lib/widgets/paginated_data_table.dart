@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:js_interop';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -499,13 +500,18 @@ class _PagedDataTableState extends State<PagedDataTable> {
     final csv = csvRows.map(_csvLine).join('\r\n');
     final fileName = '${_safeFileName(widget.title)}.csv';
     if (kIsWeb) {
-      final blob = html.Blob([utf8.encode(csv)], 'text/csv;charset=utf-8');
-      final url = html.Url.createObjectUrlFromBlob(blob);
+      final bytes = utf8.encode(csv);
+      final blob = html.Blob(
+        [bytes.toJS].toJS,
+        html.BlobPropertyBag(type: 'text/csv;charset=utf-8'),
+      );
+      final url = html.URL.createObjectURL(blob);
       final anchor =
-          html.AnchorElement(href: url)
-            ..setAttribute('download', fileName)
-            ..click();
-      html.Url.revokeObjectUrl(url);
+          html.HTMLAnchorElement()
+            ..href = url
+            ..download = fileName;
+      anchor.click();
+      html.URL.revokeObjectURL(url);
       anchor.remove();
       return;
     }

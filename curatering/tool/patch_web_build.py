@@ -38,6 +38,7 @@ def patch_v8_break_iterator(text: str, *, is_main: bool = False) -> str:
 
 
 def patch_flutter_bootstrap(text: str) -> str:
+    # Keep local CanvasKit/skwasm assets for both dart2wasm and dart2js builds.
     text = re.sub(
         r"_flutter\.loader\.load\(\{[\s\S]*?\}\);",
         '_flutter.loader.load({config:{canvasKitBaseUrl:"/canvaskit/"}});',

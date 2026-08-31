@@ -1,8 +1,8 @@
-import 'dart:html' as html;
+import 'package:web/web.dart';
 
 void openAppRouteInNewTab(String origin, String path) {
   var p = path.trim();
   if (p.isEmpty) p = '/';
   if (!p.startsWith('/')) p = '/$p';
-  html.window.open('$origin$p', '_blank');
+  window.open('$origin$p', '_blank');
 }
