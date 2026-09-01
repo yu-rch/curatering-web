@@ -190,8 +190,8 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
     final setMenus = SetMenuStore.instance.activeSetMenus;
     final visibleDishes = _filteredCateringDishes(cateringDishes);
 
-    // Show loading state if dishes are empty or currently loading
-    if (MenuStore.instance.isLoading || allDishes.isEmpty) {
+    // Show loading state while menu is fetching
+    if (MenuStore.instance.isLoading) {
       return _withHomepageTopBar(
         context,
         child: Center(

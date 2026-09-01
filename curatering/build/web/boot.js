@@ -143,8 +143,8 @@
     el.setAttribute('aria-busy', 'false');
     setTimeout(function () {
       if (el.parentNode) el.parentNode.removeChild(el);
-      // Stay black until deferred UI (staff login / customer home) signals ready.
-      holdBlackUntilUiReady();
+      // Customer pages load in the main bundle; show content after first frame.
+      applyLightPageBackground();
     }, 280);
   }
 

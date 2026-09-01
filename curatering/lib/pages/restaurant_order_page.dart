@@ -110,8 +110,7 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
     final content = WebsiteContentStore.instance;
     final allDishes = MenuStore.instance.activeDishes;
 
-    // Show loading state if dishes are empty or currently loading
-    if (MenuStore.instance.isLoading || allDishes.isEmpty) {
+    if (MenuStore.instance.isLoading) {
       return SizedBox(
         height: MediaQuery.of(context).size.height * 0.6,
         child: Center(
@@ -139,6 +138,42 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
                 ),
               ),
             ],
+          ),
+        ),
+      );
+    }
+
+    if (MenuStore.instance.error != null || allDishes.isEmpty) {
+      return SizedBox(
+        height: MediaQuery.of(context).size.height * 0.6,
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.error_outline, size: 48, color: Colors.red.shade400),
+                const SizedBox(height: 16),
+                Text(
+                  MenuStore.instance.error != null
+                      ? 'Could not load the menu. Please try again.'
+                      : 'No menu items are available right now.',
+                  textAlign: TextAlign.center,
+                  style: CustomerFonts.getFont(
+                    _primaryFont,
+                    fontSize: 16,
+                    color: Colors.grey.shade700,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                FilledButton.icon(
+                  onPressed: () => MenuStore.instance.loadDishes(),
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Retry'),
+                ),
+              ],
+            ),
           ),
         ),
       );

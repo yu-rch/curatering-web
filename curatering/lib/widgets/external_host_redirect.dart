@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../config/site_redirect_stub.dart'
+    if (dart.library.js_interop) '../config/site_redirect_web.dart'
     if (dart.library.html) '../config/site_redirect_web.dart';
 import '../config/site_routes.dart';
 import '../utils/browser_tab_title.dart';

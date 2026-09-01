@@ -1,8 +1,10 @@
 import 'package:flutter/foundation.dart';
 
 import 'site_location_stub.dart'
+    if (dart.library.js_interop) 'site_location_web.dart'
     if (dart.library.html) 'site_location_web.dart';
 import 'site_redirect_stub.dart'
+    if (dart.library.js_interop) 'site_redirect_web.dart'
     if (dart.library.html) 'site_redirect_web.dart';
 
 /// Old bookmark path from when the customer site lived on curatering.com.

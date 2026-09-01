@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import 'web_boot_bridge_stub.dart'
+    if (dart.library.js_interop) 'web_boot_bridge_web.dart'
     if (dart.library.html) 'web_boot_bridge_web.dart' as impl;
 
 /// Signals HTML boot.js that Flutter UI is ready (end black post-splash hold).
