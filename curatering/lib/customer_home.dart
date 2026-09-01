@@ -1,4 +1,5 @@
-/// Deferred entry for the customer homepage chunk (keeps home out of main.dart.js).
+/// Deferred entry for all customer-facing pages (home + routed tabs).
 library;
 
 export 'pages/customer_website.dart' show CustomerWebsiteScreen;
+export 'customer_extra_pages.dart' show customerExtraPageFor;

@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../config/site_routes.dart';
-import '../customer_home.dart' deferred as customer_home
-    show CustomerWebsiteScreen;
+import '../customer_page_loader.dart';
 import '../utils/browser_tab_title.dart';
 import '../utils/web_boot_bridge.dart';
 import 'brand_splash_placeholder.dart';
@@ -38,7 +37,7 @@ class _AppRootRouteState extends State<AppRootRoute> {
   }
 
   void _startHomeLoad() {
-    _homeLoading ??= customer_home.loadLibrary();
+    _homeLoading ??= ensureCustomerPagesLoaded();
     _homeLoading!
         .then((_) {
           if (!mounted) return;
@@ -64,7 +63,7 @@ class _AppRootRouteState extends State<AppRootRoute> {
     if (!_homeReady) {
       return const BrandSplashPlaceholder();
     }
-    return customer_home.CustomerWebsiteScreen(
+    return buildCustomerWebsiteScreen(
       contentEditable: false,
       showStaffChrome: false,
     );

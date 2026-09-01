@@ -9,8 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart' deferred as supabase
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'config.dart';
 import 'config/site_routes.dart';
-import 'customer_extra_pages.dart' deferred as customer_extra
-    show customerExtraPageFor;
+import 'customer_page_loader.dart';
 import 'staff_app.dart' deferred as staff_app show staffPageFor;
 import 'widgets/app_root_route.dart';
 import 'widgets/brand_splash_placeholder.dart';
@@ -199,17 +198,18 @@ class _DeferredCustomerExtraPage extends StatefulWidget {
 }
 
 class _DeferredCustomerExtraPageState extends State<_DeferredCustomerExtraPage> {
-  static Future<void>? _loading;
+  Future<void>? _loading;
   bool _ready = false;
   Object? _error;
 
   @override
   void initState() {
     super.initState();
-    _loading ??= customer_extra.loadLibrary();
+    _loading = ensureCustomerPagesLoaded();
     _loading!
         .then((_) {
           if (mounted) setState(() => _ready = true);
+          signalCurateringUiReady();
         })
         .catchError((Object e) {
           if (mounted) setState(() => _error = e);
@@ -219,15 +219,15 @@ class _DeferredCustomerExtraPageState extends State<_DeferredCustomerExtraPage> 
   @override
   Widget build(BuildContext context) {
     if (_error != null) {
-      return const BrandSplashPlaceholder(
+      return BrandSplashPlaceholder(
         error: true,
-        message: 'Failed to load page. Please refresh.',
+        message: 'Failed to load page. Please refresh.\n\n$_error',
       );
     }
     if (!_ready) {
       return const BrandSplashPlaceholder();
     }
-    return customer_extra.customerExtraPageFor(widget.path);
+    return buildCustomerExtraPage(widget.path);
   }
 }
 
