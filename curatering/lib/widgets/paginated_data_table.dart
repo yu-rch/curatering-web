@@ -1,6 +1,7 @@
 import 'dart:convert';
-import 'dart:js_interop';
 import 'dart:math' as math;
+
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -9,7 +10,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
-import '../utils/web_html.dart' as html;
+import '../utils/web_csv_download.dart';
 import 'antd_buttons.dart';
 import 'antd_dialog.dart';
 import 'antd_staff.dart';
@@ -500,19 +501,7 @@ class _PagedDataTableState extends State<PagedDataTable> {
     final csv = csvRows.map(_csvLine).join('\r\n');
     final fileName = '${_safeFileName(widget.title)}.csv';
     if (kIsWeb) {
-      final bytes = utf8.encode(csv);
-      final blob = html.Blob(
-        [bytes.toJS].toJS,
-        html.BlobPropertyBag(type: 'text/csv;charset=utf-8'),
-      );
-      final url = html.URL.createObjectURL(blob);
-      final anchor =
-          html.HTMLAnchorElement()
-            ..href = url
-            ..download = fileName;
-      anchor.click();
-      html.URL.revokeObjectURL(url);
-      anchor.remove();
+      downloadCsvBytes(Uint8List.fromList(utf8.encode(csv)), fileName);
       return;
     }
     await Clipboard.setData(ClipboardData(text: csv));

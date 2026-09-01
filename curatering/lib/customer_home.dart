@@ -1,4 +1,4 @@
-/// Deferred entry for all customer-facing pages (home + routed tabs).
+/// Barrel export for customer-facing pages (home + routed tabs).
 library;
 
 export 'pages/customer_website.dart' show CustomerWebsiteScreen;

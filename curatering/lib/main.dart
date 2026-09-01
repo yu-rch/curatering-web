@@ -126,7 +126,7 @@ Route<dynamic>? _buildRouteForPath(String path) {
       settings: RouteSettings(name: path),
       builder:
           (_) => _customerPage(
-            _DeferredCustomerExtraPage(path: path),
+            _CustomerExtraPage(path: path),
             path,
           ),
     );
@@ -187,46 +187,26 @@ class _DeferredStaffPageState extends State<_DeferredStaffPage> {
   }
 }
 
-class _DeferredCustomerExtraPage extends StatefulWidget {
-  const _DeferredCustomerExtraPage({required this.path});
+class _CustomerExtraPage extends StatefulWidget {
+  const _CustomerExtraPage({required this.path});
 
   final String path;
 
   @override
-  State<_DeferredCustomerExtraPage> createState() =>
-      _DeferredCustomerExtraPageState();
+  State<_CustomerExtraPage> createState() => _CustomerExtraPageState();
 }
 
-class _DeferredCustomerExtraPageState extends State<_DeferredCustomerExtraPage> {
-  Future<void>? _loading;
-  bool _ready = false;
-  Object? _error;
-
+class _CustomerExtraPageState extends State<_CustomerExtraPage> {
   @override
   void initState() {
     super.initState();
-    _loading = ensureCustomerPagesLoaded();
-    _loading!
-        .then((_) {
-          if (mounted) setState(() => _ready = true);
-          signalCurateringUiReady();
-        })
-        .catchError((Object e) {
-          if (mounted) setState(() => _error = e);
-        });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      signalCurateringUiReady();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_error != null) {
-      return BrandSplashPlaceholder(
-        error: true,
-        message: 'Failed to load page. Please refresh.\n\n$_error',
-      );
-    }
-    if (!_ready) {
-      return const BrandSplashPlaceholder();
-    }
     return buildCustomerExtraPage(widget.path);
   }
 }

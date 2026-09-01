@@ -1,29 +1,23 @@
 import 'package:flutter/material.dart';
 
-import 'customer_home.dart' deferred as customer_home
-    show CustomerWebsiteScreen, customerExtraPageFor;
+import 'config/site_routes.dart';
+import 'customer_home.dart';
 
-/// Single shared loader for the customer site deferred chunk.
-Future<void>? _loading;
-
-Future<void> ensureCustomerPagesLoaded() {
-  final pending = _loading ??= customer_home.loadLibrary().catchError((Object e) {
-    _loading = null;
-    throw e;
-  });
-  return pending;
-}
+/// Customer pages are bundled in the main web app for reliable direct routes
+/// (/gallery, /restaurant, etc.). Inner widgets still lazy-load heavy tabs.
+Future<void> ensureCustomerPagesLoaded() async {}
 
 Widget buildCustomerWebsiteScreen({
   bool contentEditable = false,
   bool showStaffChrome = false,
 }) {
-  return customer_home.CustomerWebsiteScreen(
+  return CustomerWebsiteScreen(
     contentEditable: contentEditable,
     showStaffChrome: showStaffChrome,
   );
 }
 
 Widget buildCustomerExtraPage(String path) {
-  return customer_home.customerExtraPageFor(path);
+  final route = stripLegacyCustomerPrefix(normalizeRoutePath(path));
+  return customerExtraPageFor(route);
 }

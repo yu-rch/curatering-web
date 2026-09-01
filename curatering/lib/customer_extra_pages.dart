@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'config/site_routes.dart';
 import 'pages/catering_menu_page.dart';
 import 'pages/checkout_page.dart';
 import 'pages/contact_us_page.dart';
@@ -14,12 +15,13 @@ import 'pages/my_profile_page.dart';
 import 'pages/restaurant_feedback_public_page.dart';
 import 'pages/restaurant_order_page.dart';
 
-/// Secondary customer pages loaded after the homepage JS chunk.
+/// Customer routes such as /gallery, /restaurant, /catering-menu.
 Widget customerExtraPageFor(String path) {
-  if (path.startsWith('/p/') && path.length > 3) {
-    return CustomCmsPage(slug: path.substring(3));
+  final route = stripLegacyCustomerPrefix(normalizeRoutePath(path));
+  if (route.startsWith('/p/') && route.length > 3) {
+    return CustomCmsPage(slug: route.substring(3));
   }
-  switch (path) {
+  switch (route) {
     case '/gallery':
       return const GalleryPage(contentEditable: false, showStaffChrome: false);
     case '/contact-us':

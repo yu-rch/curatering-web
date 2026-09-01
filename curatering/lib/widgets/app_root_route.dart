@@ -4,7 +4,6 @@ import '../config/site_routes.dart';
 import '../customer_page_loader.dart';
 import '../utils/browser_tab_title.dart';
 import '../utils/web_boot_bridge.dart';
-import 'brand_splash_placeholder.dart';
 
 /// Host-aware `/` entry.
 class AppRootRoute extends StatefulWidget {
@@ -15,10 +14,6 @@ class AppRootRoute extends StatefulWidget {
 }
 
 class _AppRootRouteState extends State<AppRootRoute> {
-  static Future<void>? _homeLoading;
-  bool _homeReady = false;
-  Object? _homeError;
-
   @override
   void initState() {
     super.initState();
@@ -32,36 +27,14 @@ class _AppRootRouteState extends State<AppRootRoute> {
     }
     setBrowserTabTitle('Home', staff: false);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      scheduleWhenIdle(_startHomeLoad);
+      signalCurateringUiReady();
     });
-  }
-
-  void _startHomeLoad() {
-    _homeLoading ??= ensureCustomerPagesLoaded();
-    _homeLoading!
-        .then((_) {
-          if (!mounted) return;
-          setState(() => _homeReady = true);
-          signalCurateringUiReady();
-        })
-        .catchError((Object e) {
-          if (mounted) setState(() => _homeError = e);
-        });
   }
 
   @override
   Widget build(BuildContext context) {
     if (isStaffSiteHost) {
-      return const BrandSplashPlaceholder();
-    }
-    if (_homeError != null) {
-      return const BrandSplashPlaceholder(
-        error: true,
-        message: 'Failed to load home. Please refresh.',
-      );
-    }
-    if (!_homeReady) {
-      return const BrandSplashPlaceholder();
+      return const SizedBox.shrink();
     }
     return buildCustomerWebsiteScreen(
       contentEditable: false,
