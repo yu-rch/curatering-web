@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/event_order.dart';
 import '../services/events_api.dart';
 import '../utils/image_cache.dart';
+import '../utils/website_image_utils.dart';
 import 'antd_buttons.dart';
 import 'antd_dialog.dart';
 import 'antd_tokens.dart';
@@ -151,8 +152,20 @@ class _CompletedEventGalleryPickerBodyState
     if (_all.isEmpty || _tabs == null) {
       return SizedBox(
         height: height,
-        child: const Center(
-          child: Text('No completed event design images found.'),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text('No completed event design images found.'),
+            const SizedBox(height: 16),
+            AntdPrimaryButton(
+              label: 'Upload from device',
+              onPressed: () async {
+                final b64s = await pickMultipleWebsiteImagesBase64();
+                if (b64s.isEmpty || !mounted) return;
+                Navigator.of(context).pop(b64s);
+              },
+            ),
+          ],
         ),
       );
     }
@@ -163,8 +176,20 @@ class _CompletedEventGalleryPickerBodyState
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Text(
-            'Select images from completed events, grouped by event type.',
+            'Select images from completed events, or upload from your device.',
             style: TextStyle(color: AntdTokens.labelMuted, fontSize: 13),
+          ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: AntdSecondaryButton(
+              label: 'Upload from device instead',
+              onPressed: () async {
+                final b64s = await pickMultipleWebsiteImagesBase64();
+                if (b64s.isEmpty || !mounted) return;
+                Navigator.of(context).pop(b64s);
+              },
+            ),
           ),
           const SizedBox(height: 8),
           TabBar(

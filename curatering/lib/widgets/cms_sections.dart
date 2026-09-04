@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../services/website_content_store.dart';
+import '../utils/website_image_utils.dart';
+import 'antd_buttons.dart';
+import 'website_media_picker.dart';
 import 'website_rich_text.dart';
 
 /// Editable list of CMS sections (add / reorder / delete).
@@ -196,17 +199,87 @@ class CmsSectionsEditor extends StatelessWidget {
                             ),
                           ],
                           if (s.type == CmsSectionType.image ||
-                              s.type == CmsSectionType.imageRow)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 8),
-                              child: Text(
-                                'Use live edit or media library to attach images to this section.',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey.shade700,
+                              s.type == CmsSectionType.imageRow) ...[
+                            const SizedBox(height: 8),
+                            if (s.imageBase64.trim().isNotEmpty ||
+                                (s.mediaId != null &&
+                                    s.mediaId!.trim().isNotEmpty))
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: websiteBase64Thumbnail(
+                                    s.imageBase64.trim().isNotEmpty
+                                        ? s.imageBase64
+                                        : null,
+                                    height: 120,
+                                  ),
                                 ),
                               ),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                AntdPrimaryButton(
+                                  label: 'Upload image',
+                                  onPressed: () async {
+                                    final b64 =
+                                        await pickWebsiteImageBase64();
+                                    if (b64 == null) return;
+                                    String? mediaId;
+                                    try {
+                                      final item = await WebsiteContentStore
+                                          .instance
+                                          .uploadMedia(
+                                            dataBase64: b64,
+                                            name:
+                                                'section-${DateTime.now().millisecondsSinceEpoch}',
+                                          );
+                                      mediaId = item.id;
+                                    } catch (_) {}
+                                    s.imageBase64 = b64;
+                                    s.mediaId = mediaId;
+                                    if (s.type == CmsSectionType.imageRow &&
+                                        s.images.isEmpty) {
+                                      s.images.add(
+                                        CmsImageRef(
+                                          base64: b64,
+                                          mediaId: mediaId,
+                                        ),
+                                      );
+                                    }
+                                    onChanged();
+                                  },
+                                ),
+                                AntdSecondaryButton(
+                                  label: 'From media library',
+                                  onPressed: () async {
+                                    final picked =
+                                        await showWebsiteMediaPicker(context);
+                                    if (picked == null) return;
+                                    var b64 = picked.dataBase64 ?? '';
+                                    if (b64.isEmpty) {
+                                      b64 =
+                                          (await WebsiteContentStore.instance
+                                              .resolveMediaId(picked.id)) ??
+                                          '';
+                                    }
+                                    s.imageBase64 = b64;
+                                    s.mediaId = picked.id;
+                                    if (s.type == CmsSectionType.imageRow) {
+                                      s.images.add(
+                                        CmsImageRef(
+                                          base64: b64,
+                                          mediaId: picked.id,
+                                        ),
+                                      );
+                                    }
+                                    onChanged();
+                                  },
+                                ),
+                              ],
                             ),
+                          ],
                         ],
                       ),
                     ),

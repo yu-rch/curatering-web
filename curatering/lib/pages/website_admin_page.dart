@@ -1098,28 +1098,94 @@ class _GalleryEditor extends StatelessWidget {
                         style: const TextStyle(color: AntdTokens.labelMuted),
                       ),
                       const SizedBox(height: 8),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: AntdSecondaryButton(
-                          label: 'Add images',
-                          onPressed: () async {
-                            final picked =
-                                await showCompletedEventGalleryPicker(context);
-                            if (picked == null || picked.isEmpty) return;
-                            for (final b64 in picked) {
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          AntdPrimaryButton(
+                            label: 'Upload from device',
+                            onPressed: () async {
+                              final b64s =
+                                  await pickMultipleWebsiteImagesBase64();
+                              if (b64s.isEmpty) return;
+                              for (final b64 in b64s) {
+                                String? mediaId;
+                                try {
+                                  final item = await WebsiteContentStore
+                                      .instance
+                                      .uploadMedia(
+                                        dataBase64: b64,
+                                        name:
+                                            'gallery-${DateTime.now().millisecondsSinceEpoch}',
+                                        tags: List.from(
+                                          cat.defaultTagsForUpload,
+                                        ),
+                                      );
+                                  mediaId = item.id;
+                                } catch (_) {
+                                  // Keep the image in the draft even if media
+                                  // library upload fails.
+                                }
+                                cat.images.add(
+                                  GalleryImageData(
+                                    id:
+                                        'img_${DateTime.now().microsecondsSinceEpoch}_${cat.images.length}',
+                                    imageBase64: b64,
+                                    mediaId: mediaId,
+                                    tags: List.from(cat.defaultTagsForUpload),
+                                  ),
+                                );
+                              }
+                              w.touch();
+                              onChanged();
+                            },
+                          ),
+                          AntdSecondaryButton(
+                            label: 'From media library',
+                            onPressed: () async {
+                              final picked =
+                                  await showWebsiteMediaPicker(context);
+                              if (picked == null) return;
+                              var b64 = picked.dataBase64 ?? '';
+                              if (b64.isEmpty) {
+                                b64 =
+                                    (await w.resolveMediaId(picked.id)) ?? '';
+                              }
                               cat.images.add(
                                 GalleryImageData(
-                                  id:
-                                      'img_${DateTime.now().microsecondsSinceEpoch}_${cat.images.length}',
+                                  id: 'img_${picked.id}',
                                   imageBase64: b64,
+                                  mediaId: picked.id,
                                   tags: List.from(cat.defaultTagsForUpload),
                                 ),
                               );
-                            }
-                            w.touch();
-                            onChanged();
-                          },
-                        ),
+                              w.touch();
+                              onChanged();
+                            },
+                          ),
+                          AntdSecondaryButton(
+                            label: 'From completed events',
+                            onPressed: () async {
+                              final picked =
+                                  await showCompletedEventGalleryPicker(
+                                    context,
+                                  );
+                              if (picked == null || picked.isEmpty) return;
+                              for (final b64 in picked) {
+                                cat.images.add(
+                                  GalleryImageData(
+                                    id:
+                                        'img_${DateTime.now().microsecondsSinceEpoch}_${cat.images.length}',
+                                    imageBase64: b64,
+                                    tags: List.from(cat.defaultTagsForUpload),
+                                  ),
+                                );
+                              }
+                              w.touch();
+                              onChanged();
+                            },
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -1889,13 +1955,22 @@ class _MediaLibraryPanelState extends State<_MediaLibraryPanel> {
   }
 
   Future<void> _upload() async {
-    final b64 = await pickWebsiteImageBase64();
-    if (b64 == null) return;
+    final b64s = await pickMultipleWebsiteImagesBase64();
+    if (b64s.isEmpty) return;
     try {
-      await WebsiteContentStore.instance.uploadMedia(dataBase64: b64);
+      for (var i = 0; i < b64s.length; i++) {
+        await WebsiteContentStore.instance.uploadMedia(
+          dataBase64: b64s[i],
+          name: 'upload-${DateTime.now().millisecondsSinceEpoch}-$i',
+        );
+      }
       await _reload();
       if (mounted) {
-        showAntdMessage(context, 'Uploaded', type: AntdMessageType.success);
+        showAntdMessage(
+          context,
+          b64s.length == 1 ? 'Uploaded' : 'Uploaded ${b64s.length} images',
+          type: AntdMessageType.success,
+        );
       }
     } catch (e) {
       if (mounted) {

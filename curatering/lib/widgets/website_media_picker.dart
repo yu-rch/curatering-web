@@ -62,15 +62,32 @@ class _WebsiteMediaPickerBodyState extends State<_WebsiteMediaPickerBody> {
   }
 
   Future<void> _upload() async {
-    final b64 = await pickWebsiteImageBase64();
-    if (b64 == null) return;
+    final b64s = await pickMultipleWebsiteImagesBase64();
+    if (b64s.isEmpty) return;
     try {
-      final item = await WebsiteContentStore.instance.uploadMedia(
-        dataBase64: b64,
-        name: 'upload-${DateTime.now().millisecondsSinceEpoch}',
-      );
+      WebsiteMediaItem? last;
+      for (var i = 0; i < b64s.length; i++) {
+        last = await WebsiteContentStore.instance.uploadMedia(
+          dataBase64: b64s[i],
+          name: 'upload-${DateTime.now().millisecondsSinceEpoch}-$i',
+        );
+      }
       if (!mounted) return;
-      Navigator.pop(context, item);
+      // Selecting the last upload keeps previous single-select UX for logo/hero.
+      if (last != null && b64s.length == 1) {
+        Navigator.pop(context, last);
+        return;
+      }
+      await _reload();
+      if (mounted && last != null) {
+        showAntdMessage(
+          context,
+          b64s.length == 1
+              ? 'Uploaded — tap an image to select'
+              : 'Uploaded ${b64s.length} images — tap to select',
+          type: AntdMessageType.success,
+        );
+      }
     } catch (e) {
       if (mounted) {
         showAntdMessage(
