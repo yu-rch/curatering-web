@@ -8768,22 +8768,58 @@ registerCustomerAuthRoutes(app, requireDbReady);
 
 let autoCancelJobScheduled = false;
 
-function scheduleAutoCancelJob() {
-  if (autoCancelJobScheduled) return;
-  autoCancelJobScheduled = true;
-  console.log('[auto-cancel] Disabled; customer follow-up requests now handle stale pending orders.');
-}
-
+/** Unpaid + still pending (not accepted) restaurant orders older than 30 minutes. */
 async function autoCancelStalePendingCashierOrders() {
   try {
     await ensureRestaurantOrderWorkflowColumns();
+    const roCols = await ensureRestaurantOrdersCanonicalColumns();
+    if (!roCols.has('order_status')) return 0;
+
+    const unpaidParts = [];
+    if (roCols.has('payment_confirmed_initial')) {
+      unpaidParts.push('COALESCE(payment_confirmed_initial, FALSE) = FALSE');
+    }
+    if (roCols.has('payment_uploaded_initial')) {
+      unpaidParts.push('COALESCE(payment_uploaded_initial, FALSE) = FALSE');
+    }
+    if (roCols.has('payment_uploaded')) {
+      unpaidParts.push('COALESCE(payment_uploaded, FALSE) = FALSE');
+    }
+    if (roCols.has('payment_proof_initial')) {
+      unpaidParts.push(
+        "NULLIF(TRIM(COALESCE(payment_proof_initial, '')), '') IS NULL",
+      );
+    }
+    if (roCols.has('payment_proof')) {
+      unpaidParts.push(
+        "NULLIF(TRIM(COALESCE(payment_proof, '')), '') IS NULL",
+      );
+    }
+    if (roCols.has('payment_reference_initial')) {
+      unpaidParts.push(
+        "NULLIF(TRIM(COALESCE(payment_reference_initial, '')), '') IS NULL",
+      );
+    }
+    const unpaidClause =
+      unpaidParts.length > 0 ? `AND ${unpaidParts.join(' AND ')}` : '';
+
+    const submittedExpr = roCols.has('submitted_order_dt_stamp')
+      ? 'COALESCE(submitted_order_dt_stamp, created_at)'
+      : 'created_at';
+
+    const statusStampSet = roCols.has('last_updated_order_status_dt_stamp')
+      ? ', last_updated_order_status_dt_stamp = now()'
+      : '';
+
     const result = await pool.query(
       `UPDATE restaurant_orders
-       SET order_status = 'cancelled', updated_at = now()
-       WHERE lower(order_status) = 'pending_cashier'
-         AND COALESCE(updated_at, created_at) < now() - interval '1 hour'
+       SET order_status = 'cancelled', updated_at = now()${statusStampSet}
+       WHERE lower(COALESCE(order_status::text, '')) IN ('pending_cashier', 'pending')
+         ${unpaidClause}
+         AND ${submittedExpr} < now() - interval '30 minutes'
        RETURNING *`,
     );
+
     for (const order of result.rows) {
       const email = await resolveRestaurantOrderEmail(order);
       if (email) {
@@ -8791,19 +8827,37 @@ async function autoCancelStalePendingCashierOrders() {
           to: email,
           subject: 'Curatering: Order cancelled (payment timeout)',
           text:
-            `Your order ${order.order_id} was cancelled because payment was not confirmed within 1 hour.\n\n` +
+            `Your order ${order.order_id || order.order_no || order.id} was cancelled because payment was not completed within 30 minutes of submission.\n\n` +
             `- Curatering Team`,
         });
       }
     }
     if (result.rowCount > 0) {
       console.log(
-        `[auto-cancel] Cancelled ${result.rowCount} stale pending_cashier order(s)`,
+        `[auto-cancel] Cancelled ${result.rowCount} unpaid pending order(s) after 30 minutes`,
       );
     }
+    return result.rowCount || 0;
   } catch (error) {
     console.error('[auto-cancel] pending_cashier:', error);
+    return 0;
   }
+}
+
+function scheduleAutoCancelJob() {
+  if (autoCancelJobScheduled) return;
+  autoCancelJobScheduled = true;
+  console.log(
+    '[auto-cancel] Enabled: unpaid pending restaurant orders cancel after 30 minutes',
+  );
+  const tick = () => {
+    if (!dbReady) return;
+    autoCancelStalePendingCashierOrders().catch((err) => {
+      console.error('[auto-cancel] tick failed:', err?.message || err);
+    });
+  };
+  setTimeout(tick, 15_000);
+  setInterval(tick, 60_000);
 }
 
 app.listen(PORT, () => {
@@ -11005,6 +11059,15 @@ async function registerRoutesAfterDbInit() {
         if (status === 'DELIVERED' || status === 'CANCELLED') {
           return res.status(400).json({ error: 'Follow-up is only available for active orders' });
         }
+        if (
+          status === 'PENDING_CASHIER' ||
+          status === 'PENDING' ||
+          status === 'WAITING FOR ORDER CONFIRMATION'
+        ) {
+          return res.status(400).json({
+            error: 'Follow-up is available after your order has been accepted',
+          });
+        }
 
         const last = order.last_customer_followup_at
           ? new Date(order.last_customer_followup_at)
@@ -11198,6 +11261,9 @@ async function registerRoutesAfterDbInit() {
 
     app.get('/api/restaurant/orders', customerAuthRequired, async (req, res) => {
       try {
+        // Ensure unpaid pending orders past 30 minutes show as cancelled.
+        await autoCancelStalePendingCashierOrders();
+
         const roCols = await ensureRestaurantOrdersCanonicalColumns();
         const selectSql = buildRestaurantOrderSelectSql(roCols);
 
@@ -11821,6 +11887,9 @@ async function registerRoutesAfterDbInit() {
     app.get('/api/manager/restaurant/orders', managerAuthRequired, async (req, res) => {
       const startTime = Date.now();
       try {
+        // Keep staff history in sync with unpaid 30-minute auto-cancels.
+        await autoCancelStalePendingCashierOrders();
+
         const { status, limit = 50 } = req.query;
         const roCols = await ensureRestaurantOrdersCanonicalColumns();
         const selectSql = buildRestaurantOrderSelectSql(roCols);

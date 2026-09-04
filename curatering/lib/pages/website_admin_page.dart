@@ -215,6 +215,7 @@ class _WebsiteAdminPageState extends State<WebsiteAdminPage> {
   }
 
   void _previewDraft() {
+    // In-memory draft already holds CMS edits; preview stays on staff `/website`.
     Navigator.of(context).pushNamed(
       '/website',
       arguments: const {'returnRoute': '/website-admin'},
@@ -1003,6 +1004,25 @@ class _GalleryEditor extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           _sectionTitle('Categories (long-press to rearrange)'),
+          Row(
+            children: [
+              const Spacer(),
+              TextButton.icon(
+                onPressed: () {
+                  w.galleryCategories.add(
+                    GalleryCategoryData(
+                      id: 'cat_${DateTime.now().microsecondsSinceEpoch}',
+                      label: 'New category',
+                    ),
+                  );
+                  onChanged();
+                },
+                icon: const Icon(Icons.add),
+                label: const Text('Add category'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
           ReorderableListView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
@@ -1023,13 +1043,54 @@ class _GalleryEditor extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _CmsTextField(
-                        label: 'Category label',
-                        value: cat.label,
-                        onChanged: (v) {
-                          cat.label = v;
-                          onChanged();
-                        },
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: _CmsTextField(
+                              label: 'Category label',
+                              value: cat.label,
+                              onChanged: (v) {
+                                cat.label = v;
+                                onChanged();
+                              },
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'Remove category',
+                            icon: const Icon(
+                              Icons.delete_outline,
+                              color: Colors.red,
+                            ),
+                            onPressed: () async {
+                              final confirmed = await showDialog<bool>(
+                                context: context,
+                                builder:
+                                    (ctx) => AlertDialog(
+                                      title: const Text('Remove category?'),
+                                      content: Text(
+                                        'Remove "${cat.label.trim().isEmpty ? 'this category' : cat.label}" and its images from the draft?',
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed:
+                                              () => Navigator.pop(ctx, false),
+                                          child: const Text('Cancel'),
+                                        ),
+                                        FilledButton(
+                                          onPressed:
+                                              () => Navigator.pop(ctx, true),
+                                          child: const Text('Remove'),
+                                        ),
+                                      ],
+                                    ),
+                              );
+                              if (confirmed != true) return;
+                              w.galleryCategories.removeAt(index);
+                              onChanged();
+                            },
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 8),
                       Text(

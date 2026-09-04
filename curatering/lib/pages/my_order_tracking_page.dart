@@ -42,7 +42,7 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
   @override
   void initState() {
     super.initState();
-    _loadActiveOrders();
+    _loadActiveOrders(force: true);
   }
 
   @override
@@ -74,10 +74,52 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
     }
   }
 
+  bool _hasPaymentSubmitted(Map<String, dynamic> order) {
+    final confirmed = order['payment_confirmed_initial'] == true;
+    final uploaded =
+        order['payment_uploaded_initial'] == true ||
+        order['payment_uploaded'] == true;
+    final proof =
+        (order['payment_proof_initial'] ?? order['payment_proof'] ?? '')
+            .toString()
+            .trim();
+    final reference =
+        (order['payment_reference_initial'] ?? order['payment_reference'] ?? '')
+            .toString()
+            .trim();
+    final paymentStatus =
+        (order['payment_status'] ?? '').toString().toLowerCase();
+    return confirmed ||
+        uploaded ||
+        proof.isNotEmpty ||
+        reference.isNotEmpty ||
+        paymentStatus == 'paid' ||
+        paymentStatus == 'confirmed';
+  }
+
+  bool _shouldTreatAsUnpaidTimeoutCancelled(Map<String, dynamic> order) {
+    final status = _normalizeStatus(
+      '${order['status'] ?? order['order_status'] ?? ''}',
+    );
+    if (status != 'pending_cashier') return false;
+    if (_hasPaymentSubmitted(order)) return false;
+    final rawCreated =
+        order['submitted_order_dt_stamp'] ?? order['created_at'];
+    final created = DateTime.tryParse(rawCreated?.toString() ?? '');
+    if (created == null) return false;
+    return DateTime.now().toUtc().difference(created.toUtc()) >=
+        const Duration(minutes: 30);
+  }
+
+  String _orderStatusFor(Map<String, dynamic> order) {
+    if (_shouldTreatAsUnpaidTimeoutCancelled(order)) return 'cancelled';
+    return _normalizeStatus('${order['status'] ?? order['order_status'] ?? ''}');
+  }
+
   List<Map<String, dynamic>> get _filteredOrders {
     final q = _searchCtrl.text.trim().toLowerCase();
     return _allOrders.where((order) {
-      final status = _normalizeStatus('${order['status'] ?? ''}');
+      final status = _orderStatusFor(order);
       if (_statusFilter != 'all' && status != _statusFilter) return false;
       if (q.isEmpty) return true;
       final orderNo =
@@ -239,6 +281,9 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
   }
 
   String _getPaymentStatusText(String paymentStatus, String orderStatus) {
+    if (_normalizeStatus(orderStatus) == 'cancelled') {
+      return 'Cancelled';
+    }
     final paid =
         paymentStatus == 'paid' ||
         paymentStatus == 'confirmed' ||
@@ -246,6 +291,19 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
     if (paymentStatus == 'failed') return 'Payment Failed';
     if (paid) return 'Payment Confirmed — Order In Preparation';
     return 'Awaiting Payment Confirmation';
+  }
+
+  bool _wasOrderAccepted(Map<String, dynamic> order) {
+    final status = _orderStatusFor(order);
+    return status == 'in_preparation' ||
+        status == 'out_for_delivery' ||
+        status == 'delivered';
+  }
+
+  bool _canShowFollowUp(Map<String, dynamic> order) {
+    final status = _orderStatusFor(order);
+    if (status == 'cancelled' || status == 'delivered') return false;
+    return _wasOrderAccepted(order);
   }
 
   Color _getStatusColor(String status) {
@@ -275,6 +333,8 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
         return 2;
       case 'delivered':
         return 3;
+      case 'cancelled':
+        return -1;
       default:
         return 0;
     }
@@ -517,9 +577,7 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
                                       itemCount: _filteredOrders.length,
                                       itemBuilder: (context, index) {
                                         final order = _filteredOrders[index];
-                                        final status = _normalizeStatus(
-                                          '${order['status'] ?? ''}',
-                                        );
+                                        final status = _orderStatusFor(order);
                                         final paymentStatus =
                                             order['payment_status'] ??
                                             'pending';
@@ -533,6 +591,7 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
                                         final cooldownUntil =
                                             _followUpCooldownUntil(order);
                                         final canFollowUp =
+                                            _canShowFollowUp(order) &&
                                             orderKey.isNotEmpty &&
                                             (cooldownUntil == null ||
                                                 !cooldownUntil.isAfter(
@@ -794,7 +853,8 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
                                                   ],
                                                 ),
                                                 const SizedBox(height: 16),
-                                                Align(
+                                                if (_canShowFollowUp(order))
+                                                  Align(
                                                   alignment:
                                                       Alignment.centerRight,
                                                   child: OutlinedButton.icon(
@@ -856,6 +916,25 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
   }
 
   Widget _buildProgressTracker(int currentStep) {
+    if (currentStep < 0) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.red.shade50,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.red.shade200),
+        ),
+        child: Text(
+          'This order was cancelled.',
+          style: TextStyle(
+            color: Colors.red.shade700,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      );
+    }
+
     final steps = [
       currentStep > 0 ? 'Payment confirmed' : 'Payment review',
       'In preparation',

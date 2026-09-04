@@ -526,6 +526,11 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
   }
 
   void _goHome(BuildContext context) {
+    // CMS draft preview / edit chrome — stay on staff site.
+    if (!widget.showCartAndCustomerAuth) {
+      Navigator.pushReplacementNamed(context, '/website');
+      return;
+    }
     Navigator.pushNamedAndRemoveUntil(
       context,
       customerRoute('/'),
@@ -534,6 +539,36 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
   }
 
   void _go(BuildContext context, String route, {bool newTab = false}) {
+    // Staff CMS preview: never jump to the customer host.
+    if (!widget.showCartAndCustomerAuth) {
+      final path = customerRoute(route);
+      final previewIndex = switch (path) {
+        '/' || '/home' => 0,
+        '/gallery' => 1,
+        '/catering-menu' => 2,
+        '/restaurant' => 3,
+        '/inquire' => 4,
+        '/contact-us' => 5,
+        _ => null,
+      };
+      if (previewIndex != null) {
+        Navigator.pushReplacementNamed(
+          context,
+          '/website',
+          arguments: {
+            'returnRoute': '/website-admin',
+            'previewTab': previewIndex,
+          },
+        );
+        return;
+      }
+      // Non-CMS routes stay in-app without opening customer origin.
+      if (newTab) return;
+      if (_currentRoute(context) != path) {
+        Navigator.pushReplacementNamed(context, path);
+      }
+      return;
+    }
     final target = customerRoute(route);
     if (newTab && kIsWeb) {
       openAppRouteInNewTab(customerSiteOrigin, route);

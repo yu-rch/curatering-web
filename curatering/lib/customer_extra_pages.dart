@@ -16,18 +16,31 @@ import 'pages/restaurant_feedback_public_page.dart';
 import 'pages/restaurant_order_page.dart';
 
 /// Customer routes such as /gallery, /restaurant, /catering-menu.
-Widget customerExtraPageFor(String path) {
+Widget customerExtraPageFor(
+  String path, {
+  bool contentEditable = false,
+  bool showStaffChrome = false,
+}) {
   final route = stripLegacyCustomerPrefix(normalizeRoutePath(path));
   if (route.startsWith('/p/') && route.length > 3) {
     return CustomCmsPage(slug: route.substring(3));
   }
   switch (route) {
     case '/gallery':
-      return const GalleryPage(contentEditable: false, showStaffChrome: false);
+      return GalleryPage(
+        contentEditable: contentEditable,
+        showStaffChrome: showStaffChrome,
+      );
     case '/contact-us':
-      return const ContactUsPage(contentEditable: false, showStaffChrome: false);
+      return ContactUsPage(
+        contentEditable: contentEditable,
+        showStaffChrome: showStaffChrome,
+      );
     case '/inquire':
-      return const InquirePage(contentEditable: false, showStaffChrome: false);
+      return InquirePage(
+        contentEditable: contentEditable,
+        showStaffChrome: showStaffChrome,
+      );
     case '/my-inquiries':
       return const MyCateringsPage();
     case '/my-orders':
@@ -41,18 +54,18 @@ Widget customerExtraPageFor(String path) {
     case '/checkout':
       return const CheckoutPage();
     case '/restaurant':
-      return const RestaurantOrderPage(
-        contentEditable: false,
-        showStaffChrome: false,
+      return RestaurantOrderPage(
+        contentEditable: contentEditable,
+        showStaffChrome: showStaffChrome,
       );
     case '/restaurant-feedback':
       return RestaurantFeedbackPublicPage(
         token: Uri.base.queryParameters['token'] ?? '',
       );
     case '/catering-menu':
-      return const CateringMenuPage(
-        contentEditable: false,
-        showStaffChrome: false,
+      return CateringMenuPage(
+        contentEditable: contentEditable,
+        showStaffChrome: showStaffChrome,
       );
     default:
       return const SizedBox.shrink();

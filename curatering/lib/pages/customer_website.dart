@@ -165,12 +165,30 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   List<Map<String, dynamic>> _salesPopularDishes = [];
   List<Map<String, dynamic>> _salesEventDesigns = [];
   bool _highlightsImagesRequested = false;
+  bool _appliedPreviewTabArg = false;
 
   @override
   void initState() {
     super.initState();
     _pageScrollController.addListener(_maybeLoadHighlightImages);
     _initialize();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_appliedPreviewTabArg) return;
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is Map && args['previewTab'] is int) {
+      final tab = (args['previewTab'] as int).clamp(0, 5);
+      _appliedPreviewTabArg = true;
+      if (tab != _navIndex) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _selectNavIndex(tab);
+        });
+      }
+    }
   }
 
   void _maybeLoadHighlightImages() {
@@ -208,10 +226,13 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   Future<void> _refreshWebsiteContent() async {
     try {
       if (widget.contentEditable) {
-        try {
-          await WebsiteContentStore.instance.loadDraft();
-        } catch (_) {
-          await WebsiteContentStore.instance.ensureLoaded();
+        // Keep in-memory CMS edits when already in draft mode (preview from admin).
+        if (!WebsiteContentStore.instance.isDraftMode) {
+          try {
+            await WebsiteContentStore.instance.loadDraft();
+          } catch (_) {
+            await WebsiteContentStore.instance.ensureLoaded();
+          }
         }
       } else {
         await WebsiteContentStore.instance.ensureLoaded();
@@ -322,6 +343,31 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     } catch (e) {
       debugPrint('Homepage highlights error: $e');
     }
+  }
+
+  /// Preview draft stays on staff `/website` — switch tabs in-app instead of
+  /// navigating to customer-host routes (which redirect off the CMS).
+  void _openSiteTab(int index, {BuildContext? sheetContext}) {
+    if (sheetContext != null) {
+      Navigator.pop(sheetContext);
+    }
+    if (widget.contentEditable) {
+      _showCustomerSiteTab(index);
+      return;
+    }
+    const routes = <int, String>{
+      1: '/gallery',
+      2: '/catering-menu',
+      3: '/restaurant',
+      4: '/inquire',
+      5: '/contact-us',
+    };
+    final path = routes[index];
+    if (path == null) {
+      _selectNavIndex(index);
+      return;
+    }
+    Navigator.pushReplacementNamed(context, customerRoute(path));
   }
 
   void _selectNavIndex(int index) {
@@ -1103,46 +1149,32 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                 ),
                 navTile(
                   'Gallery',
-                  () => Navigator.pushReplacementNamed(
-                    context,
-                    customerRoute('/gallery'),
-                  ),
+                  () => _openSiteTab(1),
                 ),
                 navTile(
                   'Catering Menu',
-                  () => Navigator.pushReplacementNamed(
-                    context,
-                    customerRoute('/catering-menu'),
-                  ),
+                  () => _openSiteTab(2),
                 ),
                 navTile(
                   'Restaurant',
-                  () => Navigator.pushReplacementNamed(
-                    context,
-                    customerRoute('/restaurant'),
-                  ),
+                  () => _openSiteTab(3),
                 ),
                 navTile(
                   'Inquire Now',
-                  () => Navigator.pushReplacementNamed(
-                    context,
-                    customerRoute('/inquire'),
-                  ),
+                  () => _openSiteTab(4),
                 ),
                 navTile(
                   'Contact Us',
-                  () => Navigator.pushReplacementNamed(
-                    context,
-                    customerRoute('/contact-us'),
-                  ),
+                  () => _openSiteTab(5),
                 ),
-                navTile(
-                  'Track Order',
-                  () => Navigator.pushReplacementNamed(
-                    context,
-                    customerRoute('/track-order'),
+                if (!widget.contentEditable)
+                  navTile(
+                    'Track Order',
+                    () => Navigator.pushReplacementNamed(
+                      context,
+                      customerRoute('/track-order'),
+                    ),
                   ),
-                ),
                 if (!widget.contentEditable) ...[
                   const Divider(color: Colors.white24),
                   if (_isCustomerLoggedIn) ...[
@@ -1740,41 +1772,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   Widget _navLink(String label, int index) {
     final on = _navIndex == index && _galleryDetailIndex == null;
 
-    VoidCallback? onTap;
-    switch (index) {
-      case 1:
-        onTap = () => Navigator.pushReplacementNamed(
-              context,
-              customerRoute('/gallery'),
-            );
-        break;
-      case 2:
-        onTap = () => Navigator.pushReplacementNamed(
-              context,
-              customerRoute('/catering-menu'),
-            );
-        break;
-      case 3:
-        onTap = () => Navigator.pushReplacementNamed(
-              context,
-              customerRoute('/restaurant'),
-            );
-        break;
-      case 4:
-        onTap = () => Navigator.pushReplacementNamed(
-              context,
-              customerRoute('/inquire'),
-            );
-        break;
-      case 5:
-        onTap = () => Navigator.pushReplacementNamed(
-              context,
-              customerRoute('/contact-us'),
-            );
-        break;
-      default:
-        onTap = () => _selectNavIndex(index);
-    }
+    VoidCallback onTap = () => _openSiteTab(index);
 
     return InkWell(
       onTap: onTap,

@@ -282,9 +282,18 @@ class _InquirePageState extends State<InquirePage> {
     super.initState();
     MenuStore.instance.loadDishes();
     SetMenuStore.instance.loadSetMenus();
-    WebsiteContentStore.instance.ensureLoaded().then((_) {
+    () async {
+      try {
+        if (widget.contentEditable) {
+          await WebsiteContentStore.instance.loadDraft();
+        } else {
+          await WebsiteContentStore.instance.ensureLoaded();
+        }
+      } catch (_) {
+        await WebsiteContentStore.instance.ensureLoaded();
+      }
       if (mounted) setState(() {});
-    });
+    }();
     _prefillFromCustomerProfile();
     _eventCity.addListener(_onVenueChanged);
     _contactPerson.addListener(_syncCustomerFromContact);

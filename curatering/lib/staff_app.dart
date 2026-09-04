@@ -170,6 +170,7 @@ Widget staffPageFor(String path) {
         child: CustomerWebsiteScreen(
           contentEditable: true,
           showStaffChrome: true,
+          returnRoute: '/website-admin',
         ),
       );
     case '/website-admin':

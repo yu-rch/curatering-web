@@ -392,10 +392,19 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
       final data = jsonDecode(response.body);
 
       if (response.statusCode == 200) {
-        // Close dialog immediately on success
-        if (mounted) {
-          Navigator.of(context).pop({'verified': true, 'email': _pendingEmail});
-        }
+        if (!mounted) return;
+        setState(() {
+          _showOtpField = false;
+          _isLoginMode = true;
+          _otpController.clear();
+          _passwordController.clear();
+          _confirmPasswordController.clear();
+          _isLoading = false;
+        });
+        _setError(
+          'Congratulations! You have successfully created an account! Please log in.',
+          success: true,
+        );
         return;
       } else {
         setState(() => _errorMessage = data['error'] ?? 'Verification failed');
@@ -403,7 +412,9 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
     } catch (e) {
       setState(() => _errorMessage = 'Error: $e');
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted && _isLoading) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 

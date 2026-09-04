@@ -67,7 +67,15 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
   }
 
   Future<void> _initializeStores() async {
-    await WebsiteContentStore.instance.ensureLoaded();
+    try {
+      if (widget.contentEditable) {
+        await WebsiteContentStore.instance.loadDraft();
+      } else {
+        await WebsiteContentStore.instance.ensureLoaded();
+      }
+    } catch (_) {
+      await WebsiteContentStore.instance.ensureLoaded();
+    }
     if (MenuStore.instance.activeDishes.isEmpty) {
       await MenuStore.instance.loadDishes();
     }

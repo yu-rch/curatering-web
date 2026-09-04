@@ -61,7 +61,17 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
     MenuStore.instance.addListener(_onMenuChanged);
     SetMenuStore.instance.addListener(_onMenuChanged);
     WebsiteContentStore.instance.addListener(_onMenuChanged);
-    unawaited(WebsiteContentStore.instance.ensureLoaded());
+    unawaited(() async {
+      try {
+        if (widget.contentEditable) {
+          await WebsiteContentStore.instance.loadDraft();
+        } else {
+          await WebsiteContentStore.instance.ensureLoaded();
+        }
+      } catch (_) {
+        await WebsiteContentStore.instance.ensureLoaded();
+      }
+    }());
     unawaited(MenuStore.instance.ensureImagesLoaded());
     SetMenuStore.instance.loadSetMenus();
   }

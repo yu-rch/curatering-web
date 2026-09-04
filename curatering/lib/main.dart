@@ -97,14 +97,17 @@ String _routePathFromSettings(RouteSettings settings) {
 
 Route<dynamic>? _buildRouteForPath(String path) {
   if (needsRedirectToCustomerSite(path)) {
-    return MaterialPageRoute<void>(
-      settings: RouteSettings(name: path),
-      builder:
-          (_) => ExternalHostRedirect(
-            origin: customerSiteOrigin,
-            path: customerRoute(path),
-          ),
-    );
+    // CMS draft preview on staff: stay here and edit, don't bounce to live site.
+    if (!isCmsDraftPreviewOnStaff) {
+      return MaterialPageRoute<void>(
+        settings: RouteSettings(name: path),
+        builder:
+            (_) => ExternalHostRedirect(
+              origin: customerSiteOrigin,
+              path: customerRoute(path),
+            ),
+      );
+    }
   }
   if (needsRedirectToStaffSite(path)) {
     return MaterialPageRoute<void>(

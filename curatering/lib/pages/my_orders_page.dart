@@ -46,7 +46,7 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
   @override
   void initState() {
     super.initState();
-    _loadOrders();
+    _loadOrders(force: true);
     unawaited(MenuStore.instance.loadDishesWithImages(silent: true));
   }
 
@@ -302,6 +302,9 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
   }
 
   String _displayStatusFor(Map<String, dynamic> order) {
+    if (_shouldTreatAsUnpaidTimeoutCancelled(order)) {
+      return 'cancelled';
+    }
     if (_isInsufficientPayment(order)) {
       return 'insufficient_payment';
     }
@@ -321,13 +324,67 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
     return raw.toLowerCase();
   }
 
+  bool _hasPaymentSubmitted(Map<String, dynamic> order) {
+    final confirmed = order['payment_confirmed_initial'] == true;
+    final uploaded =
+        order['payment_uploaded_initial'] == true ||
+        order['payment_uploaded'] == true;
+    final proof =
+        (order['payment_proof_initial'] ?? order['payment_proof'] ?? '')
+            .toString()
+            .trim();
+    final reference =
+        (order['payment_reference_initial'] ?? order['payment_reference'] ?? '')
+            .toString()
+            .trim();
+    final paymentStatus =
+        (order['payment_status'] ?? '').toString().toLowerCase();
+    return confirmed ||
+        uploaded ||
+        proof.isNotEmpty ||
+        reference.isNotEmpty ||
+        paymentStatus == 'paid' ||
+        paymentStatus == 'confirmed';
+  }
+
+  bool _shouldTreatAsUnpaidTimeoutCancelled(Map<String, dynamic> order) {
+    final status = _normalizeStatus(
+      '${order['status'] ?? order['order_status'] ?? ''}',
+    );
+    if (status != 'pending_cashier') return false;
+    if (_hasPaymentSubmitted(order)) return false;
+    final rawCreated =
+        order['submitted_order_dt_stamp'] ?? order['created_at'];
+    final created = DateTime.tryParse(rawCreated?.toString() ?? '');
+    if (created == null) return false;
+    return DateTime.now().toUtc().difference(created.toUtc()) >=
+        const Duration(minutes: 30);
+  }
+
   String _filterStatusFor(Map<String, dynamic> order) {
     final display = _displayStatusFor(order);
+    if (display == 'cancelled') return 'cancelled';
     if (display == 'insufficient_payment' ||
         display == 'waiting_for_balance_payment_confirmation') {
       return 'pending_cashier';
     }
     return _normalizeStatus('${order['status'] ?? ''}');
+  }
+
+  /// Follow-up only after staff acceptance; never for cancelled / unaccepted.
+  bool _wasOrderAccepted(Map<String, dynamic> order) {
+    final status = _normalizeStatus(_displayStatusFor(order));
+    return status == 'in_preparation' ||
+        status == 'out_for_delivery' ||
+        status == 'delivered';
+  }
+
+  bool _canShowFollowUp(Map<String, dynamic> order) {
+    final displayStatus = _displayStatusFor(order);
+    final status = _normalizeStatus(displayStatus);
+    if (status == 'cancelled' || status == 'delivered') return false;
+    if (!_wasOrderAccepted(order)) return false;
+    return _isActiveOrder(displayStatus);
   }
 
   void _applyUpdatedOrder(dynamic rawUpdated) {
@@ -472,7 +529,7 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
     final orderKey = _orderKey(order);
     final cooldownUntil = _followUpCooldownUntil(order);
     final canFollowUp =
-        _isActiveOrder(displayStatus) &&
+        _canShowFollowUp(order) &&
         orderKey.isNotEmpty &&
         (cooldownUntil == null || !cooldownUntil.isAfter(DateTime.now()));
     final canReview = _canReviewRestaurantOrder(order);
@@ -749,7 +806,7 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
                   const SizedBox(height: 16),
                   _buildBalancePaymentSection(order, balanceDue),
                 ],
-                if (_isActiveOrder(displayStatus)) ...[
+                if (_canShowFollowUp(order)) ...[
                   const SizedBox(height: 12),
                   Align(
                     alignment: Alignment.centerRight,
