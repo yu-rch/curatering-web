@@ -729,7 +729,13 @@ class _WebsiteRichTextEditorDialogState
             child: SingleChildScrollView(
               child: WebsiteRichText(
                 value: _ctrl.text,
-                style: websiteHeaderStyle(fontSize: 16),
+                style:
+                    _previewFont == 'Default'
+                        ? websiteHeaderStyle(fontSize: _previewSize)
+                        : CustomerFonts.getFont(
+                          _previewFont,
+                          fontSize: _previewSize,
+                        ),
               ),
             ),
           ),
@@ -781,11 +787,59 @@ class _WebsiteRichTextEditorDialogState
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.pop(context),
+          onPressed: () async {
+            final discard = await showDialog<bool>(
+              context: context,
+              builder:
+                  (ctx) => AlertDialog(
+                    title: const Text('Discard changes?'),
+                    content: const Text(
+                      'Close without saving? Unsaved changes will be lost.',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: const Text('Keep editing'),
+                      ),
+                      FilledButton(
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: const Text('Discard'),
+                      ),
+                    ],
+                  ),
+            );
+            if (discard == true && context.mounted) {
+              Navigator.pop(context);
+            }
+          },
           child: const Text('Cancel'),
         ),
         FilledButton(
-          onPressed: () => Navigator.pop(context, _ctrl.text.trim()),
+          onPressed: () async {
+            final save = await showDialog<bool>(
+              context: context,
+              builder:
+                  (ctx) => AlertDialog(
+                    title: const Text('Save changes?'),
+                    content: const Text(
+                      'Save your edits and close this editor?',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: const Text('Keep editing'),
+                      ),
+                      FilledButton(
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: const Text('Save'),
+                      ),
+                    ],
+                  ),
+            );
+            if (save == true && context.mounted) {
+              Navigator.pop(context, _ctrl.text.trim());
+            }
+          },
           child: const Text('Save'),
         ),
       ],

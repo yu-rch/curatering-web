@@ -155,31 +155,10 @@ class _HelpRequestsPageState extends State<HelpRequestsPage> {
 
 
   bool _featureMatches(HelpRequestDto request, String filter) {
-
     if (filter == 'All') return true;
-
     final feature = request.feature.trim().toLowerCase();
-
-    final problem = request.problem.trim().toLowerCase();
-
     final needle = filter.trim().toLowerCase();
-
-    if (feature == needle || feature.contains(needle)) return true;
-
-    if (problem.contains(needle)) return true;
-
-    // Legacy staff requests often use "Settings" as feature.
-
-    if (filter == 'Settings' &&
-
-        (feature == 'settings' || problem.contains('login'))) {
-
-      return true;
-
-    }
-
-    return false;
-
+    return feature == needle;
   }
 
 

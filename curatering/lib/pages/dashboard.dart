@@ -1050,10 +1050,14 @@ class _DashboardState extends State<Dashboard> {
               controller: _insightPromptController,
               minLines: 2,
               maxLines: 4,
-              onChanged: (_) {
-                if (_insightPromptError != null) {
-                  setState(() => _insightPromptError = null);
-                }
+              onChanged: (value) {
+                setState(() {
+                  if (value.trim().isNotEmpty) {
+                    _insightPromptError = null;
+                  } else if (_insightPromptError != null) {
+                    _insightPromptError = 'Field must not be empty.';
+                  }
+                });
               },
               decoration: InputDecoration(
                 labelText: 'AI analysis prompt',

@@ -28,7 +28,6 @@ class _CustomerFeedbackPageState extends State<CustomerFeedbackPage> {
   String? _error;
   String _searchQuery = '';
   List<CustomerFeedbackDto> _items = const [];
-  CustomerFeedbackAnalysis? _analysis;
 
   @override
   void initState() {
@@ -63,11 +62,8 @@ class _CustomerFeedbackPageState extends State<CustomerFeedbackPage> {
   Future<void> _analyze() async {
     setState(() => _analyzing = true);
     try {
-      final result = await SuperAdminApi.instance.analyzeCustomerFeedback(
-        search: _searchQuery.trim().isEmpty ? null : _searchQuery.trim(),
-      );
+      final result = await SuperAdminApi.instance.analyzeCustomerFeedback();
       if (!mounted) return;
-      setState(() => _analysis = result);
       await _showAnalysisDialog(result);
     } catch (_) {
       if (!mounted) return;
@@ -277,7 +273,7 @@ class _CustomerFeedbackPageState extends State<CustomerFeedbackPage> {
             label: _analyzing ? 'Analyzing...' : 'NLP Analyze',
             icon: Icons.auto_awesome,
             loading: _analyzing,
-            onPressed: _analyzing || filtered.isEmpty ? null : _analyze,
+            onPressed: _analyzing || _items.isEmpty ? null : _analyze,
           ),
         ],
         child: LayoutBuilder(
@@ -308,62 +304,6 @@ class _CustomerFeedbackPageState extends State<CustomerFeedbackPage> {
                       ],
                     ),
                     const SizedBox(height: 12),
-                  ],
-                  if (_analysis != null) ...[
-                    AntdCard(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              const Text(
-                                'AI insights',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16,
-                                ),
-                              ),
-                              const Spacer(),
-                              if (_analysis!.sentiment.trim().isNotEmpty) ...[
-                                AntdStatusTag(
-                                  label: _analysis!.sentiment,
-                                  color: AntdTokens.info,
-                                ),
-                                const SizedBox(width: 8),
-                              ],
-                              if (_analysis!.averageStars != null)
-                                AntdStatusTag(
-                                  label:
-                                      'Avg ${_analysis!.averageStars!.toStringAsFixed(1)} stars · ${_analysis!.feedbackCount} reviews',
-                                  color: AntdTokens.warning,
-                                ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            _analysis!.summary,
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(_analysis!.interpretation),
-                          _analysisListSection(
-                            'Key topics',
-                            _analysis!.keyTopics,
-                          ),
-                          _analysisListSection(
-                            'Complaints',
-                            _analysis!.complaints,
-                          ),
-                          _analysisListSection('Praises', _analysis!.praises),
-                          _analysisListSection('Insights', _analysis!.insights),
-                          _analysisListSection(
-                            'Recommendations',
-                            _analysis!.recommendations,
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
                   ],
                   SizedBox(
                     height: tableHeight,

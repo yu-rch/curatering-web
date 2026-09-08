@@ -568,6 +568,29 @@ export function createWebsiteCmsHandlers({
       },
     );
 
+    app.get(
+      "/api/website-content/revisions/:id",
+      authRequired,
+      cmsRoles,
+      async (req, res) => {
+        try {
+          const r = await pool.query(
+            `SELECT id, note, published_by, created_at, content
+             FROM website_content_revisions
+             WHERE id = $1::uuid`,
+            [req.params.id],
+          );
+          if (!r.rows[0]) {
+            return res.status(404).json({ message: "Revision not found" });
+          }
+          return res.json({ revision: r.rows[0] });
+        } catch (e) {
+          console.error(e);
+          return res.status(500).json({ message: "Failed to load revision" });
+        }
+      },
+    );
+
     app.post(
       "/api/website-content/revisions/:id/restore",
       authRequired,

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
@@ -17,6 +19,7 @@ import '../widgets/antd_tokens.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/cms_sections.dart';
 import '../widgets/completed_event_gallery_picker.dart';
+import '../widgets/image_focus_dialog.dart';
 import '../widgets/mobile_ui_cms_editor.dart';
 import '../widgets/paginated_data_table.dart';
 import '../widgets/website_media_picker.dart';
@@ -1097,6 +1100,38 @@ class _GalleryEditor extends StatelessWidget {
                         '${cat.images.length} image(s)',
                         style: const TextStyle(color: AntdTokens.labelMuted),
                       ),
+                      if (cat.images.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            for (var i = 0; i < cat.images.length; i++)
+                              _GallerySelectedImageTile(
+                                image: cat.images[i],
+                                onOpen: () {
+                                  showImageFocusDialog(
+                                    context,
+                                    imageBase64: cat.images[i].imageBase64,
+                                    title:
+                                        cat.label.trim().isEmpty
+                                            ? 'Gallery image'
+                                            : cat.label,
+                                    description:
+                                        cat.images[i].tags.isEmpty
+                                            ? null
+                                            : 'Tags: ${cat.images[i].tags.join(', ')}',
+                                  );
+                                },
+                                onRemove: () {
+                                  cat.images.removeAt(i);
+                                  w.touch();
+                                  onChanged();
+                                },
+                              ),
+                          ],
+                        ),
+                      ],
                       const SizedBox(height: 8),
                       Wrap(
                         spacing: 8,
@@ -1196,6 +1231,74 @@ class _GalleryEditor extends StatelessWidget {
           Text(
             galleryTagsHint(),
             style: const TextStyle(fontSize: 12, color: AntdTokens.labelMuted),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GallerySelectedImageTile extends StatelessWidget {
+  const _GallerySelectedImageTile({
+    required this.image,
+    required this.onOpen,
+    required this.onRemove,
+  });
+
+  final GalleryImageData image;
+  final VoidCallback onOpen;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 112,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Material(
+            color: Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(8),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: onOpen,
+              child: AspectRatio(
+                aspectRatio: 1,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    websiteBase64Thumbnail(image.imageBase64, height: 112),
+                    Positioned(
+                      top: 4,
+                      right: 4,
+                      child: Material(
+                        color: Colors.black54,
+                        shape: const CircleBorder(),
+                        child: InkWell(
+                          customBorder: const CircleBorder(),
+                          onTap: onRemove,
+                          child: const Padding(
+                            padding: EdgeInsets.all(4),
+                            child: Icon(
+                              Icons.close,
+                              size: 16,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            image.tags.isEmpty ? 'Tap to view' : image.tags.take(2).join(', '),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 11, color: AntdTokens.labelMuted),
           ),
         ],
       ),
@@ -1979,6 +2082,65 @@ class _MediaLibraryPanelState extends State<_MediaLibraryPanel> {
     }
   }
 
+  Future<void> _showMediaDetail(WebsiteMediaItem item) async {
+    WebsiteMediaItem detail = item;
+    try {
+      detail = await WebsiteContentStore.instance.getMedia(item.id);
+    } catch (_) {
+      // Fall back to list row data when full fetch fails.
+    }
+    if (!mounted) return;
+    final preview = (detail.dataBase64 ?? '').trim();
+    await showAntdModal<void>(
+      context: context,
+      title: 'Media details',
+      maxWidth: 640,
+      scrollBody: true,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _CmsDetailRow(label: 'ID', value: detail.id),
+          _CmsDetailRow(label: 'Name', value: detail.name),
+          _CmsDetailRow(label: 'MIME', value: detail.mime),
+          _CmsDetailRow(
+            label: 'Size',
+            value: '${(detail.byteSize / 1024).toStringAsFixed(1)} KB',
+          ),
+          _CmsDetailRow(
+            label: 'Tags',
+            value: detail.tags.isEmpty ? '—' : detail.tags.join(', '),
+          ),
+          _CmsDetailRow(
+            label: 'Created',
+            value: detail.createdAt?.toLocal().toString() ?? '—',
+          ),
+          if (preview.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const Text(
+              'Preview',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: AntdTokens.labelMuted,
+              ),
+            ),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: websiteBase64Thumbnail(preview, height: 220),
+            ),
+          ],
+        ],
+      ),
+      actions: [
+        AntdPrimaryButton(
+          label: 'Close',
+          onPressed: () => Navigator.pop(context),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -2025,6 +2187,7 @@ class _MediaLibraryPanelState extends State<_MediaLibraryPanel> {
                   rows: [
                     for (final m in _items)
                       DataRow(
+                        onSelectChanged: (_) => _showMediaDetail(m),
                         cells: [
                           DataCell(Text(m.name)),
                           DataCell(Text(m.mime)),
@@ -2105,6 +2268,119 @@ class _RevisionsPanelState extends State<_RevisionsPanel> {
     }
   }
 
+  String _summarizeRevisionContent(dynamic content) {
+    if (content == null) return 'No content stored for this revision.';
+    Object? sanitize(Object? value, [int depth = 0]) {
+      if (value == null) return null;
+      if (value is String) {
+        if (value.length > 240 &&
+            (value.startsWith('data:') ||
+                value.contains('base64') ||
+                RegExp(r'^[A-Za-z0-9+/=]{200,}$').hasMatch(value))) {
+          return '[binary/image data omitted · ${value.length} chars]';
+        }
+        if (value.length > 500) {
+          return '${value.substring(0, 500)}…';
+        }
+        return value;
+      }
+      if (value is num || value is bool) return value;
+      if (depth > 4) return '…';
+      if (value is List) {
+        return value.take(40).map((e) => sanitize(e, depth + 1)).toList();
+      }
+      if (value is Map) {
+        return {
+          for (final e in value.entries)
+            e.key.toString(): sanitize(e.value, depth + 1),
+        };
+      }
+      return value.toString();
+    }
+
+    try {
+      const encoder = JsonEncoder.withIndent('  ');
+      return encoder.convert(sanitize(content));
+    } catch (_) {
+      return content.toString();
+    }
+  }
+
+  Future<void> _showRevisionDetail(WebsiteRevisionItem item) async {
+    Map<String, dynamic>? full;
+    String? loadError;
+    try {
+      full = await WebsiteContentStore.instance.getRevision(item.id);
+    } catch (e) {
+      loadError = e.toString();
+    }
+    if (!mounted) return;
+    final note = (full?['note'] ?? item.note)?.toString() ?? '';
+    final by = (full?['published_by'] ?? item.publishedBy)?.toString() ?? '';
+    final whenRaw = full?['created_at'] ?? item.createdAt;
+    final when =
+        whenRaw is DateTime
+            ? whenRaw.toLocal().toString()
+            : (DateTime.tryParse('$whenRaw')?.toLocal().toString() ??
+                '$whenRaw');
+    await showAntdModal<void>(
+      context: context,
+      title: 'Revision details',
+      maxWidth: 720,
+      scrollBody: true,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _CmsDetailRow(label: 'ID', value: item.id),
+          _CmsDetailRow(label: 'When', value: when.isEmpty ? '—' : when),
+          _CmsDetailRow(label: 'Note', value: note.isEmpty ? '—' : note),
+          _CmsDetailRow(label: 'Published by', value: by.isEmpty ? '—' : by),
+          if (loadError != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              'Could not load full content: $loadError',
+              style: TextStyle(color: Colors.red.shade700),
+            ),
+          ] else ...[
+            const SizedBox(height: 12),
+            const Text(
+              'Content snapshot',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: AntdTokens.labelMuted,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: SelectableText(
+                _summarizeRevisionContent(full?['content']),
+                style: const TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 12,
+                  height: 1.35,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+      actions: [
+        AntdPrimaryButton(
+          label: 'Close',
+          onPressed: () => Navigator.pop(context),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -2126,6 +2402,7 @@ class _RevisionsPanelState extends State<_RevisionsPanel> {
         rows: [
           for (final r in _items)
             DataRow(
+              onSelectChanged: (_) => _showRevisionDetail(r),
               cells: [
                 DataCell(Text('${r.createdAt ?? ''}')),
                 DataCell(Text(r.note ?? '')),
@@ -2175,6 +2452,35 @@ class _RevisionsPanelState extends State<_RevisionsPanel> {
                 ),
               ],
             ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CmsDetailRow extends StatelessWidget {
+  const _CmsDetailRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: AntdTokens.labelMuted,
+            ),
+          ),
+          const SizedBox(height: 4),
+          SelectableText(value),
         ],
       ),
     );

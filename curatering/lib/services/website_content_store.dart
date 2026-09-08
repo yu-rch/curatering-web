@@ -898,6 +898,33 @@ class WebsiteContentStore extends ChangeNotifier {
         .toList();
   }
 
+  Future<Map<String, dynamic>> getRevision(String id) async {
+    final decoded = await ApiClient.instance.getJson(
+      '/api/website-content/revisions/$id',
+      useCache: false,
+    );
+    final revision = decoded['revision'];
+    if (revision is Map) return Map<String, dynamic>.from(revision);
+    return Map<String, dynamic>.from(decoded);
+  }
+
+  Future<WebsiteMediaItem> getMedia(String id) async {
+    final decoded = await ApiClient.instance.getJson(
+      '/api/website-media/$id',
+      useCache: false,
+    );
+    final media = decoded['media'];
+    if (media is Map) {
+      final item = WebsiteMediaItem.fromJson(Map<String, dynamic>.from(media));
+      if ((item.dataBase64 ?? '').isNotEmpty) {
+        _mediaCache[item.id] = item.dataBase64!
+            .replaceFirst(RegExp(r'^data:image\/[^;]+;base64,'), '');
+      }
+      return item;
+    }
+    throw StateError('Media not found');
+  }
+
   Future<void> restoreRevision(String id) async {
     final result = await ApiClient.instance.postJson(
       '/api/website-content/revisions/$id/restore',
