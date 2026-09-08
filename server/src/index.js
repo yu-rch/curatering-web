@@ -9318,7 +9318,7 @@ async function registerRoutesAfterDbInit() {
         }
 
         const amountNum = Number(amount);
-        if (Number.isFinite(amountNum) && amountNum > 0) {
+        if (Number.isFinite(amountNum) && amountNum >= 0) {
           updateQuery += `, ${amountColumn} = $${queryParams.length + 1}`;
           queryParams.push(amountNum);
         }
@@ -9345,6 +9345,151 @@ async function registerRoutesAfterDbInit() {
         res.status(500).json({ error: 'Failed to update payment status' });
       }
     });
+
+    const EVENT_PHOTOS_MAX = 40;
+    const EVENT_PHOTO_MAX_CHARS = 2_500_000;
+
+    function normalizeEventPhotoList(raw) {
+      const list = Array.isArray(raw) ? raw : [];
+      const out = [];
+      for (const item of list) {
+        let s = String(item ?? '').trim();
+        if (!s) continue;
+        s = s.replace(/^data:image\/[^;]+;base64,/i, '').replace(/\s+/g, '');
+        if (!s || s.length > EVENT_PHOTO_MAX_CHARS) continue;
+        out.push(s);
+        if (out.length >= EVENT_PHOTOS_MAX) break;
+      }
+      return out;
+    }
+
+    app.put(
+      '/api/events/orders/:orderId/event-photos',
+      authRequired,
+      (req, res, next) =>
+        requireRoles(
+          req,
+          res,
+          next,
+          new Set(['manager', 'admin', 'super_admin']),
+        ),
+      async (req, res) => {
+        try {
+          const { orderId } = req.params;
+          const photos = normalizeEventPhotoList(req.body?.photos);
+          const eventCols = await getTableColumnNames('event_orders');
+          if (!eventCols.has('actual_event_images')) {
+            return res.status(500).json({
+              error: 'actual_event_images column is not available',
+            });
+          }
+          const result = await pool.query(
+            `UPDATE event_orders
+             SET actual_event_images = $1::jsonb,
+                 updated_by = $2,
+                 updated_at = now()
+             WHERE id = $3::uuid
+               AND status IN (
+                 'on_going', 'ongoing', 'for_ongoing',
+                 'for_full_payment', 'for_post_analysis', 'completed'
+               )
+             RETURNING id, actual_event_images AS "actualEventImages"`,
+            [JSON.stringify(photos), req.user.id, orderId],
+          );
+          if (result.rowCount === 0) {
+            return res.status(404).json({
+              message:
+                'Event order not found or photos cannot be updated for this status.',
+            });
+          }
+          await logAction({
+            userId: req.user.id,
+            feature: 'Events',
+            action: 'updated event photos',
+            other: { orderId, count: photos.length },
+          });
+          return res.json({
+            ok: true,
+            actualEventImages: result.rows[0].actualEventImages || photos,
+          });
+        } catch (error) {
+          console.error('Error updating event photos:', error);
+          res.status(500).json({ error: 'Failed to update event photos' });
+        }
+      },
+    );
+
+    app.delete(
+      '/api/events/orders/:orderId/event-photos/:photoIndex',
+      authRequired,
+      (req, res, next) =>
+        requireRoles(
+          req,
+          res,
+          next,
+          new Set(['manager', 'admin', 'super_admin']),
+        ),
+      async (req, res) => {
+        try {
+          const { orderId, photoIndex } = req.params;
+          const index = Number(photoIndex);
+          if (!Number.isInteger(index) || index < 0) {
+            return res.status(400).json({ error: 'Invalid photo index' });
+          }
+          const eventCols = await getTableColumnNames('event_orders');
+          if (!eventCols.has('actual_event_images')) {
+            return res.status(500).json({
+              error: 'actual_event_images column is not available',
+            });
+          }
+          const current = await pool.query(
+            `SELECT actual_event_images
+             FROM event_orders
+             WHERE id = $1::uuid
+             LIMIT 1`,
+            [orderId],
+          );
+          if (current.rowCount === 0) {
+            return res.status(404).json({ message: 'Event order not found' });
+          }
+          let images = current.rows[0].actual_event_images;
+          if (typeof images === 'string') {
+            try {
+              images = JSON.parse(images);
+            } catch {
+              images = [];
+            }
+          }
+          if (!Array.isArray(images)) images = [];
+          if (index >= images.length) {
+            return res.status(404).json({ message: 'Photo not found' });
+          }
+          images.splice(index, 1);
+          const result = await pool.query(
+            `UPDATE event_orders
+             SET actual_event_images = $1::jsonb,
+                 updated_by = $2,
+                 updated_at = now()
+             WHERE id = $3::uuid
+             RETURNING id, actual_event_images AS "actualEventImages"`,
+            [JSON.stringify(images), req.user.id, orderId],
+          );
+          await logAction({
+            userId: req.user.id,
+            feature: 'Events',
+            action: 'removed event photo',
+            other: { orderId, photoIndex: index },
+          });
+          return res.json({
+            ok: true,
+            actualEventImages: result.rows[0].actualEventImages || images,
+          });
+        } catch (error) {
+          console.error('Error removing event photo:', error);
+          res.status(500).json({ error: 'Failed to remove event photo' });
+        }
+      },
+    );
 
     app.put(
       '/api/events/orders/:orderId/seating',

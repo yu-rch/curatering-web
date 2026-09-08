@@ -252,7 +252,7 @@ class EventsApi {
     if (paymentMethod != null && paymentMethod.isNotEmpty) {
       body['paymentMethod'] = paymentMethod;
     }
-    if (amount != null && amount > 0) {
+    if (amount != null && amount >= 0) {
       body['amount'] = amount;
     }
     if (paymentProofBase64 != null && paymentProofBase64.trim().isNotEmpty) {
@@ -647,7 +647,9 @@ class EventsApi {
     }
 
     final actualEventImages = <String>[];
-    for (final img in _toList(map['actualEventImages'])) {
+    for (final img in _toList(
+      map['actualEventImages'] ?? map['actual_event_images'],
+    )) {
       final value = img.toString().trim();
       if (value.isNotEmpty) actualEventImages.add(value);
     }

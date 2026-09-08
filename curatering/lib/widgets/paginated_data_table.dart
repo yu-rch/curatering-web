@@ -8,8 +8,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
 
+import '../utils/pdf_print.dart';
 import '../utils/web_csv_download.dart';
 import 'antd_buttons.dart';
 import 'antd_dialog.dart';
@@ -478,10 +478,8 @@ class _PagedDataTableState extends State<PagedDataTable> {
       ),
     );
 
-    await Printing.layoutPdf(
-      onLayout: (_) => doc.save(),
-      name: '${widget.title}.pdf',
-    );
+    final bytes = await doc.save();
+    await printPdfBytes(bytes, name: '${widget.title}.pdf');
   }
 
   Future<void> _exportCsv(List<DataRow> rows) async {

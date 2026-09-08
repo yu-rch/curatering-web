@@ -128,6 +128,40 @@ extension _ManageEventsDetailExt on _ManageEventsState {
     await printPdfBytes(bytes, name: name);
   }
 
+  Future<void> _runPdfExport(
+    Future<Uint8List> Function() build, {
+    required String fileName,
+  }) async {
+    if (_pdfExportBusy) return;
+    setState(() => _pdfExportBusy = true);
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('Preparing PDF…'),
+        duration: Duration(seconds: 30),
+      ),
+    );
+    try {
+      await Future<void>.delayed(Duration.zero);
+      final bytes = await build();
+      if (!mounted) return;
+      messenger.hideCurrentSnackBar();
+      await _printPdfBytes(bytes, name: fileName);
+    } catch (e) {
+      if (!mounted) return;
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('PDF failed: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _pdfExportBusy = false);
+    }
+  }
+
   Future<void> _generateOrderSummaryPdf(
     EventOrderDto order,
     OrderSummaryPdfVariant variant,
@@ -135,12 +169,14 @@ extension _ManageEventsDetailExt on _ManageEventsState {
     final groups = variant == OrderSummaryPdfVariant.additionalCosts
         ? _additionalCostGroupsFromOrder(order)
         : const <Map<String, dynamic>>[];
-    final bytes = await buildManagerOrderSummaryPdf(
-      order: order,
-      variant: variant,
-      additionalCostGroups: groups,
+    await _runPdfExport(
+      () => buildManagerOrderSummaryPdf(
+        order: order,
+        variant: variant,
+        additionalCostGroups: groups,
+      ),
+      fileName: 'order-summary.pdf',
     );
-    await _printPdfBytes(bytes, name: 'order-summary.pdf');
   }
 
   Widget _buildManageEventsDetailPanel() {
@@ -372,7 +408,7 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           Text(
-                            'Balance due: ${formatPesos((total - order.downPaymentAmount).clamp(0, double.infinity))}',
+                            'Balance due: ${formatPesos(_fullPaymentRemainingAmount(order))}',
                             style: TextStyle(
                               color: Colors.red.shade700,
                               fontWeight: FontWeight.w700,
@@ -500,17 +536,27 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                           if (stage == 'on_going' && _isManager) const SizedBox(height: 6),
                           if (_isManager)
                             OutlinedButton.icon(
-                              onPressed: () async {
-                                final rows = _checklistRowsFromOrder(order);
-                                final bytes = await buildChecklistPdf(
-                                  order: order,
-                                  stageLabel: stage.replaceAll('_', ' ').toUpperCase(),
-                                  checklistRows: rows,
-                                );
-                                await _printPdfBytes(bytes, name: 'checklist.pdf');
-                              },
+                              onPressed: _pdfExportBusy
+                                  ? null
+                                  : () async {
+                                      final rows = _checklistRowsFromOrder(order);
+                                      await _runPdfExport(
+                                        () => buildChecklistPdf(
+                                          order: order,
+                                          stageLabel: stage
+                                              .replaceAll('_', ' ')
+                                              .toUpperCase(),
+                                          checklistRows: rows,
+                                        ),
+                                        fileName: 'checklist.pdf',
+                                      );
+                                    },
                               icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
-                              label: const Text('Generate Checklist PDF'),
+                              label: Text(
+                                _pdfExportBusy
+                                    ? 'Preparing PDF…'
+                                    : 'Generate Checklist PDF',
+                              ),
                             ),
                         ],
                       ),
@@ -531,17 +577,27 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                             if (stage == 'on_going' && _isManager) const SizedBox(height: 6),
                             if (_isManager)
                               OutlinedButton.icon(
-                                onPressed: () async {
-                                  final rows = _taskRowsFromOrder(order);
-                                  final bytes = await buildTaskAssignmentPdf(
-                                    order: order,
-                                    stageLabel: stage.replaceAll('_', ' ').toUpperCase(),
-                                    taskRows: rows,
-                                  );
-                                  await _printPdfBytes(bytes, name: 'task-assignment.pdf');
-                                },
+                                onPressed: _pdfExportBusy
+                                    ? null
+                                    : () async {
+                                        final rows = _taskRowsFromOrder(order);
+                                        await _runPdfExport(
+                                          () => buildTaskAssignmentPdf(
+                                            order: order,
+                                            stageLabel: stage
+                                                .replaceAll('_', ' ')
+                                                .toUpperCase(),
+                                            taskRows: rows,
+                                          ),
+                                          fileName: 'task-assignment.pdf',
+                                        );
+                                      },
                                 icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
-                                label: const Text('Generate Task Assignment PDF'),
+                                label: Text(
+                                  _pdfExportBusy
+                                      ? 'Preparing PDF…'
+                                      : 'Generate Task Assignment PDF',
+                                ),
                               ),
                           ],
                         ),
@@ -562,18 +618,22 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                         runSpacing: 8,
                         children: [
                           OutlinedButton(
-                            onPressed: () => _generateOrderSummaryPdf(
-                              order,
-                              OrderSummaryPdfVariant.beforeDownPayment,
-                            ),
+                            onPressed: _pdfExportBusy
+                                ? null
+                                : () => _generateOrderSummaryPdf(
+                                      order,
+                                      OrderSummaryPdfVariant.beforeDownPayment,
+                                    ),
                             child: const Text('Order Summary before Down Payment'),
                           ),
                           if (stage != 'new_event' && stage != 'online_inquiries')
                             OutlinedButton(
-                              onPressed: () => _generateOrderSummaryPdf(
-                                order,
-                                OrderSummaryPdfVariant.afterDownPayment,
-                              ),
+                              onPressed: _pdfExportBusy
+                                  ? null
+                                  : () => _generateOrderSummaryPdf(
+                                        order,
+                                        OrderSummaryPdfVariant.afterDownPayment,
+                                      ),
                               child: const Text('Order Summary after Down Payment'),
                             ),
                           if ((stage == 'for_down_payment' ||
@@ -581,18 +641,22 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                                   stage == 'for_full_payment') &&
                               _additionalCostsTotal(order) > 0)
                             OutlinedButton(
-                              onPressed: () => _generateOrderSummaryPdf(
-                                order,
-                                OrderSummaryPdfVariant.additionalCosts,
-                              ),
+                              onPressed: _pdfExportBusy
+                                  ? null
+                                  : () => _generateOrderSummaryPdf(
+                                        order,
+                                        OrderSummaryPdfVariant.additionalCosts,
+                                      ),
                               child: const Text('Order Summary | Additional Costs'),
                             ),
                           if (stage == 'completed')
                             OutlinedButton(
-                              onPressed: () => _generateOrderSummaryPdf(
-                                order,
-                                OrderSummaryPdfVariant.fullyPaid,
-                              ),
+                              onPressed: _pdfExportBusy
+                                  ? null
+                                  : () => _generateOrderSummaryPdf(
+                                        order,
+                                        OrderSummaryPdfVariant.fullyPaid,
+                                      ),
                               child: const Text('Order Summary Fully Paid'),
                             ),
                         ],
@@ -1629,8 +1693,8 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                                 child: const Icon(Icons.broken_image),
                               ),
                             )
-                          : Image.memory(
-                              Uint8List.fromList(imageUrl.codeUnits),
+                          : CachedBase64Image(
+                              base64String: imageUrl,
                               fit: BoxFit.cover,
                             ),
                     ),

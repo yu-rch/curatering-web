@@ -860,6 +860,7 @@ class _ManageEventsState extends State<ManageEvents>
   Color _themeTintColor = const Color(0xFFF4511E);
   bool _isAiProcessingTheme = false;
   bool _paymentDialogLoading = false;
+  bool _pdfExportBusy = false;
   final PaymentConfirmationMode _selectedPaymentMode =
       PaymentConfirmationMode.downpayment;
   DownPaymentType _selectedDownPaymentType = DownPaymentType.fiftyPercent;
@@ -4315,7 +4316,9 @@ class _ManageEventsState extends State<ManageEvents>
                                 )
                               else
                                 Text(
-                                  'Balance due: ${formatPesos(remainingBalance)}',
+                                  remainingBalance <= 0
+                                      ? 'Balance due: ${formatPesos(0)} (already covered — finalize to mark full payment paid)'
+                                      : 'Balance due: ${formatPesos(remainingBalance)}',
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: Colors.grey.shade700,
@@ -4557,10 +4560,18 @@ class _ManageEventsState extends State<ManageEvents>
                                   isDownpayment
                                       ? resolvedDownpaymentAmount()
                                       : resolvedFullPaymentAmount();
-                              if (payAmount <= 0) {
+                              if (isDownpayment && payAmount <= 0) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
                                     content: Text('Enter a valid amount.'),
+                                  ),
+                                );
+                                return;
+                              }
+                              if (!isDownpayment && payAmount < 0) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Amount cannot be negative.'),
                                   ),
                                 );
                                 return;
@@ -4634,13 +4645,34 @@ class _ManageEventsState extends State<ManageEvents>
   ) => _showDownpaymentConfirmationDialog(order, mode: mode);
 
   Future<void> _showOrderSummaryDialog(EventOrderDto order) async {
-    final bytes = await buildManagerOrderSummaryPdf(
-      order: order,
-      variant: order.downPaymentStatus == 'paid'
-          ? OrderSummaryPdfVariant.afterDownPayment
-          : OrderSummaryPdfVariant.beforeDownPayment,
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Preparing PDF…'),
+        duration: Duration(seconds: 20),
+      ),
     );
-    await printPdfBytes(bytes, name: 'order-summary.pdf');
+    try {
+      await Future<void>.delayed(Duration.zero);
+      final bytes = await buildManagerOrderSummaryPdf(
+        order: order,
+        variant: order.downPaymentStatus == 'paid'
+            ? OrderSummaryPdfVariant.afterDownPayment
+            : OrderSummaryPdfVariant.beforeDownPayment,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      await printPdfBytes(bytes, name: 'order-summary.pdf');
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('PDF failed: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   List<ChecklistItem> _buildChecklistFromMenuWithIngredients(
@@ -6233,10 +6265,8 @@ class _ManageEventsState extends State<ManageEvents>
                                                       );
                                                     },
                                                   )
-                                                  : Image.memory(
-                                                    Uint8List.fromList(
-                                                      imageUrl.codeUnits,
-                                                    ),
+                                                  : CachedBase64Image(
+                                                    base64String: imageUrl,
                                                     fit: BoxFit.cover,
                                                   ),
                                         ),
@@ -8896,83 +8926,66 @@ class _ManageEventsState extends State<ManageEvents>
 
   Future<void> _uploadEventPhotos(EventOrderDto order) async {
     try {
-      // For now, just show a placeholder dialog
-      await showDialog<void>(
-        context: context,
-        builder:
-            (context) => Dialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Container(
-                constraints: const BoxConstraints(maxWidth: 420),
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Close button
-                    Align(
-                      alignment: Alignment.topRight,
-                      child: IconButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        icon: const Icon(Icons.close, color: Colors.black),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    // Title
-                    const Text(
-                      'UPLOAD EVENT PHOTOS',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    const Text(
-                      'Photo upload functionality will be implemented here.',
-                      style: TextStyle(fontSize: 13),
-                    ),
-                    const SizedBox(height: 24),
-                    // Button
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFFFC024),
-                          foregroundColor: Colors.black,
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        child: const Text(
-                          'CLOSE',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        allowMultiple: true,
+        withData: true,
       );
-    } catch (e) {
-      if (mounted) {
+      if (result == null || result.files.isEmpty) return;
+
+      final existing = List<String>.from(order.actualEventImages);
+      final added = <String>[];
+      for (final file in result.files) {
+        final bytes = file.bytes;
+        if (bytes == null || bytes.isEmpty) continue;
+        added.add(base64Encode(bytes));
+      }
+      if (added.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not read selected images.')),
+        );
+        return;
+      }
+
+      final photos = [...existing, ...added];
+      if (photos.length > 40) {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Failed to open photo upload'),
+            content: Text('Maximum 40 event photos per order.'),
             backgroundColor: Colors.red,
           ),
         );
+        return;
       }
+
+      await EventsApi.instance.updateEventPhotos(
+        orderId: order.id,
+        photos: photos,
+      );
+      await _refreshOrders();
+      if (!mounted) return;
+      await _selectManageEventsOrder(order);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            added.length == 1
+                ? '1 photo uploaded.'
+                : '${added.length} photos uploaded.',
+          ),
+          backgroundColor: const Color(0xFF1DB954),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to upload photos: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -9080,6 +9093,8 @@ class _ManageEventsState extends State<ManageEvents>
 
       // Refresh orders
       await _refreshOrders();
+      if (!mounted) return;
+      await _selectManageEventsOrder(order);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -9230,7 +9245,15 @@ class _ManageEventsState extends State<ManageEvents>
     EventOrderDto order,
     List<ChecklistItem> editableItems,
   ) async {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Preparing PDF…'),
+        duration: Duration(seconds: 20),
+      ),
+    );
     try {
+      await Future<void>.delayed(Duration.zero);
       final rows = editableItems
           .map(
             (item) => {
@@ -9247,9 +9270,12 @@ class _ManageEventsState extends State<ManageEvents>
         stageLabel: 'CHECKLIST',
         checklistRows: rows,
       );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       await printPdfBytes(bytes, name: 'checklist.pdf');
     } catch (e) {
       if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('PDF failed: $e')),
         );

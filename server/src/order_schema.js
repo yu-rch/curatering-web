@@ -927,6 +927,7 @@ function staffCateringOrderSelectList(cateringCols) {
       ${cateringSelectField(cateringCols, 'fullPaymentAmount', ['full_payment_amount'], '0')},
       ${cateringSelectField(cateringCols, 'fullPaymentStatus', ['full_payment_status'], "'pending'")},
       ${cateringSelectField(cateringCols, 'finalStatus', ['final_status'], "'successful'")},
+      '[]'::jsonb AS "actualEventImages",
       ${cateringSelectField(cateringCols, 'created_at', ['created_at'], 'now()')},
       COALESCE(${sqlExpr(cateringCols, ['updated_at'], 'created_at')}, ${sqlExpr(cateringCols, ['created_at'], 'now()')}) AS "updatedAt"
     FROM catering_orders`;
@@ -936,6 +937,8 @@ function staffEventOrderSelectList(eventCols, themeColSql) {
   const seating = eventCols.has('seating_plan')
     ? 'COALESCE(seating_plan, \'{}\'::jsonb)'
     : '\'{}\'::jsonb';
+  // List payloads omit heavy photo blobs; detail by-id loads full images.
+  const actualImages = `'[]'::jsonb`;
   return `
     SELECT
       id,
@@ -966,6 +969,7 @@ function staffEventOrderSelectList(eventCols, themeColSql) {
       ${cateringSelectField(eventCols, 'fullPaymentAmount', ['full_payment_amount'], '0')},
       ${cateringSelectField(eventCols, 'fullPaymentStatus', ['full_payment_status'], "'pending'")},
       ${cateringSelectField(eventCols, 'finalStatus', ['final_status'], "'successful'")},
+      ${actualImages} AS "actualEventImages",
       ${cateringSelectField(eventCols, 'created_at', ['created_at'], 'now()')},
       COALESCE(${sqlExpr(eventCols, ['updated_at'], 'created_at')}, ${sqlExpr(eventCols, ['created_at'], 'now()')}) AS "updatedAt"
     FROM event_orders`;
@@ -1003,6 +1007,9 @@ function staffEventOrderSelectById(eventCols) {
   const seating = eventCols.has('seating_plan')
     ? 'COALESCE(seating_plan, \'{}\'::jsonb)'
     : '\'{}\'::jsonb';
+  const actualImages = eventCols.has('actual_event_images')
+    ? 'COALESCE(actual_event_images, \'[]\'::jsonb)'
+    : '\'[]\'::jsonb';
   return `
     SELECT
       id,
@@ -1033,6 +1040,7 @@ function staffEventOrderSelectById(eventCols) {
       ${cateringSelectField(eventCols, 'fullPaymentAmount', ['full_payment_amount'], '0')},
       ${cateringSelectField(eventCols, 'fullPaymentStatus', ['full_payment_status'], "'pending'")},
       ${cateringSelectField(eventCols, 'finalStatus', ['final_status'], "'successful'")},
+      ${actualImages} AS "actualEventImages",
       ${cateringSelectField(eventCols, 'created_at', ['created_at'], 'now()')},
       COALESCE(${sqlExpr(eventCols, ['updated_at'], 'created_at')}, ${sqlExpr(eventCols, ['created_at'], 'now()')}) AS "updatedAt"
     FROM event_orders
