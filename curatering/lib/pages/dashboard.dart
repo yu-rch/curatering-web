@@ -4,12 +4,12 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
 
 import '../auth/auth_session.dart';
 import '../auth/roles.dart';
 import '../services/dashboard_api.dart';
 import '../utils/order_calculations.dart';
+import '../utils/pdf_print.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/antd_buttons.dart';
 import '../widgets/antd_dialog.dart';
@@ -746,7 +746,17 @@ class _DashboardState extends State<Dashboard> {
   Future<void> _printDashboardPdf(DashboardSummary summary) async {
     if (_isPrintingPdf) return;
     setState(() => _isPrintingPdf = true);
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('Preparing PDF…'),
+        duration: Duration(seconds: 30),
+      ),
+    );
     try {
+      // Yield so the spinner/snackbar can paint before PDF work.
+      await Future<void>.delayed(Duration.zero);
       final generatedAt = DateTime.now();
       final doc = pw.Document(title: 'Manager Dashboard');
       final monthly = _monthlySeries(summary);
@@ -874,9 +884,18 @@ class _DashboardState extends State<Dashboard> {
         ),
       );
 
-      await Printing.layoutPdf(
-        onLayout: (_) => doc.save(),
-        name: 'manager-dashboard.pdf',
+      final bytes = await doc.save();
+      if (!mounted) return;
+      messenger.hideCurrentSnackBar();
+      await printPdfBytes(bytes, name: 'manager-dashboard.pdf');
+    } catch (e) {
+      if (!mounted) return;
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('PDF failed: $e'),
+          backgroundColor: Colors.red,
+        ),
       );
     } finally {
       if (mounted) setState(() => _isPrintingPdf = false);

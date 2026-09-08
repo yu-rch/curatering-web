@@ -5,9 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
 
 import '../../utils/image_download.dart';
+import '../../utils/pdf_print.dart';
 import 'seating_plan.dart';
 import 'seating_plan_canvas.dart';
 
@@ -80,7 +80,7 @@ Future<void> previewSeatingLayoutPdf({
     eventDateTime: eventDateTime,
     venueAddress: venueAddress,
   );
-  await Printing.layoutPdf(onLayout: (_) async => bytes);
+  await printPdfBytes(bytes, name: 'seating-layout.pdf');
 }
 
 Future<Uint8List> _captureSeatingLayoutPng({

@@ -2,11 +2,11 @@ import 'dart:typed_data';
 
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
 
 import '../models/event_order.dart';
-import 'reports_api.dart';
 import '../utils/order_calculations.dart';
+import '../utils/pdf_print.dart';
+import 'reports_api.dart';
 
 /// Aggregated metrics for one calendar month.
 class MonthlyReportSnapshot {
@@ -230,19 +230,14 @@ Future<Uint8List> buildMonthlyReportPdf(MonthlyReportSnapshot snapshot) async {
 
 /// Opens print preview on web/desktop; triggers download where supported.
 Future<void> previewMonthlyReportPdf(MonthlyReportSnapshot snapshot) async {
-  await Printing.layoutPdf(
-    onLayout: (_) => buildMonthlyReportPdf(snapshot),
-    name: _reportFilename(snapshot.month),
-  );
+  final bytes = await buildMonthlyReportPdf(snapshot);
+  await printPdfBytes(bytes, name: _reportFilename(snapshot.month));
 }
 
 /// Download / share PDF (browser download on Flutter web).
 Future<void> downloadMonthlyReportPdf(MonthlyReportSnapshot snapshot) async {
   final bytes = await buildMonthlyReportPdf(snapshot);
-  await Printing.sharePdf(
-    bytes: bytes,
-    filename: _reportFilename(snapshot.month),
-  );
+  await printPdfBytes(bytes, name: _reportFilename(snapshot.month));
 }
 
 String _reportFilename(DateTime month) {
@@ -565,20 +560,18 @@ Future<void> previewOperationsReportPdf({
   required int year,
   int? month,
 }) async {
-  await Printing.layoutPdf(
-    onLayout:
-        (_) => buildOperationsReportPdf(
-          data: data,
-          scope: scope,
-          annual: annual,
-          year: year,
-          month: month,
-        ),
-    name:
-        annual
-            ? 'macrinas-report-$year.pdf'
-            : 'macrinas-report-$year-${(month ?? 1).toString().padLeft(2, '0')}.pdf',
+  final bytes = await buildOperationsReportPdf(
+    data: data,
+    scope: scope,
+    annual: annual,
+    year: year,
+    month: month,
   );
+  final name =
+      annual
+          ? 'macrinas-report-$year.pdf'
+          : 'macrinas-report-$year-${(month ?? 1).toString().padLeft(2, '0')}.pdf';
+  await printPdfBytes(bytes, name: name);
 }
 
 Future<void> downloadOperationsReportPdf({
@@ -599,5 +592,5 @@ Future<void> downloadOperationsReportPdf({
       annual
           ? 'macrinas-report-$year.pdf'
           : 'macrinas-report-$year-${month.toString().padLeft(2, '0')}.pdf';
-  await Printing.sharePdf(bytes: bytes, filename: name);
+  await printPdfBytes(bytes, name: name);
 }

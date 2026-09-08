@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
 
 import '../services/super_admin_api.dart';
 import '../utils/order_calculations.dart';
+import '../utils/pdf_print.dart';
 import '../widgets/antd_buttons.dart';
 import '../widgets/antd_message.dart';
 import '../widgets/antd_staff.dart';
@@ -288,10 +288,9 @@ class _SuperAdminDashboardPageState extends State<SuperAdminDashboardPage> {
         ),
       );
 
-      await Printing.layoutPdf(
-        onLayout: (_) => doc.save(),
-        name: 'super_admin_dashboard.pdf',
-      );
+      final bytes = await doc.save();
+      if (!mounted) return;
+      await printPdfBytes(bytes, name: 'super_admin_dashboard.pdf');
     } finally {
       if (mounted) setState(() => _printingPdf = false);
     }

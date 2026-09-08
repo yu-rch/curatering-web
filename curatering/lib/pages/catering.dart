@@ -6,7 +6,6 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:printing/printing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../features/event_design/event_theme_design_screen.dart';
 import '../auth/action_permissions.dart';

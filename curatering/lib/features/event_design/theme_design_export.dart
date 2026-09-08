@@ -5,10 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
 
 import '../../services/runpod_service.dart';
 import '../../utils/image_download.dart';
+import '../../utils/pdf_print.dart';
 
 Future<Uint8List?> themeDesignImageBytes(
   Map<String, dynamic> themeDesign,
@@ -157,5 +157,5 @@ Future<void> previewThemeDesignPdf({
     eventTitle: eventTitle,
     transactionNo: transactionNo,
   );
-  await Printing.layoutPdf(onLayout: (_) async => bytes);
+  await printPdfBytes(bytes, name: 'theme-design.pdf');
 }

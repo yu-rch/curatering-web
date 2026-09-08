@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
 
 import '../auth/auth_session.dart';
 import '../auth/roles.dart';
 import '../services/api_client.dart';
 import '../utils/debouncer.dart';
+import '../utils/pdf_print.dart';
 import '../widgets/antd_buttons.dart';
 import '../widgets/antd_form_field.dart';
 import '../widgets/antd_tokens.dart';
@@ -461,10 +461,9 @@ class _InventoryState extends State<Inventory> {
         ),
       );
 
-      await Printing.layoutPdf(
-        onLayout: (_) => doc.save(),
-        name: 'inventory-items.pdf',
-      );
+      final bytes = await doc.save();
+      if (!mounted) return;
+      await printPdfBytes(bytes, name: 'inventory-items.pdf');
     } finally {
       if (mounted) setState(() => _isExportingPdf = false);
     }
