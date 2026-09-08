@@ -15,6 +15,13 @@ int _numAsInt(dynamic value) {
   return int.tryParse('$value') ?? 0;
 }
 
+bool _asBool(dynamic value) {
+  if (value is bool) return value;
+  if (value is num) return value != 0;
+  final s = '$value'.trim().toLowerCase();
+  return s == 'true' || s == '1' || s == 'yes';
+}
+
 DateTime? _dateOrNull(dynamic value) {
   if (value == null) return null;
   return DateTime.tryParse(value.toString());
@@ -457,7 +464,7 @@ class SuperAdminApi {
         email: um['email'] as String,
         fullName: um['fullName'] as String,
         role: roleFromString(um['role'] as String),
-        archived: (um['archived'] ?? false) as bool,
+        archived: _asBool(um['archived']),
         pagePermissions:
             permRaw is Map<String, dynamic>
                 ? Map<String, dynamic>.from(permRaw)

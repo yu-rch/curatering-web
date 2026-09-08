@@ -3,14 +3,53 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../models/action_log.dart';
+import '../models/user.dart';
 import '../services/super_admin_api.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/antd_buttons.dart';
 import '../widgets/antd_staff.dart';
-import '../widgets/antd_tokens.dart';
 import '../widgets/paginated_data_table.dart';
 
 enum _DateFilterPreset { all, today, yesterday, last7Days, thisMonth, custom }
+
+/// Fixed Action filter options (matched fuzzily against logged action text).
+const _kActionFilterOptions = <String>[
+  'All',
+  'Delete / Remove',
+  'Archive',
+  'Unarchive',
+  'Upload / Image / File upload',
+  'Super admin password confirmation',
+  'Payment confirmation',
+  'Confirmation',
+  'Create account',
+  'Create order',
+  'Create event',
+];
+
+/// All modules from Dashboard through POS (sidebar + related admin pages).
+const _kFeatureFilterOptions = <String>[
+  'All',
+  'Dashboard',
+  'Manage Events',
+  'Loyalty Rewards',
+  'Catering/Restaurant Menu',
+  'Inventory',
+  'Restaurant Orders',
+  'Reports',
+  'Order History',
+  'Archive',
+  'Help Requests Management',
+  'Customer Feedback',
+  'Website CMS',
+  'Manage Accounts',
+  'Customer Management',
+  'Action Logs',
+  'POS',
+  'Settings',
+  'Catering',
+  'Events',
+];
 
 class ActionLogsPage extends StatefulWidget {
   const ActionLogsPage({super.key});
@@ -34,6 +73,7 @@ class _ActionLogsPageState extends State<ActionLogsPage> {
   DateTimeRange? _customDateRange;
 
   List<ActionLogDto> _logs = const <ActionLogDto>[];
+  List<String> _staffUsers = const <String>['All'];
 
   @override
   void initState() {
@@ -55,8 +95,26 @@ class _ActionLogsPageState extends State<ActionLogsPage> {
     });
 
     try {
-      final data = await SuperAdminApi.instance.listActionLogs();
-      setState(() => _logs = data);
+      final results = await Future.wait([
+        SuperAdminApi.instance.listActionLogs(),
+        SuperAdminApi.instance.listUsers(archived: false),
+      ]);
+      final data = results[0] as List<ActionLogDto>;
+      final users = results[1] as List<UserDto>;
+      final names =
+          users
+              .map((u) => u.fullName.trim())
+              .where((n) => n.isNotEmpty)
+              .toSet()
+              .toList()
+            ..sort();
+      setState(() {
+        _logs = data;
+        _staffUsers = ['All', ...names];
+        if (_userFilter != 'All' && !_staffUsers.contains(_userFilter)) {
+          _userFilter = 'All';
+        }
+      });
     } catch (e) {
       setState(() => _error = 'Failed to load action logs.');
     } finally {
@@ -64,20 +122,63 @@ class _ActionLogsPageState extends State<ActionLogsPage> {
     }
   }
 
-  List<String> get _users => _distinct((l) => l.userName);
-
-  List<String> get _features => _distinct((l) => l.feature);
-
-  List<String> get _actions => _distinct((l) => l.action);
-
-  List<String> _distinct(String Function(ActionLogDto log) pick) {
-    final set = <String>{};
-    for (final l in _logs) {
-      final value = pick(l).trim();
-      if (value.isNotEmpty) set.add(value);
+  bool _matchesActionFilter(String actionText, String filter) {
+    if (filter == 'All') return true;
+    final a = actionText.toLowerCase();
+    switch (filter) {
+      case 'Delete / Remove':
+        return a.contains('delete') ||
+            a.contains('remove') ||
+            a.contains('removed');
+      case 'Archive':
+        return a.contains('archive') && !a.contains('unarchive');
+      case 'Unarchive':
+        return a.contains('unarchive') || a.contains('restore');
+      case 'Upload / Image / File upload':
+        return a.contains('upload') ||
+            a.contains('image') ||
+            a.contains('file');
+      case 'Super admin password confirmation':
+        return a.contains('super admin') ||
+            a.contains('password confirm') ||
+            a.contains('password confirmation');
+      case 'Payment confirmation':
+        return a.contains('payment') &&
+            (a.contains('confirm') || a.contains('paid') || a.contains('mark'));
+      case 'Confirmation':
+        return a.contains('confirm') && !a.contains('payment');
+      case 'Create account':
+        return a.contains('create') && a.contains('account');
+      case 'Create order':
+        return a.contains('create') && a.contains('order');
+      case 'Create event':
+        return a.contains('create') && a.contains('event');
+      default:
+        return a.contains(filter.toLowerCase());
     }
-    final list = set.toList()..sort();
-    return ['All', ...list];
+  }
+
+  bool _matchesFeatureFilter(String featureText, String filter) {
+    if (filter == 'All') return true;
+    final f = featureText.toLowerCase().trim();
+    final selected = filter.toLowerCase().trim();
+    if (f == selected) return true;
+    // Allow loose matching for variant labels used when logging.
+    if (selected == 'manage events' &&
+        (f.contains('event') || f.contains('manage events'))) {
+      return true;
+    }
+    if (selected == 'pos' &&
+        (f.contains('pos') || f.contains('restaurant order'))) {
+      return true;
+    }
+    if (selected == 'catering/restaurant menu' && f.contains('menu')) {
+      return true;
+    }
+    if (selected == 'website cms' && (f.contains('cms') || f.contains('website'))) {
+      return true;
+    }
+    return f.contains(selected) || selected.contains(f);
   }
 
   DateTimeRange? get _activeDateRange {
@@ -111,9 +212,8 @@ class _ActionLogsPageState extends State<ActionLogsPage> {
     final range = _activeDateRange;
     return _logs.where((l) {
       final matchesUser = _userFilter == 'All' || l.userName == _userFilter;
-      final matchesFeature =
-          _featureFilter == 'All' || l.feature == _featureFilter;
-      final matchesAction = _actionFilter == 'All' || l.action == _actionFilter;
+      final matchesFeature = _matchesFeatureFilter(l.feature, _featureFilter);
+      final matchesAction = _matchesActionFilter(l.action, _actionFilter);
       final localDate = l.createdAt.toLocal();
       final logDay = DateTime(localDate.year, localDate.month, localDate.day);
       final matchesDate =
@@ -190,32 +290,99 @@ class _ActionLogsPageState extends State<ActionLogsPage> {
     });
   }
 
+  void _showLogDetails(ActionLogDto log) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Action details'),
+          content: SizedBox(
+            width: 480,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _detailRow('User', log.userName),
+                  _detailRow('Feature', log.feature.isEmpty ? '—' : log.feature),
+                  _detailRow('Action', log.action),
+                  _detailRow('Date & time', _formatDateTime(log.createdAt)),
+                  _detailRow('Other', log.other.isEmpty ? '—' : log.other),
+                  _detailRow('Log ID', log.id),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _detailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey.shade700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          SelectableText(value, style: const TextStyle(fontSize: 14)),
+        ],
+      ),
+    );
+  }
+
   Widget _filterToolbar() {
+    final featureItems = <String>{
+      ..._kFeatureFilterOptions,
+      ..._logs.map((l) => l.feature.trim()).where((f) => f.isNotEmpty),
+    }.toList();
+    // Keep "All" first, then sort the rest.
+    final features = [
+      'All',
+      ...featureItems.where((f) => f != 'All').toList()..sort(),
+    ];
+
     return AntdToolbar(
       children: [
         AntdSelect<String>(
           label: 'User',
-          value: _userFilter,
+          value: _staffUsers.contains(_userFilter) ? _userFilter : 'All',
           items:
-              _users
+              _staffUsers
                   .map((u) => DropdownMenuItem(value: u, child: Text(u)))
                   .toList(),
           onChanged: (v) => setState(() => _userFilter = v ?? 'All'),
         ),
         AntdSelect<String>(
           label: 'Feature',
-          value: _featureFilter,
+          value: features.contains(_featureFilter) ? _featureFilter : 'All',
           items:
-              _features
+              features
                   .map((f) => DropdownMenuItem(value: f, child: Text(f)))
                   .toList(),
           onChanged: (v) => setState(() => _featureFilter = v ?? 'All'),
         ),
         AntdSelect<String>(
           label: 'Action',
-          value: _actionFilter,
+          value:
+              _kActionFilterOptions.contains(_actionFilter)
+                  ? _actionFilter
+                  : 'All',
           items:
-              _actions
+              _kActionFilterOptions
                   .map((a) => DropdownMenuItem(value: a, child: Text(a)))
                   .toList(),
           onChanged: (v) => setState(() => _actionFilter = v ?? 'All'),
@@ -348,12 +515,28 @@ class _ActionLogsPageState extends State<ActionLogsPage> {
                         rows:
                             filtered.map((l) {
                               return DataRow(
+                                onSelectChanged: (_) => _showLogDetails(l),
                                 cells: [
-                                  DataCell(Text(l.userName)),
-                                  DataCell(Text(l.feature)),
-                                  DataCell(Text(l.action)),
-                                  DataCell(Text(_formatDateTime(l.createdAt))),
-                                  DataCell(Text(l.other)),
+                                  DataCell(
+                                    Text(l.userName),
+                                    onTap: () => _showLogDetails(l),
+                                  ),
+                                  DataCell(
+                                    Text(l.feature),
+                                    onTap: () => _showLogDetails(l),
+                                  ),
+                                  DataCell(
+                                    Text(l.action),
+                                    onTap: () => _showLogDetails(l),
+                                  ),
+                                  DataCell(
+                                    Text(_formatDateTime(l.createdAt)),
+                                    onTap: () => _showLogDetails(l),
+                                  ),
+                                  DataCell(
+                                    Text(l.other),
+                                    onTap: () => _showLogDetails(l),
+                                  ),
                                 ],
                               );
                             }).toList(),

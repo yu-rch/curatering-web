@@ -828,6 +828,7 @@ class _CustomerDetailsPageState extends State<CustomerDetailsPage> {
                                   return Card(
                                     margin: const EdgeInsets.only(bottom: 8),
                                     child: ListTile(
+                                      onTap: () => _showOrderDetails(order),
                                       title: Text(
                                         'Order #${order['order_no'] ?? order['id'].toString().substring(0, 8)}',
                                       ),
@@ -952,6 +953,96 @@ class _CustomerDetailsPageState extends State<CustomerDetailsPage> {
           Text(
             title,
             style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showOrderDetails(Map<String, dynamic> order) {
+    final customer = _customerData ?? <String, dynamic>{};
+    final entries = order.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: Text(
+            'Order #${order['order_no'] ?? order['id'] ?? ''}',
+          ),
+          content: SizedBox(
+            width: 520,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Customer',
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                  ),
+                  const SizedBox(height: 8),
+                  _kv('Full name', '${customer['full_name'] ?? '—'}'),
+                  _kv('Email', '${customer['email'] ?? '—'}'),
+                  _kv('Phone', '${customer['phone'] ?? customer['contact_number'] ?? '—'}'),
+                  _kv(
+                    'Status',
+                    customer['archived'] == true
+                        ? 'Archived'
+                        : customer['is_verified'] == true
+                            ? 'Verified'
+                            : 'Pending',
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Order',
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                  ),
+                  const SizedBox(height: 8),
+                  ...entries.map((e) {
+                    final value = e.value;
+                    final text =
+                        value == null
+                            ? '—'
+                            : value is Map || value is List
+                                ? value.toString()
+                                : '$value';
+                    return _kv(e.key, text);
+                  }),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _kv(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 140,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade700,
+              ),
+            ),
+          ),
+          Expanded(
+            child: SelectableText(value, style: const TextStyle(fontSize: 13)),
           ),
         ],
       ),

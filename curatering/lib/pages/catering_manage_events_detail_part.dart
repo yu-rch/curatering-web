@@ -20,6 +20,7 @@ extension _ManageEventsDetailExt on _ManageEventsState {
 
   String _paymentMethodLabel(EventOrderDto order) {
     final raw = order.postAnalysisRaw;
+    String found = '';
     for (final key in [
       'paymentMethod',
       'payment_method',
@@ -28,9 +29,47 @@ extension _ManageEventsDetailExt on _ManageEventsState {
       'mode_of_payment',
     ]) {
       final v = '${raw[key] ?? ''}'.trim();
+      if (v.isNotEmpty) {
+        found = v;
+        break;
+      }
+    }
+    if (found.isEmpty) return '—';
+    for (final service in PaymentService.values) {
+      if (service.apiValue == found ||
+          service.displayName.toLowerCase() == found.toLowerCase()) {
+        return service.displayName;
+      }
+    }
+    return found;
+  }
+
+  String _downPaymentReference(EventOrderDto order) {
+    final raw = order.postAnalysisRaw;
+    for (final key in [
+      'down_payment_reference',
+      'downPaymentReference',
+      'reference_number',
+      'referenceNumber',
+    ]) {
+      final v = '${raw[key] ?? ''}'.trim();
       if (v.isNotEmpty) return v;
     }
-    return '—';
+    return '';
+  }
+
+  String? _downPaymentProof(EventOrderDto order) {
+    final raw = order.postAnalysisRaw;
+    for (final key in [
+      'down_payment_proof',
+      'downPaymentProof',
+      'payment_proof',
+      'paymentProof',
+    ]) {
+      final v = '${raw[key] ?? ''}'.trim();
+      if (v.isNotEmpty) return v;
+    }
+    return null;
   }
 
   List<Map<String, dynamic>> _checklistRowsFromOrder(EventOrderDto order) {
@@ -365,6 +404,44 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                             'Mode of payment: ${_paymentMethodLabel(order)}',
                             style: const TextStyle(fontSize: 13),
                           ),
+                          if (_downPaymentReference(order).isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              'Reference number: ${_downPaymentReference(order)}',
+                              style: const TextStyle(fontSize: 13),
+                            ),
+                          ],
+                          if (order.downPaymentStatus == 'paid' &&
+                              order.downPaymentAmount > 0) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              'Confirmed amount: ${formatPesos(order.downPaymentAmount)}',
+                              style: const TextStyle(fontSize: 13),
+                            ),
+                          ],
+                          if (_downPaymentProof(order) != null) ...[
+                            const SizedBox(height: 10),
+                            const Text(
+                              'Proof',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            buildPaymentProofPreview(
+                              _downPaymentProof(order),
+                              height: 140,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Tap image to view full screen',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          ],
                           const SizedBox(height: 8),
                           if (order.downPaymentStatus == 'paid')
                             Container(

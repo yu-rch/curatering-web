@@ -36,6 +36,7 @@ import '../utils/inquiry_pricing.dart';
 import '../utils/order_calculations.dart';
 import '../utils/order_type_utils.dart';
 import '../utils/image_cache.dart';
+import '../utils/payment_proof_image.dart';
 import '../utils/web_html.dart' as html;
 import 'customer_website.dart';
 
@@ -242,8 +243,6 @@ enum EventStatus {
 enum _NewEventSideTab { eventInfo, menuAndAllergens, submitAndCosts }
 
 enum PaymentConfirmationMode { downpayment, fullPayment }
-
-enum DownpaymentAmountOption { percent50, custom, fullPayment }
 
 enum FullPaymentAmountOption { remainingBalance, fullTotal, custom }
 
@@ -4133,16 +4132,30 @@ class _ManageEventsState extends State<ManageEvents>
       }
 
       if (!mounted) return false;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            mode == PaymentConfirmationMode.fullPayment
-                ? 'Full payment marked as paid.'
-                : 'Downpayment marked as paid.',
+      if (mode == PaymentConfirmationMode.downpayment) {
+        await showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Down payment confirmed'),
+            content: const Text(
+              "Confirming down payment will move this order to 'On Going'.",
+            ),
+            actions: [
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('OK'),
+              ),
+            ],
           ),
-          backgroundColor: const Color(0xFF1DB954),
-        ),
-      );
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Full payment marked as paid.'),
+            backgroundColor: Color(0xFF1DB954),
+          ),
+        );
+      }
 
       // Add extra cost items to checklist when payment is confirmed
       final extraItems = _extraCostItemsPerOrder[order.id] ?? [];
@@ -4209,7 +4222,6 @@ class _ManageEventsState extends State<ManageEvents>
     PaymentConfirmationMode mode = PaymentConfirmationMode.downpayment,
   }) async {
     var selectedPaymentService = PaymentService.cash;
-    var downpaymentOption = DownpaymentAmountOption.percent50;
     var fullPaymentOption = FullPaymentAmountOption.remainingBalance;
     String? paymentProofBase64;
     String? paymentProofFileName;
@@ -4220,18 +4232,6 @@ class _ManageEventsState extends State<ManageEvents>
 
     if (mode == PaymentConfirmationMode.fullPayment) {
       customAmountController.text = remainingBalance.toStringAsFixed(2);
-    }
-
-    double resolvedDownpaymentAmount() {
-      switch (downpaymentOption) {
-        case DownpaymentAmountOption.percent50:
-          return orderTotal / 2;
-        case DownpaymentAmountOption.fullPayment:
-          return orderTotal;
-        case DownpaymentAmountOption.custom:
-          return double.tryParse(customAmountController.text.trim()) ??
-              orderTotal / 2;
-      }
     }
 
     double resolvedFullPaymentAmount() {
@@ -4260,7 +4260,7 @@ class _ManageEventsState extends State<ManageEvents>
             builder: (context, dialogSetState) {
               final amount =
                   isDownpayment
-                      ? resolvedDownpaymentAmount()
+                      ? orderTotal / 2
                       : resolvedFullPaymentAmount();
               return AlertDialog(
                 title: Text(title),
@@ -4326,56 +4326,7 @@ class _ManageEventsState extends State<ManageEvents>
                           ),
                         ),
                         const SizedBox(height: 16),
-                        if (isDownpayment) ...[
-                          const Text(
-                            'Downpayment amount',
-                            style: TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                          const SizedBox(height: 8),
-                          DropdownButtonFormField<DownpaymentAmountOption>(
-                            value: downpaymentOption,
-                            isExpanded: true,
-                            decoration: const InputDecoration(
-                              border: OutlineInputBorder(),
-                            ),
-                            items: const [
-                              DropdownMenuItem(
-                                value: DownpaymentAmountOption.percent50,
-                                child: Text('50% downpayment'),
-                              ),
-                              DropdownMenuItem(
-                                value: DownpaymentAmountOption.custom,
-                                child: Text('Custom amount'),
-                              ),
-                              DropdownMenuItem(
-                                value: DownpaymentAmountOption.fullPayment,
-                                child: Text('Full payment (100%)'),
-                              ),
-                            ],
-                            onChanged: (value) {
-                              if (value != null) {
-                                dialogSetState(() => downpaymentOption = value);
-                              }
-                            },
-                          ),
-                          if (downpaymentOption ==
-                              DownpaymentAmountOption.custom) ...[
-                            const SizedBox(height: 12),
-                            TextField(
-                              controller: customAmountController,
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                    decimal: true,
-                                  ),
-                              decoration: const InputDecoration(
-                                labelText: 'Custom amount (₱)',
-                                border: OutlineInputBorder(),
-                              ),
-                              onChanged: (_) => dialogSetState(() {}),
-                            ),
-                          ],
-                          const SizedBox(height: 16),
-                        ] else ...[
+                        if (!isDownpayment) ...[
                           const Text(
                             'Amount to pay',
                             style: TextStyle(fontWeight: FontWeight.w600),
@@ -4429,16 +4380,33 @@ class _ManageEventsState extends State<ManageEvents>
                           ],
                           const SizedBox(height: 16),
                         ],
-                        const SizedBox(height: 8),
-                        Text(
-                          formatPesos(amount),
-                          style: const TextStyle(
-                            fontSize: 28,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFFF4511E),
+                        if (isDownpayment) ...[
+                          const Text(
+                            'Down payment amount (50%)',
+                            style: TextStyle(fontWeight: FontWeight.w600),
                           ),
-                        ),
-                        const SizedBox(height: 16),
+                          const SizedBox(height: 8),
+                          Text(
+                            formatPesos(amount),
+                            style: const TextStyle(
+                              fontSize: 28,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFFF4511E),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                        ] else ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            formatPesos(amount),
+                            style: const TextStyle(
+                              fontSize: 28,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFFF4511E),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                        ],
                         const Text(
                           'Mode of payment',
                           style: TextStyle(fontWeight: FontWeight.w600),
@@ -4530,6 +4498,21 @@ class _ManageEventsState extends State<ManageEvents>
                                 : 'Proof: ${paymentProofFileName ?? 'image'}',
                           ),
                         ),
+                        if (paymentProofBase64 != null) ...[
+                          const SizedBox(height: 10),
+                          buildPaymentProofPreview(
+                            paymentProofBase64,
+                            height: 160,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Tap image to view full screen',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 16),
                         Center(
                           child: TextButton(
@@ -4556,7 +4539,7 @@ class _ManageEventsState extends State<ManageEvents>
                             : () async {
                               final payAmount =
                                   isDownpayment
-                                      ? resolvedDownpaymentAmount()
+                                      ? (orderTotal / 2)
                                       : resolvedFullPaymentAmount();
                               if (isDownpayment && payAmount <= 0) {
                                 ScaffoldMessenger.of(context).showSnackBar(
@@ -4596,7 +4579,7 @@ class _ManageEventsState extends State<ManageEvents>
                                 amount: payAmount,
                                 paymentProofBase64: paymentProofBase64,
                               );
-                              if (confirmed && mounted) {
+                              if (confirmed && context.mounted) {
                                 Navigator.of(context).pop();
                               }
                             },

@@ -611,7 +611,27 @@ class EventsApi {
 
     PostAnalysisDto? postAnalysis;
     final paRaw = map['postAnalysis'] ?? map['post_analysis'];
-    final pm = _toMap(paRaw);
+    final pm = Map<String, dynamic>.from(_toMap(paRaw));
+    // Surface top-level payment columns so Manage Events can reflect confirm inputs.
+    final paymentMethod =
+        (map['paymentMethod'] ?? map['payment_method'] ?? '').toString().trim();
+    if (paymentMethod.isNotEmpty) {
+      pm.putIfAbsent('payment_method', () => paymentMethod);
+    }
+    final downPaymentReference =
+        (map['downPaymentReference'] ?? map['down_payment_reference'] ?? '')
+            .toString()
+            .trim();
+    if (downPaymentReference.isNotEmpty) {
+      pm.putIfAbsent('down_payment_reference', () => downPaymentReference);
+    }
+    final fullPaymentReference =
+        (map['fullPaymentReference'] ?? map['full_payment_reference'] ?? '')
+            .toString()
+            .trim();
+    if (fullPaymentReference.isNotEmpty) {
+      pm.putIfAbsent('full_payment_reference', () => fullPaymentReference);
+    }
     if (pm.isNotEmpty) {
       postAnalysis = PostAnalysisDto(
         businessCardsGivenAway: _toInt(

@@ -127,11 +127,16 @@ class _ManageAccountsState extends State<ManageAccounts> {
         role: _apiRoleFilter() == null ? null : roleToString(_apiRoleFilter()!),
         archived: _archivedFilter,
       );
+      // Client-side status guard in case API omits archived filtering.
+      final filtered =
+          _archivedFilter == null
+              ? users
+              : users.where((u) => u.archived == _archivedFilter).toList();
       setState(() {
-        _users = users;
+        _users = filtered;
         if (_selectedUser != null) {
           final id = _selectedUser!.id;
-          final still = users.where((u) => u.id == id).toList();
+          final still = filtered.where((u) => u.id == id).toList();
           _selectedUser = still.isEmpty ? null : still.first;
           if (_selectedUser != null) _initPermissionDraft(_selectedUser!);
         }
