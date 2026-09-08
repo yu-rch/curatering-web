@@ -1,13 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
 
 import '../auth/auth_session.dart';
 import '../auth/roles.dart';
 import '../services/api_client.dart';
 import '../utils/debouncer.dart';
-import '../utils/pdf_print.dart';
+import '../utils/print_tabular_report.dart';
 import '../widgets/antd_buttons.dart';
 import '../widgets/antd_form_field.dart';
 import '../widgets/antd_tokens.dart';
@@ -364,7 +362,6 @@ class _InventoryState extends State<Inventory> {
     setState(() => _isExportingPdf = true);
     try {
       final generatedAt = DateTime.now();
-      final doc = pw.Document(title: 'Inventory Items');
       final headers = [
         'Item No.',
         'Item',
@@ -391,79 +388,15 @@ class _InventoryState extends State<Inventory> {
               )
               .toList();
 
-      doc.addPage(
-        pw.MultiPage(
-          pageFormat: PdfPageFormat.a4.landscape,
-          margin: const pw.EdgeInsets.all(24),
-          footer:
-              (context) => pw.Align(
-                alignment: pw.Alignment.centerRight,
-                child: pw.Text(
-                  'Page ${context.pageNumber} of ${context.pagesCount}',
-                  style: const pw.TextStyle(fontSize: 8),
-                ),
-              ),
-          build:
-              (context) => [
-                pw.Text(
-                  'Inventory Items',
-                  style: pw.TextStyle(
-                    fontSize: 18,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-                pw.SizedBox(height: 4),
-                pw.Text(
-                  "Macrina's Kitchen and Catering",
-                  style: pw.TextStyle(
-                    fontSize: 12,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-                pw.SizedBox(height: 4),
-                pw.Text(
-                  'As of ${_formatDateTime(generatedAt)} · ${items.length} row(s)',
-                  style: const pw.TextStyle(
-                    fontSize: 9,
-                    color: PdfColors.grey700,
-                  ),
-                ),
-                pw.SizedBox(height: 12),
-                pw.TableHelper.fromTextArray(
-                  headers: headers,
-                  data: rows,
-                  border: pw.TableBorder.all(
-                    color: PdfColors.grey300,
-                    width: 0.4,
-                  ),
-                  headerDecoration: const pw.BoxDecoration(
-                    color: PdfColors.grey200,
-                  ),
-                  headerStyle: pw.TextStyle(
-                    fontSize: 8,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                  cellStyle: const pw.TextStyle(fontSize: 7),
-                  cellAlignment: pw.Alignment.centerLeft,
-                  headerAlignment: pw.Alignment.centerLeft,
-                  columnWidths: const {
-                    0: pw.FixedColumnWidth(58),
-                    1: pw.FlexColumnWidth(1.3),
-                    2: pw.FlexColumnWidth(1.2),
-                    3: pw.FlexColumnWidth(1.7),
-                    4: pw.FixedColumnWidth(38),
-                    5: pw.FixedColumnWidth(42),
-                    6: pw.FixedColumnWidth(58),
-                    7: pw.FixedColumnWidth(64),
-                  },
-                ),
-              ],
-        ),
+      await printSingleTableReport(
+        title: 'Inventory Items',
+        headers: headers,
+        rows: rows,
+        sectionTitle: 'Inventory Items',
+        filename: 'inventory-items.pdf',
+        subtitle:
+            "Macrina's Kitchen and Catering · As of ${_formatDateTime(generatedAt)} · ${items.length} row(s)",
       );
-
-      final bytes = await doc.save();
-      if (!mounted) return;
-      await printPdfBytes(bytes, name: 'inventory-items.pdf');
     } finally {
       if (mounted) setState(() => _isExportingPdf = false);
     }

@@ -1,9 +1,12 @@
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import '../models/event_order.dart';
+import '../utils/pdf_print.dart';
+import '../utils/print_tabular_report.dart';
 
 bool checklistStatusIsCompleted(dynamic statusOrBool) {
   if (statusOrBool == true) return true;
@@ -66,6 +69,77 @@ Future<Uint8List> buildChecklistPdf({
     items: items,
     stageLabel: stageLabel,
   );
+}
+
+Future<void> previewChecklistPdf({
+  required EventOrderDto order,
+  required String stageLabel,
+  required List<Map<String, dynamic>> checklistRows,
+}) async {
+  final items = checklistRows.map((row) {
+    return ChecklistPdfLine(
+      item: '${row['item'] ?? row['title'] ?? ''}',
+      description: '${row['description'] ?? ''}',
+      quantity: () {
+        final q = row['quantity'] ?? row['qty'] ?? 1;
+        if (q is num) return q.toInt().clamp(1, 999999);
+        return (int.tryParse('$q') ?? 1).clamp(1, 999999);
+      }(),
+      cost: double.tryParse('${row['cost'] ?? row['price'] ?? 0}') ?? 0,
+      isCompleted: checklistStatusIsCompleted(row['status'] ?? row['isCompleted']),
+    );
+  }).toList();
+
+  final eventDate =
+      order.scheduleSlots.isNotEmpty ? order.scheduleSlots.first.date : 'TBD';
+  final rows = items.map((item) {
+    final total = item.cost * item.quantity;
+    return [
+      item.item,
+      item.description,
+      '${item.quantity}',
+      item.cost.toStringAsFixed(2),
+      total.toStringAsFixed(2),
+      item.isCompleted ? 'completed' : 'not done',
+    ];
+  }).toList();
+  final grandTotal = items.fold<double>(
+    0,
+    (sum, item) => sum + (item.cost * item.quantity),
+  );
+
+  if (kIsWeb) {
+    await printTabularReport(
+      title: 'Event Checklist',
+      filename: 'checklist.pdf',
+      subtitle:
+          "Macrina's Kitchen and Catering · Stage: $stageLabel · Generated ${_pdfGeneratedStamp()} · "
+          'Event: ${order.eventTitle} · Customer: ${order.customerName} · Date: $eventDate · '
+          'Txn: ${order.transactionNo} · Total: PHP ${grandTotal.toStringAsFixed(2)}',
+      sections: [
+        PrintableHtmlSection(
+          title: 'Checklist items',
+          headers: const [
+            'Item',
+            'Description',
+            'Qty',
+            'Unit (PHP)',
+            'Total (PHP)',
+            'Status',
+          ],
+          rows: rows,
+        ),
+      ],
+    );
+    return;
+  }
+
+  final bytes = await buildChecklistPdfBytes(
+    order: order,
+    items: items,
+    stageLabel: stageLabel,
+  );
+  await printPdfBytes(bytes, name: 'checklist.pdf');
 }
 
 Future<Uint8List> buildTaskAssignmentPdf({
@@ -166,6 +240,54 @@ Future<Uint8List> buildTaskAssignmentPdf({
     ),
   );
   return doc.save();
+}
+
+Future<void> previewTaskAssignmentPdf({
+  required EventOrderDto order,
+  required String stageLabel,
+  required List<Map<String, dynamic>> taskRows,
+}) async {
+  final eventDate =
+      order.scheduleSlots.isNotEmpty ? order.scheduleSlots.first.date : 'TBD';
+  final rows =
+      taskRows
+          .map((row) {
+            return [
+              '${row['employee'] ?? row['assignee'] ?? row['assignedTo'] ?? row['assigned_to'] ?? ''}',
+              '${row['tasks'] ?? row['task'] ?? row['title'] ?? row['item'] ?? ''}',
+              '${row['schedule_of_tasks'] ?? row['notes'] ?? row['description'] ?? ''}',
+              '${row['budget'] ?? ''}',
+              normalizeTaskStatusLabel(row['status']),
+            ];
+          })
+          .where((row) => row.any((cell) => cell.trim().isNotEmpty))
+          .toList();
+
+  if (kIsWeb) {
+    await printTabularReport(
+      title: 'Task Assignment',
+      filename: 'task-assignment.pdf',
+      subtitle:
+          "Macrina's Kitchen and Catering · Stage: $stageLabel · Generated ${_pdfGeneratedStamp()} · "
+          'Event: ${order.eventTitle} · Customer: ${order.customerName} · Date: $eventDate · '
+          'Txn: ${order.transactionNo}',
+      sections: [
+        PrintableHtmlSection(
+          title: 'Assignments',
+          headers: const ['Employee', 'Task', 'Schedule', 'Budget', 'Status'],
+          rows: rows,
+        ),
+      ],
+    );
+    return;
+  }
+
+  final bytes = await buildTaskAssignmentPdf(
+    order: order,
+    stageLabel: stageLabel,
+    taskRows: taskRows,
+  );
+  await printPdfBytes(bytes, name: 'task-assignment.pdf');
 }
 
 Future<Uint8List> buildChecklistPdfBytes({

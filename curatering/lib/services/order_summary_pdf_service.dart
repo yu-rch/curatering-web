@@ -1,11 +1,14 @@
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import '../models/event_order.dart';
 import '../utils/order_calculations.dart';
+import '../utils/pdf_print.dart';
+import '../utils/print_tabular_report.dart';
 
 enum OrderSummaryPdfVariant {
   beforeDownPayment,
@@ -343,4 +346,116 @@ Future<Uint8List> buildManagerOrderSummaryPdf({
   );
 
   return buildOrderSummaryPdfBytes(data);
+}
+
+Future<void> previewManagerOrderSummaryPdf({
+  required EventOrderDto order,
+  required OrderSummaryPdfVariant variant,
+  List<Map<String, dynamic>> additionalCostGroups = const [],
+}) async {
+  final isDownPayment = variant == OrderSummaryPdfVariant.beforeDownPayment;
+  var additionalTotal = 0.0;
+  final summaryParts = <String>[];
+  for (final group in additionalCostGroups) {
+    final items = group['items'];
+    if (items is List) {
+      for (final item in items) {
+        if (item is! Map) continue;
+        final label = '${item['label'] ?? item['name'] ?? 'Item'}'.trim();
+        final amount =
+            double.tryParse('${item['amount'] ?? item['cost'] ?? 0}') ?? 0;
+        additionalTotal += amount;
+        if (label.isNotEmpty) {
+          summaryParts.add('$label (${amount.toStringAsFixed(2)})');
+        }
+      }
+    } else if (group['total'] is num) {
+      additionalTotal += (group['total'] as num).toDouble();
+    }
+  }
+  final base = buildOrderSummaryPdfData(
+    order: order,
+    isDownPayment: isDownPayment,
+  );
+  final title = switch (variant) {
+    OrderSummaryPdfVariant.beforeDownPayment =>
+      'Order Summary before Down Payment',
+    OrderSummaryPdfVariant.afterDownPayment =>
+      'Order Summary after Down Payment',
+    OrderSummaryPdfVariant.additionalCosts =>
+      'Order Summary | Additional Costs',
+    OrderSummaryPdfVariant.fullyPaid => 'Order Summary Fully Paid',
+  };
+  final total = switch (variant) {
+    OrderSummaryPdfVariant.additionalCosts ||
+    OrderSummaryPdfVariant.fullyPaid =>
+      base.total + additionalTotal,
+    _ => base.total,
+  };
+  final amountDue = switch (variant) {
+    OrderSummaryPdfVariant.beforeDownPayment => total / 2,
+    OrderSummaryPdfVariant.afterDownPayment => total / 2,
+    OrderSummaryPdfVariant.additionalCosts => additionalTotal,
+    OrderSummaryPdfVariant.fullyPaid => 0.0,
+  };
+
+  if (kIsWeb) {
+    final money = NumberFormat.currency(symbol: 'PHP ', decimalDigits: 2);
+    await printTabularReport(
+      title: title,
+      filename: 'order-summary.pdf',
+      subtitle:
+          "Macrina's Kitchen and Catering · Txn: ${order.transactionNo.isNotEmpty ? order.transactionNo : base.transactionNo} · ${base.processedAt.toLocal()}",
+      sections: [
+        PrintableHtmlSection(
+          title: 'Event & customer',
+          headers: const ['Field', 'Value'],
+          rows: [
+            ['Event', base.eventTitle],
+            ['When', base.eventWhen],
+            ['Customer', base.customerName],
+            ['Contact', base.contactPerson],
+            ['Phone', base.contactNumber],
+            ['Email', base.emailAddress],
+            ['Catering type', base.cateringType],
+            ['Event type', base.eventType],
+            ['Address', base.address],
+            ['Service', base.serviceIncluded],
+            ['Formality', base.formalityLevel],
+            ['Guests', '${base.guestCount}'],
+            ['Menu', base.menuLines.join(', ')],
+          ],
+        ),
+        PrintableHtmlSection(
+          title: 'Costs',
+          headers: const ['Field', 'Value'],
+          rows: [
+            ['Pax rate', money.format(base.paxRate)],
+            ['Base food cost', money.format(base.baseFoodCost)],
+            ['Pax buffer', '${base.paxBuffer}'],
+            ['Theme cost', money.format(base.themeCost)],
+            [
+              'Additional costs',
+              summaryParts.isEmpty
+                  ? money.format(additionalTotal)
+                  : summaryParts.join(', '),
+            ],
+            ['Labor', money.format(base.laborCost)],
+            ['Travel', money.format(base.travelCost)],
+            ['Total', money.format(total)],
+            ['Amount due', money.format(amountDue)],
+            if (base.note.trim().isNotEmpty) ['Note', base.note],
+          ],
+        ),
+      ],
+    );
+    return;
+  }
+
+  final bytes = await buildManagerOrderSummaryPdf(
+    order: order,
+    variant: variant,
+    additionalCostGroups: additionalCostGroups,
+  );
+  await printPdfBytes(bytes, name: 'order-summary.pdf');
 }

@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:pdf/pdf.dart';
@@ -8,6 +10,8 @@ import 'package:pdf/widgets.dart' as pw;
 
 import '../../utils/image_download.dart';
 import '../../utils/pdf_print.dart';
+import '../../utils/printable_html_report.dart';
+import '../../utils/web_html_print.dart';
 import 'seating_plan.dart';
 import 'seating_plan_canvas.dart';
 
@@ -20,7 +24,7 @@ Future<Uint8List> buildSeatingLayoutPdfBytes({
   String venueAddress = '',
 }) async {
   final png = await _captureSeatingLayoutPng(context: context, plan: plan);
-  final doc = pw.Document();
+  final doc = pw.Document(compress: false);
   final image = pw.MemoryImage(png);
   final orderLine = [
     if (transactionNo.trim().isNotEmpty) transactionNo.trim(),
@@ -72,6 +76,34 @@ Future<void> previewSeatingLayoutPdf({
   String eventDateTime = '',
   String venueAddress = '',
 }) async {
+  final orderLine = [
+    if (transactionNo.trim().isNotEmpty) transactionNo.trim(),
+    if (eventTitle.trim().isNotEmpty) eventTitle.trim(),
+  ].join(' - ');
+  final headerLines = <String>[
+    if (orderLine.isNotEmpty) orderLine,
+    if (eventDateTime.trim().isNotEmpty) eventDateTime.trim(),
+    if (venueAddress.trim().isNotEmpty) venueAddress.trim(),
+  ];
+  final subtitle =
+      headerLines.isEmpty
+          ? "Macrina's Kitchen and Catering"
+          : headerLines.join(' · ');
+
+  if (kIsWeb) {
+    final png = await _captureSeatingLayoutPng(context: context, plan: plan);
+    openHtmlDocument(
+      buildPrintableHtmlImageReport(
+        title: 'Seating Layout',
+        subtitle: subtitle,
+        imageMime: 'image/png',
+        imageBase64: base64Encode(png),
+      ),
+      filename: 'seating-layout.html',
+    );
+    return;
+  }
+
   final bytes = await buildSeatingLayoutPdfBytes(
     context: context,
     plan: plan,

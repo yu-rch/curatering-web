@@ -2,14 +2,12 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
 
 import '../auth/auth_session.dart';
 import '../auth/roles.dart';
 import '../services/dashboard_api.dart';
 import '../utils/order_calculations.dart';
-import '../utils/pdf_print.dart';
+import '../utils/print_tabular_report.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/antd_buttons.dart';
 import '../widgets/antd_dialog.dart';
@@ -746,19 +744,8 @@ class _DashboardState extends State<Dashboard> {
   Future<void> _printDashboardPdf(DashboardSummary summary) async {
     if (_isPrintingPdf) return;
     setState(() => _isPrintingPdf = true);
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(
-      const SnackBar(
-        content: Text('Preparing PDF…'),
-        duration: Duration(seconds: 30),
-      ),
-    );
     try {
-      // Yield so the spinner/snackbar can paint before PDF work.
-      await Future<void>.delayed(Duration.zero);
       final generatedAt = DateTime.now();
-      final doc = pw.Document(title: 'Manager Dashboard');
       final monthly = _monthlySeries(summary);
       final visibleRows = <List<String>>[
         if (_businessSide != 'CATERING') ...[
@@ -783,115 +770,47 @@ class _DashboardState extends State<Dashboard> {
         ],
         ['Year-to-date total', formatPhp(summary.salesThisYear.all)],
       ];
-
-      doc.addPage(
-        pw.MultiPage(
-          pageFormat: PdfPageFormat.a4.landscape,
-          margin: const pw.EdgeInsets.all(24),
-          footer:
-              (context) => pw.Align(
-                alignment: pw.Alignment.centerRight,
-                child: pw.Text(
-                  'Page ${context.pageNumber} of ${context.pagesCount}',
-                  style: const pw.TextStyle(fontSize: 8),
-                ),
-              ),
-          build:
-              (context) => [
-                pw.Text(
-                  'Manager Dashboard',
-                  style: pw.TextStyle(
-                    fontSize: 18,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-                pw.SizedBox(height: 4),
-                pw.Text("Macrina's Kitchen and Catering"),
-                pw.SizedBox(height: 4),
-                pw.Text(
-                  'As of ${_formatInsightDate(generatedAt)} · Business side: $_businessSide · Source: $_orderSource',
-                  style: const pw.TextStyle(
-                    fontSize: 9,
-                    color: PdfColors.grey700,
-                  ),
-                ),
-                pw.SizedBox(height: 12),
-                pw.Text(
-                  'Dashboard Summary',
-                  style: pw.TextStyle(
-                    fontSize: 13,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-                pw.SizedBox(height: 6),
-                pw.TableHelper.fromTextArray(
-                  headers: const ['Metric', 'Value'],
-                  data: visibleRows,
-                  headerDecoration: const pw.BoxDecoration(
-                    color: PdfColors.grey200,
-                  ),
-                  headerStyle: pw.TextStyle(
-                    fontWeight: pw.FontWeight.bold,
-                    fontSize: 9,
-                  ),
-                  cellStyle: const pw.TextStyle(fontSize: 8),
-                  cellAlignment: pw.Alignment.centerLeft,
-                  headerAlignment: pw.Alignment.centerLeft,
-                ),
-                pw.SizedBox(height: 16),
-                pw.Text(
-                  'Monthly Sales and Order Volume',
-                  style: pw.TextStyle(
-                    fontSize: 13,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-                pw.SizedBox(height: 6),
-                pw.TableHelper.fromTextArray(
-                  headers: const [
-                    'Month',
-                    'Restaurant Sales',
-                    'Catering Sales',
-                    'Total Sales',
-                    'Restaurant Orders',
-                    'Catering Orders',
-                    'Total Orders',
-                  ],
-                  data: [
-                    for (final m in monthly)
-                      [
-                        _monthLabel(m.month),
-                        formatPhp(m.restaurantSales),
-                        formatPhp(m.cateringSales),
-                        formatPhp(m.totalSales),
-                        '${m.restaurantOrders}',
-                        '${m.cateringOrders}',
-                        '${m.totalOrders}',
-                      ],
-                  ],
-                  headerDecoration: const pw.BoxDecoration(
-                    color: PdfColors.grey200,
-                  ),
-                  headerStyle: pw.TextStyle(
-                    fontWeight: pw.FontWeight.bold,
-                    fontSize: 8,
-                  ),
-                  cellStyle: const pw.TextStyle(fontSize: 7),
-                  cellAlignment: pw.Alignment.centerLeft,
-                  headerAlignment: pw.Alignment.centerLeft,
-                ),
-              ],
-        ),
+      final monthlyRows = [
+        for (final m in monthly)
+          [
+            _monthLabel(m.month),
+            formatPhp(m.restaurantSales),
+            formatPhp(m.cateringSales),
+            formatPhp(m.totalSales),
+            '${m.restaurantOrders}',
+            '${m.cateringOrders}',
+            '${m.totalOrders}',
+          ],
+      ];
+      await printTabularReport(
+        title: 'Manager Dashboard',
+        filename: 'manager-dashboard.pdf',
+        subtitle:
+            "Macrina's Kitchen and Catering · As of ${_formatInsightDate(generatedAt)} · Business side: $_businessSide · Source: $_orderSource",
+        sections: [
+          PrintableHtmlSection(
+            title: 'Dashboard Summary',
+            headers: const ['Metric', 'Value'],
+            rows: visibleRows,
+          ),
+          PrintableHtmlSection(
+            title: 'Monthly Sales and Order Volume',
+            headers: const [
+              'Month',
+              'Restaurant Sales',
+              'Catering Sales',
+              'Total Sales',
+              'Restaurant Orders',
+              'Catering Orders',
+              'Total Orders',
+            ],
+            rows: monthlyRows,
+          ),
+        ],
       );
-
-      final bytes = await doc.save();
-      if (!mounted) return;
-      messenger.hideCurrentSnackBar();
-      await printPdfBytes(bytes, name: 'manager-dashboard.pdf');
     } catch (e) {
       if (!mounted) return;
-      messenger.hideCurrentSnackBar();
-      messenger.showSnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('PDF failed: $e'),
           backgroundColor: Colors.red,
@@ -2797,7 +2716,7 @@ class _DashboardState extends State<Dashboard> {
                                 label: Text(
                                   _isPrintingPdf
                                       ? 'Preparing PDF'
-                                      : 'Preview / Print',
+                                      : 'Print PDF',
                                 ),
                               ),
                               IconButton(

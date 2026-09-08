@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:pdf/pdf.dart';
@@ -9,6 +10,8 @@ import 'package:pdf/widgets.dart' as pw;
 import '../../services/runpod_service.dart';
 import '../../utils/image_download.dart';
 import '../../utils/pdf_print.dart';
+import '../../utils/printable_html_report.dart';
+import '../../utils/web_html_print.dart';
 
 Future<Uint8List?> themeDesignImageBytes(
   Map<String, dynamic> themeDesign,
@@ -109,7 +112,7 @@ Future<Uint8List> buildThemeDesignPdfBytes({
   if (bytes == null || bytes.isEmpty) {
     throw StateError('No theme design image for PDF.');
   }
-  final doc = pw.Document();
+  final doc = pw.Document(compress: false);
   final image = pw.MemoryImage(bytes);
   final header = [
     if (transactionNo.trim().isNotEmpty) transactionNo.trim(),
@@ -152,6 +155,32 @@ Future<void> previewThemeDesignPdf({
   String eventTitle = '',
   String transactionNo = '',
 }) async {
+  final imageBytes = await themeDesignImageBytes(themeDesign);
+  if (imageBytes == null || imageBytes.isEmpty) {
+    throw StateError('No theme design image for PDF.');
+  }
+  final header = [
+    if (transactionNo.trim().isNotEmpty) transactionNo.trim(),
+    if (eventTitle.trim().isNotEmpty) eventTitle.trim(),
+  ].join(' - ');
+  final subtitle =
+      header.isEmpty
+          ? "Macrina's Kitchen and Catering"
+          : header;
+
+  if (kIsWeb) {
+    openHtmlDocument(
+      buildPrintableHtmlImageReport(
+        title: 'Theme Design',
+        subtitle: subtitle,
+        imageMime: 'image/png',
+        imageBase64: base64Encode(imageBytes),
+      ),
+      filename: 'theme-design.html',
+    );
+    return;
+  }
+
   final bytes = await buildThemeDesignPdfBytes(
     themeDesign: themeDesign,
     eventTitle: eventTitle,

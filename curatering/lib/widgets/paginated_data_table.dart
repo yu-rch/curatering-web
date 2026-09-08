@@ -6,10 +6,8 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
 
-import '../utils/pdf_print.dart';
+import '../utils/print_tabular_report.dart';
 import '../utils/web_csv_download.dart';
 import 'antd_buttons.dart';
 import 'antd_dialog.dart';
@@ -420,66 +418,16 @@ class _PagedDataTableState extends State<PagedDataTable> {
                       .toList(),
             )
             .toList();
-    final doc = pw.Document(title: widget.title);
     final generatedAt = DateTime.now();
-    doc.addPage(
-      pw.MultiPage(
-        pageFormat: PdfPageFormat.a4.landscape,
-        margin: const pw.EdgeInsets.all(24),
-        footer:
-            (context) => pw.Align(
-              alignment: pw.Alignment.centerRight,
-              child: pw.Text(
-                'Page ${context.pageNumber} of ${context.pagesCount}',
-                style: const pw.TextStyle(fontSize: 8),
-              ),
-            ),
-        build:
-            (context) => [
-              pw.Text(
-                widget.title,
-                style: pw.TextStyle(
-                  fontSize: 16,
-                  fontWeight: pw.FontWeight.bold,
-                ),
-              ),
-              pw.SizedBox(height: 4),
-              pw.Text(
-                'Macrina\'s Kitchen and Catering',
-                style: pw.TextStyle(
-                  fontSize: 13,
-                  fontWeight: pw.FontWeight.bold,
-                ),
-              ),
-              pw.SizedBox(height: 4),
-              pw.Text(
-                'Generated ${generatedAt.toLocal()} · ${rows.length} row(s)',
-                style: const pw.TextStyle(
-                  fontSize: 9,
-                  color: PdfColors.grey700,
-                ),
-              ),
-              pw.SizedBox(height: 12),
-              pw.TableHelper.fromTextArray(
-                headers: headers,
-                data: data,
-                headerDecoration: const pw.BoxDecoration(
-                  color: PdfColors.grey200,
-                ),
-                headerStyle: pw.TextStyle(
-                  fontSize: 8,
-                  fontWeight: pw.FontWeight.bold,
-                ),
-                cellStyle: const pw.TextStyle(fontSize: 7),
-                cellAlignment: pw.Alignment.centerLeft,
-                headerAlignment: pw.Alignment.centerLeft,
-              ),
-            ],
-      ),
+    await printSingleTableReport(
+      title: widget.title,
+      headers: headers,
+      rows: data,
+      sectionTitle: widget.title,
+      filename: '${widget.title}.pdf',
+      subtitle:
+          "Macrina's Kitchen and Catering · Generated ${generatedAt.toLocal()} · ${rows.length} row(s)",
     );
-
-    final bytes = await doc.save();
-    await printPdfBytes(bytes, name: '${widget.title}.pdf');
   }
 
   Future<void> _exportCsv(List<DataRow> rows) async {

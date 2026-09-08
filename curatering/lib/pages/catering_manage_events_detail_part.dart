@@ -124,14 +124,7 @@ extension _ManageEventsDetailExt on _ManageEventsState {
     return const [];
   }
 
-  Future<void> _printPdfBytes(Uint8List bytes, {String name = 'document.pdf'}) async {
-    await printPdfBytes(bytes, name: name);
-  }
-
-  Future<void> _runPdfExport(
-    Future<Uint8List> Function() build, {
-    required String fileName,
-  }) async {
+  Future<void> _runPdfExport(Future<void> Function() export) async {
     if (_pdfExportBusy) return;
     setState(() => _pdfExportBusy = true);
     final messenger = ScaffoldMessenger.of(context);
@@ -144,10 +137,9 @@ extension _ManageEventsDetailExt on _ManageEventsState {
     );
     try {
       await Future<void>.delayed(Duration.zero);
-      final bytes = await build();
+      await export();
       if (!mounted) return;
       messenger.hideCurrentSnackBar();
-      await _printPdfBytes(bytes, name: fileName);
     } catch (e) {
       if (!mounted) return;
       messenger.hideCurrentSnackBar();
@@ -170,12 +162,11 @@ extension _ManageEventsDetailExt on _ManageEventsState {
         ? _additionalCostGroupsFromOrder(order)
         : const <Map<String, dynamic>>[];
     await _runPdfExport(
-      () => buildManagerOrderSummaryPdf(
+      () => previewManagerOrderSummaryPdf(
         order: order,
         variant: variant,
         additionalCostGroups: groups,
       ),
-      fileName: 'order-summary.pdf',
     );
   }
 
@@ -541,14 +532,13 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                                   : () async {
                                       final rows = _checklistRowsFromOrder(order);
                                       await _runPdfExport(
-                                        () => buildChecklistPdf(
+                                        () => previewChecklistPdf(
                                           order: order,
                                           stageLabel: stage
                                               .replaceAll('_', ' ')
                                               .toUpperCase(),
                                           checklistRows: rows,
                                         ),
-                                        fileName: 'checklist.pdf',
                                       );
                                     },
                               icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
@@ -582,14 +572,13 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                                     : () async {
                                         final rows = _taskRowsFromOrder(order);
                                         await _runPdfExport(
-                                          () => buildTaskAssignmentPdf(
+                                          () => previewTaskAssignmentPdf(
                                             order: order,
                                             stageLabel: stage
                                                 .replaceAll('_', ' ')
                                                 .toUpperCase(),
                                             taskRows: rows,
                                           ),
-                                          fileName: 'task-assignment.pdf',
                                         );
                                       },
                                 icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),

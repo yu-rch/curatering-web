@@ -37,7 +37,6 @@ import '../utils/order_calculations.dart';
 import '../utils/order_type_utils.dart';
 import '../utils/image_cache.dart';
 import '../utils/web_html.dart' as html;
-import '../utils/pdf_print.dart';
 import 'customer_website.dart';
 
 part 'catering_manage_events_part.dart';
@@ -4653,7 +4652,7 @@ class _ManageEventsState extends State<ManageEvents>
     );
     try {
       await Future<void>.delayed(Duration.zero);
-      final bytes = await buildManagerOrderSummaryPdf(
+      await previewManagerOrderSummaryPdf(
         order: order,
         variant: order.downPaymentStatus == 'paid'
             ? OrderSummaryPdfVariant.afterDownPayment
@@ -4661,7 +4660,6 @@ class _ManageEventsState extends State<ManageEvents>
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      await printPdfBytes(bytes, name: 'order-summary.pdf');
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
@@ -9264,14 +9262,13 @@ class _ManageEventsState extends State<ManageEvents>
             },
           )
           .toList();
-      final bytes = await buildChecklistPdf(
+      await previewChecklistPdf(
         order: order,
         stageLabel: 'CHECKLIST',
         checklistRows: rows,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      await printPdfBytes(bytes, name: 'checklist.pdf');
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();

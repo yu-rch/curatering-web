@@ -1,11 +1,13 @@
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import '../models/event_order.dart';
 import '../utils/order_calculations.dart';
 import '../utils/pdf_print.dart';
+import '../utils/print_tabular_report.dart';
 import 'reports_api.dart';
 
 /// Aggregated metrics for one calendar month.
@@ -230,14 +232,41 @@ Future<Uint8List> buildMonthlyReportPdf(MonthlyReportSnapshot snapshot) async {
 
 /// Opens print preview on web/desktop; triggers download where supported.
 Future<void> previewMonthlyReportPdf(MonthlyReportSnapshot snapshot) async {
+  if (kIsWeb) {
+    await printTabularReport(
+      title: "Macrina's Kitchen and Catering — ${_monthLabel(snapshot.month)}",
+      filename: _reportFilename(snapshot.month),
+      subtitle:
+          'Monthly Operations Report · Period: ${_monthLabel(snapshot.month)} · Generated ${DateTime.now().toLocal()}',
+      sections: [
+        PrintableHtmlSection(
+          title: 'Summary',
+          headers: const ['Metric', 'Value'],
+          rows: [
+            ['Completed orders', '${snapshot.orders.length}'],
+            ['Total sales', formatPhp(snapshot.totalSales)],
+            ['Most popular dish', snapshot.popularDish],
+            ['Most frequent event type', snapshot.mostFrequentEventType],
+          ],
+        ),
+        PrintableHtmlSection(
+          title: 'Top requested dishes',
+          headers: const ['Dish', 'Count'],
+          rows: [
+            for (final e in snapshot.topDishes.take(15)) [e.key, '${e.value}'],
+          ],
+        ),
+      ],
+    );
+    return;
+  }
   final bytes = await buildMonthlyReportPdf(snapshot);
   await printPdfBytes(bytes, name: _reportFilename(snapshot.month));
 }
 
 /// Download / share PDF (browser download on Flutter web).
 Future<void> downloadMonthlyReportPdf(MonthlyReportSnapshot snapshot) async {
-  final bytes = await buildMonthlyReportPdf(snapshot);
-  await printPdfBytes(bytes, name: _reportFilename(snapshot.month));
+  await previewMonthlyReportPdf(snapshot);
 }
 
 String _reportFilename(DateTime month) {
@@ -560,6 +589,129 @@ Future<void> previewOperationsReportPdf({
   required int year,
   int? month,
 }) async {
+  final name =
+      annual
+          ? 'macrinas-report-$year.pdf'
+          : 'macrinas-report-$year-${(month ?? 1).toString().padLeft(2, '0')}.pdf';
+  if (kIsWeb) {
+    final sections = <PrintableHtmlSection>[];
+    if (scope == 'combined' || scope == 'catering') {
+      sections.add(
+        PrintableHtmlSection(
+          title: 'Catering Summary',
+          headers: const ['Metric', 'Value'],
+          rows: [
+            ['Completed orders', '${data.catering.orderCount}'],
+            ['Total sales', formatPhp(data.catering.totalSales)],
+            [
+              'Average guest count',
+              data.catering.averageGuestCount.toStringAsFixed(1),
+            ],
+            [
+              'Catering feedback complaints',
+              '${data.catering.feedback.complaintCount}',
+            ],
+            ['Orders with complaints', '${data.catering.feedback.count}'],
+          ],
+        ),
+      );
+      sections.add(
+        PrintableHtmlSection(
+          title: 'Top requested dishes',
+          headers: const ['Name', 'Count'],
+          rows: [
+            for (final e in data.catering.topDishes.take(15))
+              [e.name, '${e.count}'],
+          ],
+        ),
+      );
+    }
+    if (scope == 'combined' || scope == 'catering+events') {
+      sections.add(
+        PrintableHtmlSection(
+          title: 'Catering + Events Summary',
+          headers: const ['Metric', 'Value'],
+          rows: [
+            ['Completed orders', '${data.cateringEvents.orderCount}'],
+            ['Total sales', formatPhp(data.cateringEvents.totalSales)],
+            [
+              'Average guest count',
+              data.cateringEvents.averageGuestCount.toStringAsFixed(1),
+            ],
+            [
+              'Feedback complaints',
+              '${data.cateringEvents.feedback.complaintCount}',
+            ],
+            ['Events with complaints', '${data.cateringEvents.feedback.count}'],
+          ],
+        ),
+      );
+      sections.add(
+        PrintableHtmlSection(
+          title: 'Most frequent event types',
+          headers: const ['Name', 'Count'],
+          rows: [
+            for (final e in data.cateringEvents.topEventTypes.take(15))
+              [e.name, '${e.count}'],
+          ],
+        ),
+      );
+    }
+    if (scope == 'combined' || scope == 'restaurant') {
+      sections.add(
+        PrintableHtmlSection(
+          title: 'Restaurant Summary',
+          headers: const ['Metric', 'Value'],
+          rows: [
+            ['Orders', '${data.restaurant.orderCount}'],
+            ['Total sales', formatPhp(data.restaurant.totalSales)],
+            [
+              'Average orders per day',
+              data.restaurant.averageOrdersPerDay.toStringAsFixed(2),
+            ],
+            ['Web page views', '${data.restaurant.webPageViews}'],
+            ['Mobile page views', '${data.restaurant.mobilePageViews}'],
+            [
+              'Customer accounts (web)',
+              '${data.restaurant.customerAccountsWeb}',
+            ],
+            [
+              'Customer accounts (mobile)',
+              '${data.restaurant.customerAccountsMobile}',
+            ],
+            ['Feedback submissions', '${data.restaurant.feedback.count}'],
+            [
+              'Average feedback rating',
+              '${data.restaurant.feedback.averageStars.toStringAsFixed(1)} / 5',
+            ],
+            [
+              'Positive / Neutral / Negative',
+              '${data.restaurant.feedback.positiveCount} / ${data.restaurant.feedback.neutralCount} / ${data.restaurant.feedback.negativeCount}',
+            ],
+          ],
+        ),
+      );
+      sections.add(
+        PrintableHtmlSection(
+          title: 'Most ordered dishes',
+          headers: const ['Name', 'Count'],
+          rows: [
+            for (final e in data.restaurant.topDishes.take(15))
+              [e.name, '${e.count}'],
+          ],
+        ),
+      );
+    }
+    await printTabularReport(
+      title: "Macrina's Kitchen and Catering — Operations Report",
+      filename: name,
+      subtitle:
+          'Period: ${_periodLabel(annual: annual, year: year, month: month)} · Generated ${DateTime.now().toLocal()}',
+      sections: sections,
+    );
+    return;
+  }
+
   final bytes = await buildOperationsReportPdf(
     data: data,
     scope: scope,
@@ -567,10 +719,6 @@ Future<void> previewOperationsReportPdf({
     year: year,
     month: month,
   );
-  final name =
-      annual
-          ? 'macrinas-report-$year.pdf'
-          : 'macrinas-report-$year-${(month ?? 1).toString().padLeft(2, '0')}.pdf';
   await printPdfBytes(bytes, name: name);
 }
 
@@ -581,16 +729,11 @@ Future<void> downloadOperationsReportPdf({
   required int year,
   int? month,
 }) async {
-  final bytes = await buildOperationsReportPdf(
+  await previewOperationsReportPdf(
     data: data,
     scope: scope,
     annual: annual,
     year: year,
     month: month,
   );
-  final name =
-      annual
-          ? 'macrinas-report-$year.pdf'
-          : 'macrinas-report-$year-${month.toString().padLeft(2, '0')}.pdf';
-  await printPdfBytes(bytes, name: name);
 }

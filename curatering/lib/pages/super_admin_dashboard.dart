@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
 
 import '../services/super_admin_api.dart';
 import '../utils/order_calculations.dart';
-import '../utils/pdf_print.dart';
+import '../utils/print_tabular_report.dart';
 import '../widgets/antd_buttons.dart';
 import '../widgets/antd_message.dart';
 import '../widgets/antd_staff.dart';
@@ -149,148 +147,60 @@ class _SuperAdminDashboardPageState extends State<SuperAdminDashboardPage> {
     if (summary == null || _printingPdf) return;
     setState(() => _printingPdf = true);
     try {
-      final doc = pw.Document(title: 'Super Admin Dashboard');
       final generatedAt = DateTime.now();
-      pw.Widget metric(String label, String value) {
-        return pw.Container(
-          padding: const pw.EdgeInsets.all(8),
-          decoration: pw.BoxDecoration(
-            border: pw.Border.all(color: PdfColors.grey300),
-          ),
-          child: pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              pw.Text(label, style: const pw.TextStyle(fontSize: 8)),
-              pw.SizedBox(height: 3),
-              pw.Text(
-                value,
-                style: pw.TextStyle(
-                  fontSize: 12,
-                  fontWeight: pw.FontWeight.bold,
-                ),
-              ),
+      final feedbackStars =
+          summary.analytics.feedback.averageStars == null
+              ? 'n/a'
+              : summary.analytics.feedback.averageStars!.toStringAsFixed(1);
+      await printTabularReport(
+        title: 'Super Admin Dashboard',
+        filename: 'super-admin-dashboard.pdf',
+        subtitle: 'Generated ${generatedAt.toLocal()} · Range: $_rangeLabel',
+        sections: [
+          PrintableHtmlSection(
+            title: 'Analytics',
+            headers: const ['Metric', 'Value'],
+            rows: [
+              ['Website views', '${summary.analytics.website.totalViews}'],
+              ['Views in range', '${summary.analytics.website.last30Views}'],
+              ['Average feedback', feedbackStars],
+              [
+                'Open help requests',
+                '${summary.analytics.helpRequests.unresolved}',
+              ],
             ],
           ),
-        );
-      }
-
-      doc.addPage(
-        pw.MultiPage(
-          pageFormat: PdfPageFormat.a4.landscape,
-          margin: const pw.EdgeInsets.all(24),
-          footer:
-              (context) => pw.Align(
-                alignment: pw.Alignment.centerRight,
-                child: pw.Text(
-                  'Page ${context.pageNumber} of ${context.pagesCount}',
-                  style: const pw.TextStyle(fontSize: 8),
-                ),
-              ),
-          build:
-              (_) => [
-                pw.Text(
-                  'Super Admin Dashboard',
-                  style: pw.TextStyle(
-                    fontSize: 18,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-                pw.SizedBox(height: 4),
-                pw.Text(
-                  'Generated ${generatedAt.toLocal()} · Range: $_rangeLabel',
-                  style: const pw.TextStyle(fontSize: 9),
-                ),
-                pw.SizedBox(height: 14),
-                pw.Text(
-                  'Analytics section',
-                  style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-                ),
-                pw.SizedBox(height: 8),
-                pw.GridView(
-                  crossAxisCount: 4,
-                  childAspectRatio: 3.4,
-                  children: [
-                    metric(
-                      'Website views',
-                      '${summary.analytics.website.totalViews}',
-                    ),
-                    metric(
-                      'Views in range',
-                      '${summary.analytics.website.last30Views}',
-                    ),
-                    metric(
-                      'Average feedback',
-                      summary.analytics.feedback.averageStars == null
-                          ? 'n/a'
-                          : summary.analytics.feedback.averageStars!
-                              .toStringAsFixed(1),
-                    ),
-                    metric(
-                      'Open help requests',
-                      '${summary.analytics.helpRequests.unresolved}',
-                    ),
-                  ],
-                ),
-                pw.SizedBox(height: 14),
-                pw.Text(
-                  'User Management section',
-                  style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-                ),
-                pw.SizedBox(height: 8),
-                pw.GridView(
-                  crossAxisCount: 4,
-                  childAspectRatio: 3.4,
-                  children: [
-                    metric(
-                      'Staff accounts',
-                      '${summary.userManagement.staff.total}',
-                    ),
-                    metric(
-                      'Active staff',
-                      '${summary.userManagement.staff.active}',
-                    ),
-                    metric(
-                      'Archived staff',
-                      '${summary.userManagement.staff.archived}',
-                    ),
-                    metric(
-                      'Customer accounts',
-                      '${summary.userManagement.customers.total}',
-                    ),
-                  ],
-                ),
-                pw.SizedBox(height: 14),
-                pw.Text(
-                  'Sales section',
-                  style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-                ),
-                pw.SizedBox(height: 8),
-                pw.GridView(
-                  crossAxisCount: 4,
-                  childAspectRatio: 3.4,
-                  children: [
-                    metric(
-                      'Combined total',
-                      formatPesos(summary.sales.combined.totalSales),
-                    ),
-                    metric(
-                      'This month',
-                      formatPesos(summary.sales.combined.monthSales),
-                    ),
-                    metric('Total orders', '${summary.sales.combined.orders}'),
-                    metric(
-                      'Pending / active',
-                      '${summary.sales.combined.pending}',
-                    ),
-                  ],
-                ),
+          PrintableHtmlSection(
+            title: 'User Management',
+            headers: const ['Metric', 'Value'],
+            rows: [
+              ['Staff accounts', '${summary.userManagement.staff.total}'],
+              ['Active staff', '${summary.userManagement.staff.active}'],
+              ['Archived staff', '${summary.userManagement.staff.archived}'],
+              [
+                'Customer accounts',
+                '${summary.userManagement.customers.total}',
               ],
-        ),
+            ],
+          ),
+          PrintableHtmlSection(
+            title: 'Sales',
+            headers: const ['Metric', 'Value'],
+            rows: [
+              [
+                'Combined total',
+                formatPesos(summary.sales.combined.totalSales),
+              ],
+              [
+                'This month',
+                formatPesos(summary.sales.combined.monthSales),
+              ],
+              ['Total orders', '${summary.sales.combined.orders}'],
+              ['Pending / active', '${summary.sales.combined.pending}'],
+            ],
+          ),
+        ],
       );
-
-      final bytes = await doc.save();
-      if (!mounted) return;
-      await printPdfBytes(bytes, name: 'super_admin_dashboard.pdf');
     } finally {
       if (mounted) setState(() => _printingPdf = false);
     }
