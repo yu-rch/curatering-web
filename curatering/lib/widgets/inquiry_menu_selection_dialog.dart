@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import '../models/menu_dish.dart';
+import '../services/menu_store.dart';
 import '../services/set_menu_store.dart';
 import 'antd_buttons.dart';
 import 'antd_dialog.dart';
@@ -126,6 +128,9 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
   @override
   void initState() {
     super.initState();
+    unawaited(MenuStore.instance.ensureImagesLoaded().then((_) {
+      if (mounted) setState(() {});
+    }));
     if (_exclusiveMode && !widget.embedded) {
       _tabController = TabController(length: 2, vsync: this);
       _restoreFromInitial(widget.initialSelections);
@@ -299,7 +304,13 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
 
   void _openDishDetail(MenuDish dish) {
     _hideDishHover();
-    showCateringDishInfoDialog(context, dish);
+    final isStaff = widget.mode == InquiryMenuPickerMode.staffNewEvent ||
+        widget.mode == InquiryMenuPickerMode.setMenuSinglePickOnly;
+    showCateringDishInfoDialog(
+      context,
+      dish,
+      showInquireNow: !isStaff,
+    );
   }
 
   Widget _dishInfoTarget({
@@ -850,7 +861,16 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
   final Map<String, Uint8List> _imageCache = {};
 
   Widget _dishThumb(MenuDish dish) {
-    if (dish.imageBase64?.isNotEmpty != true) {
+    var imageB64 = dish.imageBase64;
+    if (imageB64 == null || imageB64.trim().isEmpty) {
+      for (final d in MenuStore.instance.allDishes) {
+        if (d.id == dish.id && d.imageBase64?.trim().isNotEmpty == true) {
+          imageB64 = d.imageBase64;
+          break;
+        }
+      }
+    }
+    if (imageB64?.isNotEmpty != true) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(8),
         child: Container(
@@ -863,7 +883,7 @@ class _InquiryMenuPickerState extends State<InquiryMenuPicker>
     }
     final bytes = _imageCache.putIfAbsent(
       dish.id,
-      () => base64Decode(dish.imageBase64!),
+      () => base64Decode(imageB64!),
     );
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),

@@ -7,6 +7,7 @@ void showCateringDishInfoDialog(
   BuildContext context,
   MenuDish dish, {
   VoidCallback? onInquireNow,
+  bool showInquireNow = true,
 }) {
   final desc = dish.publicDescription.trim();
   final allergens = dish.allergens.trim();
@@ -18,98 +19,130 @@ void showCateringDishInfoDialog(
   showDialog<void>(
     context: context,
     builder: (ctx) {
-      return AlertDialog(
-        title: Text(dish.name),
-        content: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 820, maxHeight: 520),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final wide = constraints.maxWidth >= 520;
-              final hasImage = dish.imageBase64?.isNotEmpty == true;
-              final image =
-                  hasImage
-                      ? ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: SizedBox(
-                          height: wide ? 320 : 220,
-                          width: double.infinity,
-                          child: CachedBase64Image(
-                            base64String: dish.imageBase64,
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                      )
-                      : Container(
-                        height: 220,
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade200,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Center(
-                          child: Icon(Icons.restaurant_menu, size: 48),
-                        ),
-                      );
-              final details = SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
+      final screenW = MediaQuery.sizeOf(ctx).width;
+      final wide = screenW >= 700;
+      final hasImage = dish.imageBase64?.isNotEmpty == true;
+
+      Widget photo({required double height}) {
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: SizedBox(
+            height: height,
+            width: double.infinity,
+            child:
+                hasImage
+                    ? CachedBase64Image(
+                      base64String: dish.imageBase64,
+                      fit: BoxFit.cover,
+                    )
+                    : ColoredBox(
+                      color: Colors.grey.shade200,
+                      child: const Center(
+                        child: Icon(Icons.restaurant_menu, size: 48),
+                      ),
+                    ),
+          ),
+        );
+      }
+
+      final details = SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              dish.name,
+              style: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+                height: 1.25,
+              ),
+            ),
+            const SizedBox(height: 16),
+            _detailBlock(
+              'Description',
+              desc.isEmpty ? 'No description yet.' : desc,
+            ),
+            _detailBlock(
+              'Ingredients',
+              ingredients.isEmpty
+                  ? 'No ingredients listed.'
+                  : ingredients.join(', '),
+            ),
+            _detailBlock(
+              'Allergens',
+              allergens.isEmpty ? 'None listed.' : allergens,
+            ),
+          ],
+        ),
+      );
+
+      return Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: wide ? 900 : 480,
+            maxHeight: wide ? 480 : 640,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (wide)
+                  SizedBox(
+                    height: 360,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Photo on the left
+                        Expanded(flex: 5, child: photo(height: 360)),
+                        const SizedBox(width: 24),
+                        // Descriptions / info on the right
+                        Expanded(flex: 6, child: details),
+                      ],
+                    ),
+                  )
+                else
+                  Flexible(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        photo(height: 220),
+                        const SizedBox(height: 16),
+                        Expanded(child: details),
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    _detailBlock(
-                      'Description',
-                      desc.isEmpty ? 'No description yet.' : desc,
+                    TextButton(
+                      onPressed: () => Navigator.of(ctx).pop(),
+                      child: const Text('CLOSE'),
                     ),
-                    _detailBlock(
-                      'Ingredients',
-                      ingredients.isEmpty
-                          ? 'No ingredients listed.'
-                          : ingredients.join(', '),
-                    ),
-                    _detailBlock(
-                      'Allergens',
-                      allergens.isEmpty ? 'None listed.' : allergens,
-                    ),
+                    if (showInquireNow) ...[
+                      const SizedBox(width: 8),
+                      FilledButton(
+                        onPressed: () {
+                          Navigator.of(ctx).pop();
+                          if (onInquireNow != null) {
+                            onInquireNow();
+                          } else {
+                            Navigator.of(context).pushNamed('/inquire');
+                          }
+                        },
+                        child: const Text('INQUIRE NOW'),
+                      ),
+                    ],
                   ],
                 ),
-              );
-
-              if (!wide) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    image,
-                    const SizedBox(height: 16),
-                    Expanded(child: details),
-                  ],
-                );
-              }
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(width: 360, child: image),
-                  const SizedBox(width: 22),
-                  Expanded(child: details),
-                ],
-              );
-            },
+              ],
+            ),
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('CLOSE'),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              if (onInquireNow != null) {
-                onInquireNow();
-              } else {
-                Navigator.of(context).pushNamed('/inquire');
-              }
-            },
-            child: const Text('INQUIRE NOW'),
-          ),
-        ],
       );
     },
   );

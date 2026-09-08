@@ -280,7 +280,9 @@ class _InquirePageState extends State<InquirePage> {
   @override
   void initState() {
     super.initState();
-    MenuStore.instance.loadDishes();
+    MenuStore.instance.loadDishes().then((_) {
+      unawaited(MenuStore.instance.ensureImagesLoaded());
+    });
     SetMenuStore.instance.loadSetMenus();
     () async {
       try {

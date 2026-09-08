@@ -3644,7 +3644,7 @@ function registerCustomerAuthRoutes(app, dbGate) {
       );
 
       if (result.rows.length === 0) {
-        return res.status(400).json({ error: "Invalid OTP or email" });
+        return res.status(400).json({ error: "Invalid OTP." });
       }
 
       if (new Date() > result.rows[0].otp_expiry) {

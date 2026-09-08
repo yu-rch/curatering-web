@@ -463,7 +463,19 @@ extension _ManageEventsTableExt on _ManageEventsState {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Seating assignment is only available for event orders.',
+            'Seating assignment is only available for catering + event orders.',
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+    if (!_canManageSeatingAssignmentsForStatus(full.status)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Seating assignment can only be edited while the order is On Going.',
           ),
           backgroundColor: Colors.red,
         ),
@@ -473,10 +485,17 @@ extension _ManageEventsTableExt on _ManageEventsState {
     if (!mounted) return;
     await showAntdModal<void>(
       context: context,
-      title: 'Edit seating assignment',
+      title: 'Seating assignment — ${full.eventTitle.isEmpty ? full.transactionNo : full.eventTitle}',
       maxWidth: 980,
       body: SingleChildScrollView(
-        child: ProcessingSeatingSection(order: full, onSaved: _refreshOrders),
+        child: ProcessingSeatingSection(
+          order: full,
+          onSaved: () async {
+            await _refreshOrders();
+            if (!mounted) return;
+            await _selectManageEventsOrder(full);
+          },
+        ),
       ),
       actions: [
         AntdCancelButton(
@@ -485,6 +504,8 @@ extension _ManageEventsTableExt on _ManageEventsState {
         ),
       ],
     );
+    if (!mounted) return;
+    await _selectManageEventsOrder(full);
   }
 
   Future<void> _showEventOrderDetailModal(EventOrderDto dto) async {
@@ -871,6 +892,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
     var inquiryMenuBlocks = <Map<String, dynamic>>[];
     var inquiryChargeOverrides = <String, double>{};
     var inquiryAllergens = order.allergens;
+    var inquiryMenuTabIndex = 0;
 
     List<Map<String, dynamic>>? inquiryMenuPayloadForSave() {
       if (inquiryMenuBlocks.isEmpty) return null;
@@ -884,6 +906,8 @@ extension _ManageEventsTableExt on _ManageEventsState {
     }
 
     try {
+      unawaited(MenuStore.instance.ensureImagesLoaded());
+      unawaited(SetMenuStore.instance.loadSetMenus());
       await showAntdModal<void>(
         context: context,
         title: order.eventTitle.isEmpty ? order.customerName : order.eventTitle,
@@ -1018,7 +1042,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
                             onPressed: () => runFinalizeAction(
                               action: 'confirm_inquiry',
                               successMessage:
-                                  'Order accepted and moved to For down payment.',
+                                  'Order moved to For down payment.',
                             ),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF1DB954),
@@ -1029,7 +1053,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
                               ),
                             ),
                             child: const Text(
-                              'Accept order',
+                              'Move to Down Payment',
                               style: TextStyle(fontWeight: FontWeight.w700),
                             ),
                           ),
@@ -1197,13 +1221,26 @@ extension _ManageEventsTableExt on _ManageEventsState {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      TextField(
-                        controller: formalityController,
+                      DropdownButtonFormField<EventFormalityLevel>(
+                        value: _formalityFromString(formalityController.text),
+                        items: EventFormalityLevel.values
+                            .map(
+                              (level) => DropdownMenuItem(
+                                value: level,
+                                child: Text(level.displayName),
+                              ),
+                            )
+                            .toList(),
                         decoration: const InputDecoration(
                           labelText: 'Formality level',
                           border: OutlineInputBorder(),
                           isDense: true,
                         ),
+                        onChanged: (value) {
+                          if (value == null) return;
+                          formalityController.text = _formalityToString(value);
+                          _mutateTableState(() {});
+                        },
                       ),
                       const SizedBox(height: 12),
                       TextField(
@@ -1233,6 +1270,25 @@ extension _ManageEventsTableExt on _ManageEventsState {
                             ),
                           ),
                           const SizedBox(width: 8),
+                          IconButton(
+                            tooltip: 'Pick on map',
+                            onPressed: () async {
+                              final picked = await showMapPicker(
+                                context: context,
+                                initialAddress:
+                                    addressController.text.trim().isEmpty
+                                        ? null
+                                        : addressController.text.trim(),
+                              );
+                              if (picked == null) return;
+                              addressController.text = picked.address;
+                              _mutateTableState(() {});
+                            },
+                            icon: const Icon(
+                              Icons.place_outlined,
+                              color: Color(0xFFFFC024),
+                            ),
+                          ),
                           IconButton(
                             tooltip: 'View on map',
                             onPressed: () => showVenueMapDialog(
@@ -1291,42 +1347,79 @@ extension _ManageEventsTableExt on _ManageEventsState {
                         ],
                       ),
                       const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: dateController,
-                              decoration: const InputDecoration(
-                                labelText: 'Date (YYYY-MM-DD)',
-                                border: OutlineInputBorder(),
-                                isDense: true,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: TextField(
-                              controller: timeController,
-                              decoration: const InputDecoration(
-                                labelText: 'Start time (HH:mm)',
-                                border: OutlineInputBorder(),
-                                isDense: true,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: TextField(
-                              controller: endTimeController,
-                              decoration: const InputDecoration(
-                                labelText: 'End time (HH:mm)',
-                                border: OutlineInputBorder(),
-                                isDense: true,
-                              ),
-                            ),
-                          ),
-                        ],
+                      const Text(
+                        'Date & Time',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
                       ),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: ElevatedButton.icon(
+                          onPressed: () async {
+                            final now = DateTime.now();
+                            final pickedDate = await showDatePicker(
+                              context: context,
+                              initialDate: now,
+                              firstDate: now.subtract(const Duration(days: 365)),
+                              lastDate: now.add(const Duration(days: 365 * 2)),
+                            );
+                            if (pickedDate == null || !mounted) return;
+                            final start = await showTimePicker(
+                              context: context,
+                              initialTime: const TimeOfDay(hour: 10, minute: 0),
+                            );
+                            if (start == null || !mounted) return;
+                            final end = await showTimePicker(
+                              context: context,
+                              initialTime: TimeOfDay(
+                                hour: (start.hour + 2).clamp(0, 23),
+                                minute: start.minute,
+                              ),
+                            );
+                            if (end == null || !mounted) return;
+                            String pad2(int n) => n.toString().padLeft(2, '0');
+                            dateController.text =
+                                '${pickedDate.year}-${pad2(pickedDate.month)}-${pad2(pickedDate.day)}';
+                            timeController.text =
+                                '${pad2(start.hour)}:${pad2(start.minute)}';
+                            endTimeController.text =
+                                '${pad2(end.hour)}:${pad2(end.minute)}';
+                            _mutateTableState(() {});
+                          },
+                          icon: const Icon(Icons.add, size: 18),
+                          label: const Text('Add slot'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFFFC024),
+                            foregroundColor: const Color(0xFF1E1E1E),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      if (dateController.text.trim().isEmpty)
+                        Text(
+                          'No schedules yet.',
+                          style: TextStyle(
+                            color: Colors.grey.shade600,
+                            fontSize: 13,
+                          ),
+                        )
+                      else
+                        InputChip(
+                          label: Text(
+                            '${dateController.text} '
+                            '(${timeController.text}'
+                            '${endTimeController.text.trim().isEmpty ? '' : ' – ${endTimeController.text}'})',
+                          ),
+                          onDeleted: () {
+                            dateController.clear();
+                            timeController.clear();
+                            endTimeController.clear();
+                            _mutateTableState(() {});
+                          },
+                        ),
                       const SizedBox(height: 12),
                       TextField(
                         controller: noteController,
@@ -1409,9 +1502,40 @@ extension _ManageEventsTableExt on _ManageEventsState {
                             ),
                           ),
                           const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            children: [
+                              ChoiceChip(
+                                label: const Text('Custom dishes'),
+                                selected: inquiryMenuTabIndex == 0,
+                                onSelected: (_) => _mutateTableState(
+                                  () => inquiryMenuTabIndex = 0,
+                                ),
+                              ),
+                              ChoiceChip(
+                                label: const Text('Set menu'),
+                                selected: inquiryMenuTabIndex == 1,
+                                onSelected: (_) async {
+                                  _mutateTableState(
+                                    () => inquiryMenuTabIndex = 1,
+                                  );
+                                  if (SetMenuStore
+                                      .instance.activeSetMenus.isEmpty) {
+                                    await SetMenuStore.instance.loadSetMenus();
+                                  }
+                                  await MenuStore.instance.ensureImagesLoaded();
+                                  if (mounted) _mutateTableState(() {});
+                                },
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
                           InquiryMenuPicker(
+                            key: ValueKey<String>(
+                              'oi-menu-$inquiryMenuTabIndex-${SetMenuStore.instance.activeSetMenus.length}',
+                            ),
                             embedded: true,
-                            tabIndex: 1,
+                            tabIndex: inquiryMenuTabIndex,
                             cateringDishes: cateringDishes,
                             setMenus: SetMenuStore.instance.activeSetMenus,
                             initialSelections: inquiryMenuBlocks,

@@ -17,13 +17,16 @@ class SetMenu {
   });
 
   factory SetMenu.fromJson(Map<String, dynamic> json) {
+    final rawIds = json['dish_ids'] ?? json['dishIds'] ?? const [];
     return SetMenu(
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? '',
-      dishIds: (json['dish_ids'] as List<dynamic>?)?.cast<String>() ?? [],
+      dishIds: (rawIds is List)
+          ? rawIds.map((e) => e.toString()).where((e) => e.isNotEmpty).toList()
+          : const [],
       archived: json['archived'] as bool? ?? false,
       createdAt: json['created_at'] != null
-          ? DateTime.parse(json['created_at'] as String)
+          ? DateTime.tryParse(json['created_at'].toString())
           : null,
     );
   }

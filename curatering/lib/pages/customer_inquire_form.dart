@@ -316,10 +316,16 @@ class _CustomerInquireFormState extends State<CustomerInquireForm> {
     }
     // Ensure dishes are loaded for set menu display
     if (MenuStore.instance.activeDishes.isEmpty) {
-      MenuStore.instance.loadDishes();
+      MenuStore.instance.loadDishes().then((_) {
+        unawaited(MenuStore.instance.ensureImagesLoaded());
+      });
+    } else {
+      unawaited(MenuStore.instance.ensureImagesLoaded());
     }
-    // Load customer data if logged in
-    _loadCustomerData();
+    // Staff theme studio must not prompt for customer login.
+    if (!widget.staffThemeStudioMode) {
+      _loadCustomerData();
+    }
   }
 
   Future<void> _loadCustomerData() async {
@@ -337,7 +343,7 @@ class _CustomerInquireFormState extends State<CustomerInquireForm> {
           _phone.text = data['phone'] ?? '';
         });
       }
-    } else {
+    } else if (!widget.staffThemeStudioMode) {
       // User is not logged in, show login dialog
       if (mounted) {
         WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -2361,9 +2367,13 @@ class _CustomerInquireFormState extends State<CustomerInquireForm> {
 
   void _finishStaffThemeStudio(BuildContext dialogContext) {
     final result = _staffThemeStudioResult();
+    final navigator = Navigator.of(context);
     Navigator.of(dialogContext).pop();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) Navigator.of(context).pop(result);
+      if (!mounted) return;
+      if (navigator.canPop()) {
+        navigator.pop(result);
+      }
     });
   }
 

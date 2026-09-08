@@ -1727,7 +1727,9 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
         isEventOrder &&
         (status == 'for_processing' ||
             status == 'for_post_analysis' ||
-            status == 'ongoing');
+            status == 'ongoing' ||
+            status == 'on_going' ||
+            status == 'for_ongoing');
 
     final title =
         (catering['event_title'] ?? catering['eventTitle'] ?? 'Catering')

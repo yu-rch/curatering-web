@@ -175,8 +175,6 @@ extension _ManageEventsDetailExt on _ManageEventsState {
     final tx = order.transactionNo;
     final total = order.totalCost > 0 ? order.totalCost : computeOrderTotalCost(order);
     final isCancelled = stage == 'cancelled' || order.status == 'cancelled';
-    final isReadOnlyStage =
-        isCancelled || stage == 'completed' || stage == 'for_full_payment';
     // Theme design editing is exclusive to online_inquiries; otherwise view-only.
     final canEditTheme = _isManager &&
         !isCancelled &&
@@ -184,10 +182,14 @@ extension _ManageEventsDetailExt on _ManageEventsState {
         (order.orderType == 'catering_event' ||
             order.orderType.contains('event') ||
             order.includeMinimalEventStyling == true);
-    final showSeating = stage == 'for_down_payment' ||
-        stage == 'on_going' ||
-        stage == 'for_full_payment' ||
-        stage == 'completed';
+    final isCateringPlusEvent = _isCateringPlusEventOrder(order);
+    final canEditSeating =
+        isCateringPlusEvent && _canManageSeatingAssignmentsForStatus(order.status);
+    final showSeating = isCateringPlusEvent &&
+        (stage == 'for_down_payment' ||
+            stage == 'on_going' ||
+            stage == 'for_full_payment' ||
+            stage == 'completed');
 
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -226,12 +228,80 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                   if (_isManager &&
                       !isCancelled &&
                       (stage == 'online_inquiries' || stage == 'new_event')) ...[
-                    _amberStageButton(
-                      label: 'Move to Down Payment',
-                      onPressed: () => _openFinalizeOnlineInquiryDialog(
-                        order,
-                        initialTabIndex: 2,
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _amberStageButton(
+                            label: 'Move to Down Payment',
+                            onPressed: () => _openFinalizeOnlineInquiryDialog(
+                              order,
+                              initialTabIndex: 2,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: OutlinedButton.icon(
+                              onPressed: () async {
+                                final ok = await showDialog<bool>(
+                                  context: context,
+                                  builder: (ctx) => AlertDialog(
+                                    title: const Text('Cancel order'),
+                                    content: const Text(
+                                      'Cancel this online inquiry?',
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.pop(ctx, false),
+                                        child: const Text('No'),
+                                      ),
+                                      FilledButton(
+                                        onPressed: () =>
+                                            Navigator.pop(ctx, true),
+                                        child: const Text('Cancel order'),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                                if (ok != true || !mounted) return;
+                                try {
+                                  await EventsApi.instance.managerFinalizeOnlineInquiry(
+                                    orderId: order.id,
+                                    payload: {'action': 'cancel_event'},
+                                  );
+                                  if (!mounted) return;
+                                  await _refreshOrders();
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Inquiry cancelled.'),
+                                    ),
+                                  );
+                                } catch (e) {
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Failed to cancel: $e'),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                }
+                              },
+                              icon: const Icon(Icons.cancel_outlined, size: 18),
+                              label: const Text('Cancel order'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.black87,
+                                backgroundColor: const Color(0xFFFFC107),
+                                side: const BorderSide(color: Color(0xFFFFC107)),
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 8),
                     OutlinedButton.icon(
@@ -245,6 +315,12 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                       ),
                     ),
                   ],
+                  if (stage == 'on_going' && !isCancelled && canEditSeating)
+                    _amberStageButton(
+                      label: 'Seating assignment',
+                      icon: Icons.event_seat_outlined,
+                      onPressed: () => _showSeatingAssignmentEditor(order),
+                    ),
                   if (_isManager && stage == 'on_going' && !isCancelled)
                     _amberStageButton(
                       label: 'Move to Full Payment',
@@ -539,24 +615,32 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                   if (showSeating) ...[
                     const SizedBox(height: 12),
                     _detailSection(
-                      'Seating layout',
-                      child: isReadOnlyStage || !_isManager
-                          ? Text(
-                              order.seatingPlan.tables.isEmpty
-                                  ? 'No seating plan saved.'
-                                  : '${order.seatingPlan.tables.length} table(s) configured.',
-                              style: const TextStyle(fontSize: 12),
-                            )
-                          : Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                OutlinedButton.icon(
-                                  onPressed: () => _openSeatingEditor(order),
-                                  icon: const Icon(Icons.event_seat, size: 18),
-                                  label: const Text('Edit seating layout'),
-                                ),
-                              ],
+                      'Seating assignment',
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            order.seatingPlan.tables.isEmpty
+                                ? 'No seating plan saved yet.'
+                                : '${order.seatingPlan.tables.length} table(s) · '
+                                    '${order.seatingPlan.tables.fold<int>(0, (n, t) => n + t.seatCount)} seat(s) configured.',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          if (canEditSeating) ...[
+                            const SizedBox(height: 8),
+                            FilledButton.icon(
+                              onPressed: () =>
+                                  _showSeatingAssignmentEditor(order),
+                              icon: const Icon(Icons.event_seat, size: 18),
+                              label: Text(
+                                order.seatingPlan.tables.isEmpty
+                                    ? 'Create seating assignment'
+                                    : 'Edit seating assignment',
+                              ),
                             ),
+                          ],
+                        ],
+                      ),
                     ),
                   ],
                 ],
@@ -1112,42 +1196,6 @@ extension _ManageEventsDetailExt on _ManageEventsState {
         }),
       ],
     );
-  }
-
-  Future<void> _openSeatingEditor(EventOrderDto order) async {
-    await _openSeatingAssignmentEditor(order);
-  }
-
-  Future<void> _openSeatingAssignmentEditor(EventOrderDto order) async {
-    final email = AuthSession.instance.currentUser.value?.email ?? '';
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) {
-        return Dialog(
-          insetPadding: const EdgeInsets.all(16),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(
-              maxWidth: 980,
-              maxHeight: 760,
-            ),
-            // The editor screen internally uses a Scaffold; constraining it
-            // matches the "smaller window" UX without rewriting the editor.
-            child: SeatingLayoutEditorScreen(
-              apiBase: apiBaseUrl,
-              userEmail: email,
-              orderId: order.id,
-              orderKind: order.orderKind.isNotEmpty ? order.orderKind : 'event',
-              initialPlan: order.seatingPlan,
-              eventTitle: order.eventTitle,
-              transactionNo: order.transactionNo,
-            ),
-          ),
-        );
-      },
-    );
-    if (!mounted) return;
-    await _selectManageEventsOrder(order);
   }
 
   Map<String, dynamic> _themeDesignMap(EventOrderDto order) {

@@ -7,8 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:printing/printing.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../features/event_design/event_theme_design_screen.dart';
-import '../features/seating/seating_layout_editor_screen.dart';
 import '../auth/action_permissions.dart';
 import '../auth/auth_session.dart';
 import '../config.dart';
@@ -36,6 +36,7 @@ import '../widgets/inquiry_menu_selection_dialog.dart';
 import '../utils/inquiry_pricing.dart';
 import '../utils/order_calculations.dart';
 import '../utils/order_type_utils.dart';
+import '../utils/image_cache.dart';
 import '../utils/web_html.dart' as html;
 import '../utils/pdf_print.dart';
 import 'customer_website.dart';
@@ -418,7 +419,9 @@ class _ManageEventsState extends State<ManageEvents>
   late TabController _tabController;
   bool _showNewEventForm = false;
   _NewEventSideTab _activeNewEventSideTab = _NewEventSideTab.eventInfo;
-  int _newEventMenuPrefTabIndex = 0;
+  int _newEventOuterMenuTabIndex = 1; // 0=Allergens, 1=Menu
+  int _newEventMenuPrefTabIndex = 0; // 0=Custom dishes, 1=Set menu
+  bool _isSavingNewEventDraft = false;
 
   static const _stageKeys = [
     'new_event',
@@ -514,11 +517,15 @@ class _ManageEventsState extends State<ManageEvents>
     });
     _allDishes = MenuStore.instance.activeDishes;
     MenuStore.instance.addListener(_onMenuStoreChanged);
-    unawaited(MenuStore.instance.loadDishes());
-    SetMenuStore.instance.loadSetMenus();
+    SetMenuStore.instance.addListener(_onSetMenuStoreChanged);
+    unawaited(MenuStore.instance.loadDishes().then((_) {
+      unawaited(MenuStore.instance.ensureImagesLoaded());
+    }));
+    unawaited(SetMenuStore.instance.loadSetMenus());
     _foodTabController = TabController(length: 2, vsync: this);
     _loadThemeTemplates();
     AuthSession.instance.currentUser.addListener(_handleAuthSessionChange);
+    unawaited(_restoreNewEventDraftIfAny());
     if (role == Role.supervisor) {
       _selectedStatus = EventStatus.ongoing;
     }
@@ -551,6 +558,7 @@ class _ManageEventsState extends State<ManageEvents>
     _tabController.dispose();
     AuthSession.instance.currentUser.removeListener(_handleAuthSessionChange);
     MenuStore.instance.removeListener(_onMenuStoreChanged);
+    SetMenuStore.instance.removeListener(_onSetMenuStoreChanged);
     _eventSearchController.dispose();
     _inquirySearchController.dispose();
     _eventTitleController.dispose();
@@ -643,6 +651,196 @@ class _ManageEventsState extends State<ManageEvents>
     if (!mounted) return;
     setState(() {
       _allDishes = MenuStore.instance.activeDishes;
+    });
+  }
+
+  void _onSetMenuStoreChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  static const _newEventDraftPrefsKey = 'manage_events_new_event_draft_v1';
+
+  Future<void> _saveNewEventDraft() async {
+    setState(() => _isSavingNewEventDraft = true);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final payload = _buildPayloadFromForm();
+      payload['menuBlocks'] = _newEventMenuBlocks;
+      payload['_draftMeta'] = {
+        'outerMenuTab': _newEventOuterMenuTabIndex,
+        'menuPrefTab': _newEventMenuPrefTabIndex,
+        'sideTab': _activeNewEventSideTab.name,
+      };
+      await prefs.setString(_newEventDraftPrefsKey, jsonEncode(payload));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Draft saved. You can continue later on this device.'),
+          backgroundColor: Color(0xFF1DB954),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to save draft: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isSavingNewEventDraft = false);
+    }
+  }
+
+  Future<void> _restoreNewEventDraftIfAny() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_newEventDraftPrefsKey);
+      if (raw == null || raw.trim().isEmpty) return;
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return;
+      final map = Map<String, dynamic>.from(decoded);
+      if (!mounted) return;
+      _applyNewEventDraftMap(map);
+    } catch (e) {
+      debugPrint('Failed to restore new event draft: $e');
+    }
+  }
+
+  Future<void> _clearNewEventDraft() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_newEventDraftPrefsKey);
+    } catch (_) {}
+  }
+
+  void _applyNewEventDraftMap(Map<String, dynamic> map) {
+    setState(() {
+      _orderType = map['orderType']?.toString();
+      _eventTitleController.text = '${map['eventTitle'] ?? ''}';
+      _eventType = map['eventType']?.toString();
+      _formalityLevel = _formalityFromString('${map['formalityLevel'] ?? ''}');
+      _customerController.text = '${map['customerName'] ?? ''}';
+      _contactPersonController.text = '${map['contactPerson'] ?? ''}';
+      _contactNumberController.text = '${map['contactNumber'] ?? ''}';
+      _emailController.text = '${map['emailAddress'] ?? ''}';
+      _eventAddressController.text = '${map['address'] ?? ''}';
+      _guestCountController.text = '${map['guestCount'] ?? ''}';
+      _allergensSerialized = '${map['allergens'] ?? ''}';
+      _newEventPaxBufferController.text = '${map['paxBuffer'] ?? 0}';
+      _newEventLaborCostController.text =
+          ((map['laborCost'] as num?)?.toDouble() ?? 0).toStringAsFixed(2);
+      _newEventTravelCostController.text =
+          ((map['travelCost'] as num?)?.toDouble() ?? 0).toStringAsFixed(2);
+      _newEventAdditionalCosts
+        ..clear()
+        ..addAll(
+          (map['additional_costs'] is List)
+              ? (map['additional_costs'] as List)
+                  .whereType<Map>()
+                  .map((e) => Map<String, dynamic>.from(e))
+              : const [],
+        );
+      _eventScheduleSlots.clear();
+      final slots = map['scheduleSlots'];
+      if (slots is List) {
+        for (final raw in slots) {
+          if (raw is! Map) continue;
+          final dateStr = '${raw['date'] ?? ''}';
+          final startStr = '${raw['startTime'] ?? ''}';
+          final endStr = '${raw['endTime'] ?? ''}';
+          final date = DateTime.tryParse(dateStr);
+          if (date == null) continue;
+          TimeOfDay parseTod(String s) {
+            final parts = s.split(':');
+            if (parts.length < 2) return const TimeOfDay(hour: 10, minute: 0);
+            return TimeOfDay(
+              hour: int.tryParse(parts[0]) ?? 10,
+              minute: int.tryParse(parts[1]) ?? 0,
+            );
+          }
+          _eventScheduleSlots.add(
+            EventScheduleSlot(
+              date: date,
+              startTime: parseTod(startStr),
+              endTime: parseTod(endStr),
+            ),
+          );
+        }
+      }
+      final blocks = map['menuBlocks'];
+      List<Map<String, dynamic>>? menuBlocks;
+      if (blocks is List) {
+        menuBlocks = blocks
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+      final theme = map['themeDesign'];
+      if (theme is Map) {
+        final picks = theme['picksBase64'];
+        _themePicks.clear();
+        _themePickHashes.clear();
+        if (picks is List) {
+          for (final item in picks) {
+            final s = item.toString().trim();
+            if (s.isEmpty) continue;
+            try {
+              final bytes = base64Decode(s);
+              final key = _themeImageKey(bytes);
+              if (!_themePickHashes.contains(key)) {
+                _themePicks.add(bytes);
+                _themePickHashes.add(key);
+              }
+            } catch (_) {}
+          }
+        }
+        _themeTintEnabled = theme['tintEnabled'] == true;
+        final hex = theme['tintColorHex']?.toString();
+        if (hex != null && hex.isNotEmpty) {
+          try {
+            _themeTintColor = Color(
+              int.parse(hex.replaceAll('#', ''), radix: 16) + 0xFF000000,
+            );
+          } catch (_) {}
+        }
+        _collageOrder = _themePicks.toList();
+      }
+      final meta = map['_draftMeta'];
+      if (meta is Map) {
+        _newEventOuterMenuTabIndex =
+            int.tryParse('${meta['outerMenuTab']}') ?? _newEventOuterMenuTabIndex;
+        _newEventMenuPrefTabIndex =
+            int.tryParse('${meta['menuPrefTab']}') ?? _newEventMenuPrefTabIndex;
+        final side = '${meta['sideTab'] ?? ''}';
+        for (final t in _NewEventSideTab.values) {
+          if (t.name == side) {
+            _activeNewEventSideTab = t;
+            break;
+          }
+        }
+      }
+      if (menuBlocks != null) {
+        _newEventMenuBlocks = menuBlocks;
+        _menuItems.clear();
+        final dishById = {
+          for (final dish in _allDishes) dish.id: dish,
+        };
+        for (final block in menuBlocks) {
+          final ids = (block['dishIds'] as List<dynamic>? ?? const [])
+              .map((e) => e.toString())
+              .where((e) => e.isNotEmpty);
+          for (final id in ids) {
+            final dish = dishById[id];
+            if (dish == null) continue;
+            final pax =
+                _selectedPaxPerDish[dish.name] ??
+                (dish.paxOptions.isNotEmpty ? dish.paxOptions.first : '1');
+            _menuItems.add(MenuItem(dish: dish, paxOption: pax));
+          }
+        }
+      }
     });
   }
 
@@ -744,6 +942,9 @@ class _ManageEventsState extends State<ManageEvents>
       _guestCountController.clear();
       _eventType = null;
       _formalityLevel = null;
+      _orderType = null;
+      _allergensSerialized = '';
+      _newEventMenuBlocks = [];
       _eventScheduleSlots.clear();
       _menuItems.clear();
       _selectedPaxPerDish.clear();
@@ -763,6 +964,8 @@ class _ManageEventsState extends State<ManageEvents>
       _newEventAdditionalCosts.clear();
       _newEventSetMenuChargeOverrides.clear();
       _activeNewEventSideTab = _NewEventSideTab.eventInfo;
+      _newEventOuterMenuTabIndex = 1;
+      _newEventMenuPrefTabIndex = 0;
       _selectedStatus = EventStatus.newEvent;
       _eventSearchController.clear();
       _inquirySearchController.clear();
@@ -773,6 +976,7 @@ class _ManageEventsState extends State<ManageEvents>
       _eventTableEventTypeFilter = '';
       _eventTableDateFilter = '';
     });
+    unawaited(_clearNewEventDraft());
   }
 
   // Email validation helper
@@ -7025,17 +7229,20 @@ class _ManageEventsState extends State<ManageEvents>
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         ElevatedButton(
-          onPressed: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Saved draft.')),
-            );
-          },
+          onPressed: _isSavingNewEventDraft ? null : _saveNewEventDraft,
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFFFFA726),
             foregroundColor: Colors.black,
             padding: const EdgeInsets.symmetric(vertical: 14),
           ),
-          child: const Text('SAVE DRAFT'),
+          child:
+              _isSavingNewEventDraft
+                  ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                  : const Text('SAVE DRAFT'),
         ),
         const SizedBox(height: 10),
         ElevatedButton(
@@ -7152,6 +7359,7 @@ class _ManageEventsState extends State<ManageEvents>
       await EventsApi.instance.managerSubmitNewEventToProcessing(
         payload: payload,
       );
+      await _clearNewEventDraft();
       await _refreshOrders();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -7159,10 +7367,13 @@ class _ManageEventsState extends State<ManageEvents>
       );
       _resetForm();
       setState(() => _selectedStatus = EventStatus.forDownpayment);
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to submit order.')),
+        SnackBar(
+          content: Text('Failed to submit order: $e'),
+          backgroundColor: Colors.red,
+        ),
       );
     } finally {
       if (mounted) setState(() => _isSubmittingOrder = false);
@@ -7573,34 +7784,26 @@ class _ManageEventsState extends State<ManageEvents>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: _resetForm,
-                icon: const Icon(Icons.clear),
-                label: const Text('Clear Form'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFED8845),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 180),
+            child: ElevatedButton.icon(
+              onPressed: _resetForm,
+              icon: const Icon(Icons.clear, size: 18),
+              label: const Text('Clear Form'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF6B7280),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
                 ),
               ),
             ),
-          ],
-        ),
-        const SizedBox(height: 24),
-        Text(
-          'Event Information',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: Colors.grey.shade800,
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 16),
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
@@ -7739,25 +7942,8 @@ class _ManageEventsState extends State<ManageEvents>
                       inputFormatters: [
                         LengthLimitingTextInputFormatter(50),
                         FilteringTextInputFormatter.allow(
-                          RegExp(r'[a-zA-Z\s]'),
+                          RegExp(r"[a-zA-Z\s\-']"),
                         ),
-                        TextInputFormatter.withFunction((oldValue, newValue) {
-                          final text = newValue.text.trim();
-                          if (text.isEmpty) return newValue;
-                          final words = text.split(' ');
-                          final capitalizedWords = words
-                              .map((word) {
-                                if (word.isEmpty) return '';
-                                return word[0].toUpperCase() +
-                                    word.substring(1).toLowerCase();
-                              })
-                              .join(' ');
-                          return TextEditingValue(
-                            text: capitalizedWords,
-                            selection: newValue.selection,
-                            composing: newValue.composing,
-                          );
-                        }),
                       ],
                     ),
                   ),
@@ -7815,25 +8001,8 @@ class _ManageEventsState extends State<ManageEvents>
                       inputFormatters: [
                         LengthLimitingTextInputFormatter(50),
                         FilteringTextInputFormatter.allow(
-                          RegExp(r'[a-zA-Z\s]'),
+                          RegExp(r"[a-zA-Z\s\-']"),
                         ),
-                        TextInputFormatter.withFunction((oldValue, newValue) {
-                          final text = newValue.text.trim();
-                          if (text.isEmpty) return newValue;
-                          final words = text.split(' ');
-                          final capitalizedWords = words
-                              .map((word) {
-                                if (word.isEmpty) return '';
-                                return word[0].toUpperCase() +
-                                    word.substring(1).toLowerCase();
-                              })
-                              .join(' ');
-                          return TextEditingValue(
-                            text: capitalizedWords,
-                            selection: newValue.selection,
-                            composing: newValue.composing,
-                          );
-                        }),
                       ],
                     ),
                   ),
@@ -7905,7 +8074,8 @@ class _ManageEventsState extends State<ManageEvents>
                             icon: const Icon(Icons.add),
                             label: const Text('Add slot'),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFFF4511E),
+                              backgroundColor: const Color(0xFFFFC024),
+                              foregroundColor: const Color(0xFF1E1E1E),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(10),
                               ),
@@ -7946,6 +8116,7 @@ class _ManageEventsState extends State<ManageEvents>
               ),
               const SizedBox(height: 12),
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
                     child: TextField(
@@ -7955,6 +8126,26 @@ class _ManageEventsState extends State<ManageEvents>
                         labelStyle: const TextStyle(fontSize: 14),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
+                        ),
+                        suffixIcon: IconButton(
+                          tooltip: 'Pick on map',
+                          onPressed: () async {
+                            final picked = await showMapPicker(
+                              context: context,
+                              initialAddress:
+                                  _eventAddressController.text.trim().isEmpty
+                                      ? null
+                                      : _eventAddressController.text.trim(),
+                            );
+                            if (picked == null || !mounted) return;
+                            setState(() {
+                              _eventAddressController.text = picked.address;
+                            });
+                          },
+                          icon: const Icon(
+                            Icons.place_outlined,
+                            color: Color(0xFFFFC024),
+                          ),
                         ),
                       ),
                     ),
@@ -7987,6 +8178,12 @@ class _ManageEventsState extends State<ManageEvents>
                   ),
                 ],
               ),
+              if (_eventAddressController.text.trim().isNotEmpty) ...[
+                const SizedBox(height: 10),
+                EventVenueMapPreview(
+                  address: _eventAddressController.text.trim(),
+                ),
+              ],
             ],
           ),
         ),
@@ -8010,18 +8207,10 @@ class _ManageEventsState extends State<ManageEvents>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          'Menu & Allergens',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: Colors.grey.shade800,
-          ),
-        ),
-        const SizedBox(height: 12),
         Expanded(
           child: DefaultTabController(
             length: 2,
+            initialIndex: _newEventOuterMenuTabIndex.clamp(0, 1),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -8029,7 +8218,7 @@ class _ManageEventsState extends State<ManageEvents>
                   labelColor: const Color(0xFF1E1E1E),
                   unselectedLabelColor: Colors.grey.shade700,
                   indicatorColor: const Color(0xFFFFC024),
-                  onTap: (i) => setState(() => _newEventMenuPrefTabIndex = i),
+                  onTap: (i) => setState(() => _newEventOuterMenuTabIndex = i),
                   tabs: const [
                     Tab(text: 'Allergens'),
                     Tab(text: 'Menu'),
@@ -8070,30 +8259,41 @@ class _ManageEventsState extends State<ManageEvents>
                                 ChoiceChip(
                                   label: const Text('Set menu'),
                                   selected: _newEventMenuPrefTabIndex == 1,
-                                  onSelected: (_) => setState(
-                                    () => _newEventMenuPrefTabIndex = 1,
-                                  ),
+                                  onSelected: (_) async {
+                                    setState(() => _newEventMenuPrefTabIndex = 1);
+                                    if (SetMenuStore.instance.activeSetMenus.isEmpty) {
+                                      await SetMenuStore.instance.loadSetMenus();
+                                    }
+                                    await MenuStore.instance.ensureImagesLoaded();
+                                    if (mounted) setState(() {});
+                                  },
                                 ),
                               ],
                             ),
                             const SizedBox(height: 8),
-                            InquiryMenuPicker(
-                              key: ValueKey<int>(_newEventMenuPrefTabIndex),
-                              embedded: true,
-                              tabIndex: _newEventMenuPrefTabIndex,
-                              cateringDishes: cateringDishes,
-                              setMenus: SetMenuStore.instance.activeSetMenus,
-                              initialSelections: _newEventMenuBlocks,
-                              mode: InquiryMenuPickerMode.staffNewEvent,
-                              minCustomDishes: 0,
-                              maxCustomDishes: 999,
-                              onSelectionChanged: (blocks) {
-                                setState(() {
-                                  _newEventMenuBlocks = blocks;
+                            if (SetMenuStore.instance.isLoading &&
+                                _newEventMenuPrefTabIndex == 1)
+                              const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 24),
+                                child: Center(child: CircularProgressIndicator()),
+                              )
+                            else
+                              InquiryMenuPicker(
+                                key: ValueKey<String>(
+                                  'menu-$_newEventMenuPrefTabIndex-${SetMenuStore.instance.activeSetMenus.length}',
+                                ),
+                                embedded: true,
+                                tabIndex: _newEventMenuPrefTabIndex,
+                                cateringDishes: cateringDishes,
+                                setMenus: SetMenuStore.instance.activeSetMenus,
+                                initialSelections: _newEventMenuBlocks,
+                                mode: InquiryMenuPickerMode.staffNewEvent,
+                                minCustomDishes: 0,
+                                maxCustomDishes: 999,
+                                onSelectionChanged: (blocks) {
                                   _applyNewEventMenuBlocks(blocks);
-                                });
-                              },
-                            ),
+                                },
+                              ),
                             if (chargeRows.isNotEmpty) ...[
                               const SizedBox(height: 12),
                               const Text(
@@ -8195,11 +8395,17 @@ class _ManageEventsState extends State<ManageEvents>
                     color: Colors.grey.shade200,
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Icon(
-                    Icons.fastfood,
-                    size: 21,
-                    color: Colors.grey,
-                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: dish.imageBase64?.isNotEmpty == true
+                      ? CachedBase64Image(
+                          base64String: dish.imageBase64,
+                          fit: BoxFit.cover,
+                        )
+                      : const Icon(
+                          Icons.fastfood,
+                          size: 21,
+                          color: Colors.grey,
+                        ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(

@@ -235,12 +235,15 @@ class _PagedDataTableState extends State<PagedDataTable> {
         headingRowColor:
             widget.headingRowColor ??
             WidgetStateProperty.all(AntdTokens.tableHeaderBg),
-        dataRowColor: WidgetStateProperty.resolveWith(
-          (states) =>
-              states.contains(WidgetState.hovered)
-                  ? AntdTokens.fillTertiary
-                  : Colors.white,
-        ),
+        dataRowColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return AntdTokens.brandPrimary.withValues(alpha: 0.22);
+          }
+          if (states.contains(WidgetState.hovered)) {
+            return AntdTokens.fillTertiary;
+          }
+          return Colors.white;
+        }),
         columnSpacing: columnSpacing,
         dataRowMinHeight: widget.dataRowMinHeight ?? 44,
         dataRowMaxHeight: widget.dataRowMaxHeight ?? 64,
