@@ -107,6 +107,8 @@ class EventOrderDto {
 
   final List<EventScheduleSlotDto> scheduleSlots;
   final String address;
+  final double? addressLat;
+  final double? addressLng;
   final int guestCount;
   final String allergens;
 
@@ -169,6 +171,8 @@ class EventOrderDto {
     required this.emailAddress,
     required this.scheduleSlots,
     required this.address,
+    this.addressLat,
+    this.addressLng,
     required this.guestCount,
     this.allergens = '',
     required this.menu,

@@ -415,7 +415,12 @@ extension _ManageEventsTableExt on _ManageEventsState {
         span: cols >= 2 ? 2 : 1,
         onValueTap: dto.address.trim().isEmpty
             ? null
-            : () => showVenueMapDialog(context, dto.address),
+            : () => showVenueMapDialog(
+                  context,
+                  dto.address,
+                  latitude: dto.addressLat,
+                  longitude: dto.addressLng,
+                ),
       ),
       AntdDescriptionItem(
         label: 'Menu',
@@ -681,6 +686,8 @@ extension _ManageEventsTableExt on _ManageEventsState {
     String? emailAddressOverride,
     String? endTimeOverride,
     String? noteOverride,
+    double? addressLat,
+    double? addressLng,
   }) {
     final serviceType =
         order.orderType == 'catering' ? 'catering' : 'catering+event';
@@ -710,6 +717,8 @@ extension _ManageEventsTableExt on _ManageEventsState {
       emailAddressOverride: emailAddressOverride,
       endTimeOverride: endTimeOverride,
       noteOverride: noteOverride,
+      addressLat: addressLat,
+      addressLng: addressLng,
     );
   }
 
@@ -782,6 +791,8 @@ extension _ManageEventsTableExt on _ManageEventsState {
     required TextEditingController laborController,
     required TextEditingController travelController,
     required String address,
+    double? addressLat,
+    double? addressLng,
     required String date,
     required String time,
     String? eventTitle,
@@ -818,6 +829,8 @@ extension _ManageEventsTableExt on _ManageEventsState {
       totalCost: totalCost,
       action: action,
       address: address,
+      addressLat: addressLat ?? order.addressLat,
+      addressLng: addressLng ?? order.addressLng,
       date: date,
       time: time,
       eventTitleOverride: eventTitle,
@@ -841,9 +854,9 @@ extension _ManageEventsTableExt on _ManageEventsState {
     Navigator.of(dialogContext).pop();
     await _refreshOrders();
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(successMessage)));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(successMessage)),
+    );
   }
 
   Future<void> _openFinalizeOnlineInquiryDialog(
@@ -888,6 +901,8 @@ extension _ManageEventsTableExt on _ManageEventsState {
         });
       }),
     );
+    var pickedAddressLat = order.addressLat;
+    var pickedAddressLng = order.addressLng;
     final detailFuture = _loadOrderForDetail(order);
     var inquiryMenuBlocks = <Map<String, dynamic>>[];
     var inquiryChargeOverrides = <String, double>{};
@@ -927,6 +942,8 @@ extension _ManageEventsTableExt on _ManageEventsState {
                     laborController: laborCostController,
                     travelController: travelCostController,
                     address: addressController.text.trim(),
+                    addressLat: pickedAddressLat,
+                    addressLng: pickedAddressLng,
                     date: dateController.text.trim(),
                     time: timeController.text.trim(),
                     endTime: endTimeController.text.trim(),
@@ -1275,6 +1292,8 @@ extension _ManageEventsTableExt on _ManageEventsState {
                             onPressed: () async {
                               final picked = await showMapPicker(
                                 context: context,
+                                initialLatitude: pickedAddressLat,
+                                initialLongitude: pickedAddressLng,
                                 initialAddress:
                                     addressController.text.trim().isEmpty
                                         ? null
@@ -1282,6 +1301,8 @@ extension _ManageEventsTableExt on _ManageEventsState {
                               );
                               if (picked == null) return;
                               addressController.text = picked.address;
+                              pickedAddressLat = picked.latitude;
+                              pickedAddressLng = picked.longitude;
                               _mutateTableState(() {});
                             },
                             icon: const Icon(
@@ -1294,6 +1315,8 @@ extension _ManageEventsTableExt on _ManageEventsState {
                             onPressed: () => showVenueMapDialog(
                               context,
                               addressController.text,
+                              latitude: pickedAddressLat,
+                              longitude: pickedAddressLng,
                             ),
                             icon: const Icon(
                               Icons.map_outlined,
@@ -1628,7 +1651,9 @@ extension _ManageEventsTableExt on _ManageEventsState {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Container(
+                    StatefulBuilder(
+                      builder: (costsCtx, setCosts) {
+                        return Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     border: Border.all(color: Colors.grey.shade300),
@@ -1668,51 +1693,84 @@ extension _ManageEventsTableExt on _ManageEventsState {
                               ),
                             ),
                           ),
-                          IconButton(
-                            tooltip: 'Add additional cost',
+                          const SizedBox(width: 8),
+                          ElevatedButton.icon(
                             onPressed: () {
-                              final label = additionalCostLabelController.text.trim();
-                              final amount =
-                                  double.tryParse(additionalCostAmountController.text.trim());
+                              final label =
+                                  additionalCostLabelController.text.trim();
+                              final amount = double.tryParse(
+                                additionalCostAmountController.text.trim(),
+                              );
                               if (label.isEmpty || amount == null) return;
-                              _mutateTableState(() {
-                                additionalCosts.add({'label': label, 'amount': amount});
+                              setCosts(() {
+                                additionalCosts.add({
+                                  'label': label,
+                                  'amount': amount,
+                                });
+                                additionalCostLabelController.clear();
+                                additionalCostAmountController.clear();
                               });
-                              additionalCostLabelController.clear();
-                              additionalCostAmountController.clear();
                             },
-                            icon: const Icon(Icons.add_circle_outline),
+                            icon: const Icon(Icons.add, size: 18),
+                            label: const Text('Add additional cost'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFFFC024),
+                              foregroundColor: Colors.black,
+                            ),
                           ),
                         ],
                       ),
-                      if (additionalCosts.isNotEmpty) ...[
-                        const SizedBox(height: 8),
+                      const SizedBox(height: 8),
+                      if (additionalCosts.isEmpty)
+                        Text(
+                          'No additional costs yet.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                          ),
+                        )
+                      else
                         ...additionalCosts.asMap().entries.map((entry) {
                           final index = entry.key;
                           final row = entry.value;
-                          final amount = double.tryParse('${row['amount'] ?? 0}') ?? 0;
-                          return Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  '${row['label']} — ${formatPesos(amount)}',
-                                  style: const TextStyle(fontSize: 12),
+                          final amount =
+                              double.tryParse('${row['amount'] ?? 0}') ?? 0;
+                          return ListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(
+                              '${row['label']}',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  formatPesos(amount),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 12,
+                                  ),
                                 ),
-                              ),
-                              IconButton(
-                                tooltip: 'Remove',
-                                onPressed: () => _mutateTableState(
-                                  () => additionalCosts.removeAt(index),
+                                IconButton(
+                                  tooltip: 'Remove',
+                                  onPressed: () => setCosts(
+                                    () => additionalCosts.removeAt(index),
+                                  ),
+                                  icon: const Icon(
+                                    Icons.delete_outline,
+                                    size: 18,
+                                  ),
                                 ),
-                                icon: const Icon(Icons.delete_outline, size: 18),
-                              ),
-                            ],
+                              ],
+                            ),
                           );
                         }),
-                      ],
                     ],
                   ),
-                ),
+                );
+                      },
+                    ),
                     if (_orderHasEventDesign(full) ||
                         full.orderType.toLowerCase().contains('event') ||
                         full.includeMinimalEventStyling)

@@ -459,6 +459,8 @@ class _ManageEventsState extends State<ManageEvents>
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _eventAddressController = TextEditingController();
   final TextEditingController _guestCountController = TextEditingController();
+  double? _eventAddressLat;
+  double? _eventAddressLng;
 
   EventStatus _selectedStatus = EventStatus.newEvent;
   String? _eventType;
@@ -723,6 +725,10 @@ class _ManageEventsState extends State<ManageEvents>
       _contactNumberController.text = '${map['contactNumber'] ?? ''}';
       _emailController.text = '${map['emailAddress'] ?? ''}';
       _eventAddressController.text = '${map['address'] ?? ''}';
+      _eventAddressLat = (map['addressLat'] as num?)?.toDouble() ??
+          (map['address_lat'] as num?)?.toDouble();
+      _eventAddressLng = (map['addressLng'] as num?)?.toDouble() ??
+          (map['address_lng'] as num?)?.toDouble();
       _guestCountController.text = '${map['guestCount'] ?? ''}';
       _allergensSerialized = '${map['allergens'] ?? ''}';
       _newEventPaxBufferController.text = '${map['paxBuffer'] ?? 0}';
@@ -937,6 +943,8 @@ class _ManageEventsState extends State<ManageEvents>
       _contactNumberController.clear();
       _emailController.clear();
       _eventAddressController.clear();
+      _eventAddressLat = null;
+      _eventAddressLng = null;
       _guestCountController.clear();
       _eventType = null;
       _formalityLevel = null;
@@ -1709,6 +1717,8 @@ class _ManageEventsState extends State<ManageEvents>
             };
           }).toList(),
       'address': _eventAddressController.text.trim(),
+      if (_eventAddressLat != null) 'addressLat': _eventAddressLat,
+      if (_eventAddressLng != null) 'addressLng': _eventAddressLng,
       'guestCount': guestCount,
       'paxBuffer': paxBuffer,
       'laborCost': laborCost,
@@ -1837,6 +1847,8 @@ class _ManageEventsState extends State<ManageEvents>
     Future<void> pickAddressFromMap() async {
       final picked = await showMapPicker(
         context: context,
+        initialLatitude: order.addressLat,
+        initialLongitude: order.addressLng,
         initialAddress:
             addressController.text.trim().isEmpty
                 ? order.address
@@ -2475,7 +2487,9 @@ class _ManageEventsState extends State<ManageEvents>
     String? contactNumberOverride,
     String? emailAddressOverride,
     String? endTimeOverride,
-    String? noteOverride}) {
+    String? noteOverride,
+    double? addressLat,
+    double? addressLng}) {
     final effectiveGuestCount = guestCountOverride ?? order.guestCount;
     List<Map<String, dynamic>> menuItems = [];
     final schedulePayload = <Map<String, dynamic>>[];
@@ -2575,6 +2589,8 @@ class _ManageEventsState extends State<ManageEvents>
       'emailAddress': emailAddressOverride ?? order.emailAddress,
       'scheduleSlots': schedulePayload,
       'address': address,
+      if (addressLat != null) 'addressLat': addressLat,
+      if (addressLng != null) 'addressLng': addressLng,
       'guestCount': effectiveGuestCount,
       'serviceType': serviceType,
       'menu': menuItems,
@@ -4149,10 +4165,19 @@ class _ManageEventsState extends State<ManageEvents>
           ),
         );
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Full payment marked as paid.'),
-            backgroundColor: Color(0xFF1DB954),
+        await showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Full payment confirmed'),
+            content: const Text(
+              "Finalizing full payment will mark this order as 'Completed.'",
+            ),
+            actions: [
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('OK'),
+              ),
+            ],
           ),
         );
       }
@@ -4185,6 +4210,25 @@ class _ManageEventsState extends State<ManageEvents>
       }
 
       await _refreshOrders();
+      final selectedId = _selectedManageEventsOrder?.id ?? order.id;
+      EventOrderDto? refreshed;
+      for (final o in [
+        ..._onlineInquiryOrders,
+        ..._processingOrdersDto,
+        ..._postAnalysisOrdersDto,
+        ..._completedOrdersDto,
+        ..._cancelledOrdersDto,
+      ]) {
+        if (o.id == selectedId) {
+          refreshed = o;
+          break;
+        }
+      }
+      if (refreshed != null) {
+        await _selectManageEventsOrder(refreshed);
+      } else if (_selectedManageEventsOrder != null) {
+        await _selectManageEventsOrder(_selectedManageEventsOrder!);
+      }
       return true;
     } catch (e) {
       if (mounted) {
@@ -8142,6 +8186,8 @@ class _ManageEventsState extends State<ManageEvents>
                           onPressed: () async {
                             final picked = await showMapPicker(
                               context: context,
+                              initialLatitude: _eventAddressLat,
+                              initialLongitude: _eventAddressLng,
                               initialAddress:
                                   _eventAddressController.text.trim().isEmpty
                                       ? null
@@ -8150,6 +8196,8 @@ class _ManageEventsState extends State<ManageEvents>
                             if (picked == null || !mounted) return;
                             setState(() {
                               _eventAddressController.text = picked.address;
+                              _eventAddressLat = picked.latitude;
+                              _eventAddressLng = picked.longitude;
                             });
                           },
                           icon: const Icon(
@@ -8192,6 +8240,8 @@ class _ManageEventsState extends State<ManageEvents>
                 const SizedBox(height: 10),
                 EventVenueMapPreview(
                   address: _eventAddressController.text.trim(),
+                  latitude: _eventAddressLat,
+                  longitude: _eventAddressLng,
                 ),
               ],
             ],

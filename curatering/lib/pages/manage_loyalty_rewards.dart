@@ -1466,6 +1466,11 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
                               condition.id,
                             );
                             Navigator.pop(context);
+                            ScaffoldMessenger.of(this.context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Points Condition archived!'),
+                              ),
+                            );
                           },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFFFFC024),

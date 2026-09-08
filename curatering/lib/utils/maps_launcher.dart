@@ -7,6 +7,8 @@ Future<bool> openOsmMap(String address, {GeoPin? pin}) async {
   final q = address.trim();
   if (q.isEmpty && pin == null) return false;
 
+  // Prefer a known pin when provided; otherwise search by address so we never
+  // open a default city pin after a failed geocode.
   final urls = <Uri>[
     if (pin != null)
       Uri.parse(

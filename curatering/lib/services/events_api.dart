@@ -730,6 +730,12 @@ class EventsApi {
           (map['emailAddress'] ?? map['email_address'] ?? '').toString(),
       scheduleSlots: scheduleSlots,
       address: (map['address'] ?? '').toString(),
+      addressLat: _toNullableDouble(
+        map['addressLat'] ?? map['address_lat'],
+      ),
+      addressLng: _toNullableDouble(
+        map['addressLng'] ?? map['address_lng'],
+      ),
       guestCount: _toInt(map['guestCount'] ?? map['guest_count']),
       allergens: (map['allergens'] ?? '').toString(),
       menu: menu,

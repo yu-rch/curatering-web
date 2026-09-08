@@ -11,17 +11,30 @@ import 'antd_dialog.dart';
 /// Read-only venue map (flutter_map / OpenStreetMap) + external OSM link.
 class EventVenueMapPreview extends StatefulWidget {
   final String address;
+  final double? latitude;
+  final double? longitude;
 
-  const EventVenueMapPreview({super.key, required this.address});
+  const EventVenueMapPreview({
+    super.key,
+    required this.address,
+    this.latitude,
+    this.longitude,
+  });
 
   @override
   State<EventVenueMapPreview> createState() => _EventVenueMapPreviewState();
 }
 
 class _EventVenueMapPreviewState extends State<EventVenueMapPreview> {
-  LatLng _pin = const LatLng(defaultMapLat, defaultMapLng);
+  LatLng? _pin;
   String? _error;
   bool _loading = true;
+
+  bool get _hasStoredPin =>
+      widget.latitude != null &&
+      widget.longitude != null &&
+      widget.latitude!.isFinite &&
+      widget.longitude!.isFinite;
 
   @override
   void initState() {
@@ -32,14 +45,29 @@ class _EventVenueMapPreviewState extends State<EventVenueMapPreview> {
   @override
   void didUpdateWidget(covariant EventVenueMapPreview oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.address != widget.address) _load();
+    if (oldWidget.address != widget.address ||
+        oldWidget.latitude != widget.latitude ||
+        oldWidget.longitude != widget.longitude) {
+      _load();
+    }
   }
 
   Future<void> _load() async {
     setState(() {
       _loading = true;
       _error = null;
+      _pin = null;
     });
+
+    if (_hasStoredPin) {
+      if (!mounted) return;
+      setState(() {
+        _pin = LatLng(widget.latitude!, widget.longitude!);
+        _loading = false;
+      });
+      return;
+    }
+
     final pin = await NominatimService.instance.geocodeAddress(widget.address);
     if (!mounted) return;
     if (pin == null) {
@@ -53,6 +81,14 @@ class _EventVenueMapPreviewState extends State<EventVenueMapPreview> {
       _pin = LatLng(pin.lat, pin.lng);
       _loading = false;
     });
+  }
+
+  Future<void> _openExternalMap() async {
+    final pin = _pin;
+    await openOsmMap(
+      widget.address,
+      pin: pin == null ? null : GeoPin(lat: pin.latitude, lng: pin.longitude),
+    );
   }
 
   @override
@@ -69,11 +105,11 @@ class _EventVenueMapPreviewState extends State<EventVenueMapPreview> {
           )
         else if (_error != null)
           Text(_error!, style: const TextStyle(color: Colors.red))
-        else
+        else if (_pin != null)
           SizedBox(
             height: 260,
             child: FlutterMap(
-              options: MapOptions(initialCenter: _pin, initialZoom: 16),
+              options: MapOptions(initialCenter: _pin!, initialZoom: 16),
               children: [
                 TileLayer(
                   urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
@@ -82,7 +118,7 @@ class _EventVenueMapPreviewState extends State<EventVenueMapPreview> {
                 MarkerLayer(
                   markers: [
                     Marker(
-                      point: _pin,
+                      point: _pin!,
                       width: 40,
                       height: 40,
                       child: const Icon(
@@ -98,10 +134,7 @@ class _EventVenueMapPreviewState extends State<EventVenueMapPreview> {
           ),
         const SizedBox(height: 8),
         OutlinedButton.icon(
-          onPressed: () => openOsmMap(
-            widget.address,
-            pin: GeoPin(lat: _pin.latitude, lng: _pin.longitude),
-          ),
+          onPressed: _openExternalMap,
           icon: const Icon(Icons.map_outlined),
           label: const Text('Open in OpenStreetMap'),
         ),
@@ -111,14 +144,23 @@ class _EventVenueMapPreviewState extends State<EventVenueMapPreview> {
 }
 
 /// Staff read-only venue map popup for a tappable address.
-Future<void> showVenueMapDialog(BuildContext context, String address) async {
+Future<void> showVenueMapDialog(
+  BuildContext context,
+  String address, {
+  double? latitude,
+  double? longitude,
+}) async {
   final trimmed = address.trim();
   if (trimmed.isEmpty || trimmed == '—') return;
   await showAntdModal<void>(
     context: context,
     title: 'Venue map',
     maxWidth: 640,
-    body: EventVenueMapPreview(address: trimmed),
+    body: EventVenueMapPreview(
+      address: trimmed,
+      latitude: latitude,
+      longitude: longitude,
+    ),
     actions: [
       AntdPrimaryButton(
         label: 'Close',

@@ -347,7 +347,7 @@ class _MapPickerState extends State<MapPicker> {
                         backgroundColor: const Color(0xFFFFC024),
                         foregroundColor: Colors.black,
                       ),
-                      child: const Text('Use this location'),
+                      child: const Text('Save'),
                     ),
                   ),
                 ],

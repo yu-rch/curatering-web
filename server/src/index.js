@@ -7140,6 +7140,8 @@ app.post(
         emailAddress,
         scheduleSlots,
         address,
+        addressLat,
+        addressLng,
         guestCount,
         menu,
         themeDesign,
@@ -7148,6 +7150,24 @@ app.post(
         note,
         action = 'confirm_inquiry',
       } = req.body || {};
+
+      const parseCoord = (v) => {
+        if (v === undefined || v === null || v === '') return null;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+      };
+      const resolvedAddressLat = parseCoord(addressLat);
+      const resolvedAddressLng = parseCoord(addressLng);
+      const additionalCostsRaw =
+        req.body?.additional_costs ?? req.body?.additionalCosts ?? [];
+      const additionalCostsList = Array.isArray(additionalCostsRaw)
+        ? additionalCostsRaw
+            .filter((e) => e && typeof e === 'object')
+            .map((e) => ({
+              label: String(e.label ?? e.name ?? 'Item').trim() || 'Item',
+              amount: Number(e.amount ?? e.cost ?? 0) || 0,
+            }))
+        : [];
 
       const normalizedAction = String(action || '').toLowerCase();
       const isPostChanges = normalizedAction === 'post_changes';
@@ -7412,6 +7432,37 @@ app.post(
               params.push(travelCost);
               p += 1;
             }
+            if (tableCols.has('address_lat') && resolvedAddressLat != null) {
+              sets.push(`address_lat = $${p}`);
+              params.push(resolvedAddressLat);
+              p += 1;
+            }
+            if (tableCols.has('address_lng') && resolvedAddressLng != null) {
+              sets.push(`address_lng = $${p}`);
+              params.push(resolvedAddressLng);
+              p += 1;
+            }
+            if (tableCols.has('post_analysis') && additionalCostsList.length > 0) {
+              sets.push(
+                `post_analysis = COALESCE(post_analysis, '{}'::jsonb) || $${p}::jsonb`,
+              );
+              params.push(
+                JSON.stringify({
+                  additional_costs: additionalCostsList,
+                  additional_costs_groups: [
+                    {
+                      stage: 'Additional costs',
+                      items: additionalCostsList,
+                      total: additionalCostsList.reduce(
+                        (s, e) => s + Number(e.amount || 0),
+                        0,
+                      ),
+                    },
+                  ],
+                }),
+              );
+              p += 1;
+            }
             params.push(orderId);
             return pool.query(
               `UPDATE event_orders
@@ -7478,6 +7529,37 @@ app.post(
             if (tableCols.has('travel_cost')) {
               catSets.push(`travel_cost = $${p}`);
               catParams.push(travelCost);
+              p += 1;
+            }
+            if (tableCols.has('address_lat') && resolvedAddressLat != null) {
+              catSets.push(`address_lat = $${p}`);
+              catParams.push(resolvedAddressLat);
+              p += 1;
+            }
+            if (tableCols.has('address_lng') && resolvedAddressLng != null) {
+              catSets.push(`address_lng = $${p}`);
+              catParams.push(resolvedAddressLng);
+              p += 1;
+            }
+            if (tableCols.has('post_analysis') && additionalCostsList.length > 0) {
+              catSets.push(
+                `post_analysis = COALESCE(post_analysis, '{}'::jsonb) || $${p}::jsonb`,
+              );
+              catParams.push(
+                JSON.stringify({
+                  additional_costs: additionalCostsList,
+                  additional_costs_groups: [
+                    {
+                      stage: 'Additional costs',
+                      items: additionalCostsList,
+                      total: additionalCostsList.reduce(
+                        (s, e) => s + Number(e.amount || 0),
+                        0,
+                      ),
+                    },
+                  ],
+                }),
+              );
               p += 1;
             }
             catParams.push(orderId);

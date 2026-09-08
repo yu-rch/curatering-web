@@ -475,16 +475,34 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Text(
-                            'Balance due: ${formatPesos(_fullPaymentRemainingAmount(order))}',
-                            style: TextStyle(
-                              color: Colors.red.shade700,
-                              fontWeight: FontWeight.w700,
+                          if (order.fullPaymentStatus == 'paid')
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: Colors.green.shade50,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                'FULL PAYMENT CONFIRMED — ${formatPesos(order.fullPaymentAmount > 0 ? order.fullPaymentAmount : order.totalCost)}',
+                                style: TextStyle(
+                                  color: Colors.green.shade800,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            )
+                          else
+                            Text(
+                              'Balance due: ${formatPesos(_fullPaymentRemainingAmount(order))}',
+                              style: TextStyle(
+                                color: Colors.red.shade700,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
-                          ),
                           const SizedBox(height: 8),
                           FilledButton.icon(
-                            onPressed: () => _showFinalizeFullPaymentDialog(order),
+                            onPressed: order.fullPaymentStatus == 'paid'
+                                ? null
+                                : () => _showFinalizeFullPaymentDialog(order),
                             icon: const Icon(Icons.payments_outlined, size: 18),
                             label: const Text('Confirm full payment'),
                           ),
@@ -495,7 +513,9 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                                 : null,
                             icon: const Icon(Icons.check_circle_outline, size: 18),
                             label: const Text('Complete order'),
-                            style: FilledButton.styleFrom(backgroundColor: Colors.green.shade700),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: Colors.green.shade700,
+                            ),
                           ),
                           if (order.fullPaymentStatus != 'paid')
                             Padding(
@@ -551,7 +571,12 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                           order.address,
                           onTap: order.address.trim().isEmpty
                               ? null
-                              : () => showVenueMapDialog(context, order.address),
+                              : () => showVenueMapDialog(
+                                    context,
+                                    order.address,
+                                    latitude: order.addressLat,
+                                    longitude: order.addressLng,
+                                  ),
                         ),
                         _detailInfoRow('Schedule', _formatOrderSchedule(order)),
                         if (!_isSupervisor) ...[
@@ -804,8 +829,21 @@ extension _ManageEventsDetailExt on _ManageEventsState {
       );
       if (!mounted) return;
       await _refreshOrders();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Order marked completed.')),
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Order completed'),
+          content: const Text(
+            'Congratulations! Order is marked for COMPLETE!',
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
       );
     } catch (e) {
       if (mounted) {
