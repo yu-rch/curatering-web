@@ -194,7 +194,8 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   void _maybeLoadHighlightImages() {
     if (_highlightsImagesRequested || !mounted) return;
     if (!_pageScrollController.hasClients) return;
-    if (_pageScrollController.offset < 280) return;
+    // Wait until the popular-dishes / event-design band is near the viewport.
+    if (_pageScrollController.offset < 900) return;
     _highlightsImagesRequested = true;
     unawaited(_loadHomepageHighlights(lite: false));
   }
@@ -246,14 +247,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   Future<void> _loadDeferredBootstrap() async {
     unawaited(_bootstrapMenuAndCart());
     unawaited(_checkCustomerAuth());
+    // Metadata only on cold load — full base64 images load when the user
+    // scrolls near the highlights section (see _maybeLoadHighlightImages).
     Future<void>.delayed(const Duration(seconds: 2), () {
       if (mounted) unawaited(_loadHomepageHighlights(lite: true));
-    });
-    Future<void>.delayed(const Duration(seconds: 10), () {
-      if (mounted && !_highlightsImagesRequested) {
-        _highlightsImagesRequested = true;
-        unawaited(_loadHomepageHighlights(lite: false));
-      }
     });
   }
 
@@ -3597,7 +3594,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
               Text(
                 'CATERING MENU',
                 textAlign: TextAlign.center,
-                style: CustomerFonts.inter(
+                style: CustomerFonts.poppins(
                   fontSize: 42,
                   fontWeight: FontWeight.bold,
                   color: const Color(0xFF1E1E1E),

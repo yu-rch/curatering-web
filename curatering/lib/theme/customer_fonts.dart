@@ -37,9 +37,9 @@ abstract final class CustomerFonts {
     double? height,
     double? letterSpacing,
   }) {
-    return (textStyle ?? const TextStyle()).copyWith(
-      fontFamily: 'Inter',
-      fontFamilyFallback: _fallback,
+    // Prefer Poppins on the customer site so we can omit the Inter webfont.
+    return poppins(
+      textStyle: textStyle,
       fontWeight: fontWeight,
       fontStyle: fontStyle,
       fontSize: fontSize,

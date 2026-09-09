@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'home_etd_sampler.dart' deferred as etd;
 
-/// Loads [HomeEtdSampler] in a separate deferred chunk after first frame.
+/// Loads [HomeEtdSampler] only when near the viewport so cold load skips
+/// the ETD sample images (~40–140 KiB).
 class LazyHomeEtdSampler extends StatefulWidget {
   const LazyHomeEtdSampler({super.key, this.compact = true});
 
@@ -14,14 +15,20 @@ class LazyHomeEtdSampler extends StatefulWidget {
 
 class _LazyHomeEtdSamplerState extends State<LazyHomeEtdSampler> {
   bool _ready = false;
+  bool _requested = false;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      etd.loadLibrary().then((_) {
-        if (mounted) setState(() => _ready = true);
-      });
+    // Defer until idle so LCP / first paint are not competing with ETD assets.
+    Future<void>.delayed(const Duration(seconds: 3), _requestLoad);
+  }
+
+  void _requestLoad() {
+    if (_requested || !mounted) return;
+    _requested = true;
+    etd.loadLibrary().then((_) {
+      if (mounted) setState(() => _ready = true);
     });
   }
 

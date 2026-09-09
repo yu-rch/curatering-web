@@ -200,16 +200,34 @@ class _CustomerExtraPage extends StatefulWidget {
 }
 
 class _CustomerExtraPageState extends State<_CustomerExtraPage> {
+  bool _ready = false;
+  Object? _error;
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      signalCurateringUiReady();
-    });
+    ensureCustomerPagesLoaded()
+        .then((_) {
+          if (!mounted) return;
+          setState(() => _ready = true);
+          signalCurateringUiReady();
+        })
+        .catchError((Object e) {
+          if (mounted) setState(() => _error = e);
+        });
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_error != null) {
+      return const BrandSplashPlaceholder(
+        error: true,
+        message: 'Failed to load page. Please refresh.',
+      );
+    }
+    if (!_ready) {
+      return const BrandSplashPlaceholder();
+    }
     return buildCustomerExtraPage(widget.path);
   }
 }

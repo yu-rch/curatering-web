@@ -28,7 +28,7 @@ class CustomerAntdPageHero extends StatelessWidget {
         Text(
           title.trim().isEmpty ? title : title.toUpperCase(),
           textAlign: TextAlign.center,
-          style: CustomerFonts.inter(
+          style: CustomerFonts.poppins(
             fontSize: titleFontSize,
             fontWeight: FontWeight.w800,
             color: titleColor,

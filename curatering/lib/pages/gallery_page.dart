@@ -92,7 +92,7 @@ class _GalleryPageState extends State<GalleryPage> {
   Future<void> _loadFallbackGalleryImages() async {
     try {
       final response = await http
-          .get(Uri.parse('$apiBaseUrl/api/public/homepage-highlights'))
+          .get(Uri.parse('$apiBaseUrl/api/public/homepage-highlights?for=gallery'))
           .timeout(const Duration(seconds: 20));
       if (response.statusCode != 200 || !mounted) return;
       final decoded = jsonDecode(response.body);

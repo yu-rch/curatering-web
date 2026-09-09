@@ -298,7 +298,7 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
                     ),
                     label: Text(
                       'Reload Page',
-                      style: CustomerFonts.inter(
+                      style: CustomerFonts.poppins(
                         color: Colors.white,
                         fontWeight: FontWeight.w600,
                       ),

@@ -60,12 +60,12 @@
     var png = splashLogoSrc();
     var webp = splashLogoWebpSrc();
     ensurePreload(webp, 'image/webp');
-    ensurePreload(png);
     var img = document.getElementById('app-splash-logo');
     if (!img) return;
     img.alt = staffHost
       ? 'CURATERING'
       : "Macrina's Kitchen and Catering";
+    img.sizes = '320px';
     img.onerror = function () {
       if (img.dataset.fallback !== '1') {
         img.dataset.fallback = '1';
@@ -143,7 +143,7 @@
     el.setAttribute('aria-busy', 'false');
     setTimeout(function () {
       if (el.parentNode) el.parentNode.removeChild(el);
-      // Customer pages load in the main bundle; show content after first frame.
+      // Deferred customer extras may still be warming; light bg after first frame.
       applyLightPageBackground();
     }, 280);
   }

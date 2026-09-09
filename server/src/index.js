@@ -9847,6 +9847,12 @@ async function registerRoutesAfterDbInit() {
         const lite =
           String(req.query.lite || '').toLowerCase() === '1' ||
           String(req.query.lite || '').toLowerCase() === 'true';
+        const forGallery =
+          String(req.query.for || '').toLowerCase() === 'gallery';
+        // Full base64 payloads were ~500KB+ on the homepage cold path.
+        // Cap count/size for marketing cards; gallery may request a bit more.
+        const maxDesigns = lite ? 8 : forGallery ? 8 : 4;
+        const maxImageChars = forGallery ? 100000 : 48000;
         const dishCounts = {};
         const pushMenuItem = (item, qtyFallback = 1) => {
           const name = String(
@@ -9985,7 +9991,12 @@ async function registerRoutesAfterDbInit() {
           popularDishes.push({
             name: entry.name,
             count: entry.count,
-            imageBase64: lite ? null : imageBase64,
+            imageBase64:
+              lite ||
+              !imageBase64 ||
+              String(imageBase64).length > maxImageChars
+                ? null
+                : imageBase64,
             description,
           });
         }
@@ -10102,7 +10113,8 @@ async function registerRoutesAfterDbInit() {
             if (
               !img ||
               !looksLikeImageBase64(img) ||
-              eventDesigns.length >= 8
+              img.length > maxImageChars ||
+              eventDesigns.length >= maxDesigns
             ) {
               return;
             }
@@ -10116,7 +10128,7 @@ async function registerRoutesAfterDbInit() {
             });
             return;
           }
-          if (eventDesigns.length >= 8) return;
+          if (eventDesigns.length >= maxDesigns) return;
           const labelText =
             String(label || '').trim() || 'Featured Event Design';
           const descText = String(description || '').trim();
@@ -10152,7 +10164,10 @@ async function registerRoutesAfterDbInit() {
             .join(' · ');
 
           // Prefer completed-event theme / AI design images over generic photos.
-          for (const img of collectThemeDesignImages(theme)) {
+          const themeImages = collectThemeDesignImages(theme).sort(
+            (a, b) => a.length - b.length,
+          );
+          for (const img of themeImages) {
             pushDesign(img, label, description);
           }
 
@@ -10164,8 +10179,13 @@ async function registerRoutesAfterDbInit() {
               images = [];
             }
           }
-          if (Array.isArray(images) && eventDesigns.length < 8) {
-            for (const img of images) {
+          if (Array.isArray(images) && eventDesigns.length < maxDesigns) {
+            // Prefer smaller photos first so the response stays lightweight.
+            const ranked = images
+              .map((img) => String(img || '').trim())
+              .filter((img) => looksLikeImageBase64(img))
+              .sort((a, b) => a.length - b.length);
+            for (const img of ranked) {
               pushDesign(img, label, description);
             }
           }

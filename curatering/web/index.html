@@ -6,7 +6,7 @@
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=5, user-scalable=yes">
-  <meta name="description" content="Macrina's Kitchen and Catering — restaurant orders, catering menus, and event inquiries.">
+  <meta name="description" content="Macrina's Kitchen and Catering - restaurant orders, catering menus, and event inquiries.">
 
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
@@ -18,29 +18,65 @@
   <link rel="manifest" href="manifest.json">
   <link rel="dns-prefetch" href="https://curatering.up.railway.app">
   <link rel="preconnect" href="https://curatering.up.railway.app" crossorigin>
-  <script src="console_filter.js"></script>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Pacifico&family=Playfair+Display:wght@400;700&family=Poppins:wght@400;500;600;700&family=Scheherazade+New:wght@400;700&display=swap" media="print" onload="this.media='all'">
-  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Pacifico&family=Playfair+Display:wght@400;700&family=Poppins:wght@400;500;600;700&family=Scheherazade+New:wght@400;700&display=swap"></noscript>
+  <script>
+    /* Inlined (was console_filter.js) to avoid a render-blocking request. */
+    (function () {
+      var suppressPatterns = [
+        /v8BreakIterator/i,
+        /deprecated/i,
+        /service worker/i,
+        /Exception while loading service worker/i,
+      ];
+
+      function shouldSuppress(args) {
+        try {
+          var msg = Array.prototype.join.call(args, ' ');
+          for (var i = 0; i < suppressPatterns.length; i++) {
+            if (suppressPatterns[i].test(msg)) return true;
+          }
+        } catch (_) {}
+        return false;
+      }
+
+      ['warn', 'error', 'info', 'debug'].forEach(function (level) {
+        var original = console[level];
+        if (typeof original !== 'function') return;
+        console[level] = function () {
+          if (shouldSuppress(arguments)) return;
+          return original.apply(console, arguments);
+        };
+      });
+
+      if (typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function') {
+        try {
+          Object.defineProperty(Intl, 'v8BreakIterator', {
+            configurable: true,
+            get: function () {
+              return undefined;
+            },
+          });
+        } catch (_) {}
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pacifico&family=Playfair+Display:wght@400;700&family=Poppins:wght@400;500;600;700;800&family=Scheherazade+New:wght@400;700&display=swap" media="print" onload="this.media='all'">
+  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pacifico&family=Playfair+Display:wght@400;700&family=Poppins:wght@400;500;600;700;800&family=Scheherazade+New:wght@400;700&display=swap"></noscript>
   <script>
     (function () {
       var host = (location.hostname || '').toLowerCase().replace(/^www\./, '');
       var staff =
         host === 'staff.curatering.com' || host.split('.')[0] === 'staff';
-      var png = staff ? 'splash-staff.png' : 'splash-customer.png';
-      var webp = png.replace('.png', '.webp');
+      var webp = staff ? 'splash-staff.webp' : 'splash-customer.webp';
 
-      function preloadSplash(href, type) {
-        var link = document.createElement('link');
-        link.rel = 'preload';
-        link.as = 'image';
-        link.href = href;
-        link.fetchPriority = 'high';
-        if (type) link.type = type;
-        document.head.appendChild(link);
-      }
-
-      preloadSplash(webp, 'image/webp');
-      preloadSplash(png);
+      // Preload only the WebP actually shown (PNG is onerror fallback).
+      var link = document.createElement('link');
+      link.rel = 'preload';
+      link.as = 'image';
+      link.href = webp;
+      link.type = 'image/webp';
+      link.fetchPriority = 'high';
+      link.imageSizes = '320px';
+      document.head.appendChild(link);
     })();
   </script>
 
@@ -78,7 +114,6 @@
       display: block;
       width: min(90vw, 320px);
       height: auto;
-      aspect-ratio: 320 / 160;
       max-height: min(45vw, 160px);
       object-fit: contain;
     }
@@ -98,7 +133,7 @@
 </head>
 <body>
   <div id="app-splash" aria-busy="true" aria-live="polite">
-    <img id="app-splash-logo" alt="Loading" width="320" height="160" decoding="async" fetchpriority="high" />
+    <img id="app-splash-logo" alt="Loading" width="320" height="160" sizes="320px" decoding="async" fetchpriority="high" />
     <p id="app-splash-error"></p>
   </div>
   <script src="flutter_bootstrap.js" async></script>

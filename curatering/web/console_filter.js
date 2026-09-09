@@ -1,3 +1,5 @@
+/* Kept for backwards-compatible cached builds that still request this URL.
+   Primary copy is inlined in index.html to avoid a render-blocking request. */
 (function () {
   var suppressPatterns = [
     /v8BreakIterator/i,
@@ -25,7 +27,6 @@
     };
   });
 
-  // Prevent deprecated Intl.v8BreakIterator from being touched at runtime.
   if (typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function') {
     try {
       Object.defineProperty(Intl, 'v8BreakIterator', {
