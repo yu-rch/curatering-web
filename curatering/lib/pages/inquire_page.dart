@@ -2179,12 +2179,24 @@ class _InquirePageState extends State<InquirePage> {
   }
 
   Widget _buildMobileLayout(BuildContext context) {
+    // Keep tabs fixed; scroll form + estimate together. A pinned cost panel
+    // was taller than the viewport and overflowed on top of the form.
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _buildMobileTabs(),
-        Expanded(child: _buildCenterContent()),
-        _buildEstimatedCostPanel(),
+        Expanded(
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildCenterContent(scrollable: false),
+                _buildEstimatedCostPanel(),
+                const SizedBox(height: 24),
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -2357,8 +2369,8 @@ class _InquirePageState extends State<InquirePage> {
   // BUILD - Center Content
   // ===========================================================================
 
-  Widget _buildCenterContent() {
-    return SingleChildScrollView(
+  Widget _buildCenterContent({bool scrollable = true}) {
+    final body = Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2404,6 +2416,8 @@ class _InquirePageState extends State<InquirePage> {
         ],
       ),
     );
+    if (!scrollable) return body;
+    return SingleChildScrollView(child: body);
   }
 
   bool _isLastSideTab() {
