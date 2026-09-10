@@ -9,58 +9,72 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent / "build" / "web"
 
 
-def patch_loader_js(text: str) -> str:
-    text = text.replace(
-        "typeof Intl.v8BreakIterator<\"u\"&&typeof Intl.Segmenter<\"u\"",
-        "typeof Intl.Segmenter<\"u\"",
-    )
-    return text.replace("Intl.v8BreakIterator", "Intl.Segmenter")
-
-
-def patch_main_dart_js(text: str) -> str:
-    text = text.replace(
-        "s.Intl.v8BreakIterator!=null&&s.Intl.Segmenter!=null",
-        "s.Intl.Segmenter!=null",
-    )
-    text = text.replace("Intl.v8BreakIterator", "Intl.Segmenter")
-    text = text.replace('"v8BreakIterator"', '"Segmenter"')
-    text = text.replace(
-        "v8BreakIterator is not supported.",
-        "Segmenter is not supported.",
-    )
+def patch_v8_break_iterator(text: str) -> str:
+    """Rewrite deprecated Intl.v8BreakIterator checks to Intl.Segmenter."""
+    replacements = [
+        (
+            'typeof Intl.v8BreakIterator<"u"&&typeof Intl.Segmenter<"u"',
+            'typeof Intl.Segmenter<"u"',
+        ),
+        (
+            'typeof Intl.v8BreakIterator!=="undefined"&&typeof Intl.Segmenter!=="undefined"',
+            'typeof Intl.Segmenter!=="undefined"',
+        ),
+        (
+            "s.Intl.v8BreakIterator!=null&&s.Intl.Segmenter!=null",
+            "s.Intl.Segmenter!=null",
+        ),
+        (
+            "self.Intl.v8BreakIterator!=null&&self.Intl.Segmenter!=null",
+            "self.Intl.Segmenter!=null",
+        ),
+        ('"v8BreakIterator"', '"Segmenter"'),
+        ("'v8BreakIterator'", "'Segmenter'"),
+        ("v8BreakIterator is not supported.", "Segmenter is not supported."),
+        ("Intl.v8BreakIterator", "Intl.Segmenter"),
+    ]
+    for old, new in replacements:
+        text = text.replace(old, new)
+    # Catch any remaining identifier uses in minified bundles.
+    text = re.sub(r"\bv8BreakIterator\b", "Segmenter", text)
     return text
 
 
-def patch_v8_break_iterator(text: str, *, is_main: bool = False) -> str:
-    if is_main:
-        return patch_main_dart_js(text)
-    return patch_loader_js(text)
-
-
 def patch_flutter_bootstrap(text: str) -> str:
-    # Keep local CanvasKit/skwasm assets for both dart2wasm and dart2js builds.
+    # Prefer local CanvasKit so cold load does not pull ~1.6MB from gstatic.
     text = re.sub(
         r"_flutter\.loader\.load\(\{[\s\S]*?\}\);",
-        '_flutter.loader.load({config:{canvasKitBaseUrl:"/canvaskit/"}});',
+        '_flutter.loader.load({config:{canvasKitBaseUrl:"/canvaskit/",canvasKitVariant:"chromium"}});',
         text,
         count=1,
     )
     return text
 
 
-def ensure_source_mapping_urls() -> None:
-    for js_path in sorted(ROOT.glob("*.js")):
-        map_path = js_path.with_suffix(js_path.suffix + ".map")
-        if not map_path.exists():
+def strip_broken_source_mapping_urls() -> None:
+    """Remove sourceMappingURL comments that point at missing / SPA-rewritten maps."""
+    for js_path in ROOT.rglob("*.js"):
+        if js_path.name in {"boot.js", "console_filter.js", "splash_preload.js"}:
             continue
         text = js_path.read_text(encoding="utf-8")
-        marker = f"//# sourceMappingURL={map_path.name}"
-        if marker in text:
+        matches = list(
+            re.finditer(r"//[#@]\s*sourceMappingURL=([^\s]+)", text)
+        )
+        if not matches:
             continue
-        if not text.endswith("\n"):
-            text += "\n"
-        text += marker + "\n"
-        js_path.write_text(text, encoding="utf-8")
+        changed = False
+        for match in reversed(matches):
+            map_name = match.group(1).strip()
+            # Absolute/remote maps are left alone; relative must exist beside the JS.
+            if map_name.startswith("http://") or map_name.startswith("https://"):
+                continue
+            map_path = (js_path.parent / map_name).resolve()
+            if map_path.is_file():
+                continue
+            text = text[: match.start()] + text[match.end() :]
+            changed = True
+        if changed:
+            js_path.write_text(text, encoding="utf-8")
 
 
 def main() -> None:
@@ -68,22 +82,16 @@ def main() -> None:
         raise SystemExit(f"Build output not found: {ROOT}")
 
     for path in ROOT.rglob("*.js"):
-        if path.name in {"boot.js", "console_filter.js"}:
+        if path.name in {"boot.js", "console_filter.js", "splash_preload.js"}:
             continue
         original = path.read_text(encoding="utf-8")
-        is_main_bundle = path.name == "main.dart.js" or path.name.startswith(
-            "main.dart.js_"
-        )
-        patched = patch_v8_break_iterator(
-            original,
-            is_main=is_main_bundle,
-        )
+        patched = patch_v8_break_iterator(original)
         if path.name == "flutter_bootstrap.js":
             patched = patch_flutter_bootstrap(patched)
         if patched != original:
             path.write_text(patched, encoding="utf-8")
 
-    ensure_source_mapping_urls()
+    strip_broken_source_mapping_urls()
     print(f"Patched web build in {ROOT}")
 
 

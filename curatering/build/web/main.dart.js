@@ -273,7 +273,7 @@ if(A.vs(s,"webgl2",null)!=null){if($.d8().gf6()===B.ej)return 1
 return 2}if(A.vs(s,"webgl",null)!=null)return 1
 return-1},
 cbq(){var s=v.G
-return s.Intl.v8BreakIterator!=null&&s.Intl.Segmenter!=null},
+return s.Intl.Segmenter!=null},
 cvp(){var s,r,q,p,o,n
 if($.d8().ghv()!==B.fM)return!1
 s=A.aT("Version\\/([0-9]+)\\.([0-9]+)",!0,!1,!1)
@@ -117681,8 +117681,8 @@ return q})
 s($,"cCZ","cfZ",()=>{var q=t.N,p=A.an("+breaks,graphemes,words(GD,GD,GD)"),o=A.bZV(1e5,q,p),n=A.bZV(1e4,q,p)
 return new A.agh(A.bZV(20,q,p),n,o)})
 s($,"cB6","cf_",()=>A.M([B.Ix,A.cbC("grapheme"),B.Iy,A.cbC("word")],A.an("MQ"),t.m))
-s($,"cCi","cfP",()=>{var q="v8BreakIterator"
-if(A.al(A.al(A.uM(),"Intl"),q)==null)A.ap(A.fX("v8BreakIterator is not supported."))
+s($,"cCi","cfP",()=>{var q="Segmenter"
+if(A.al(A.al(A.uM(),"Intl"),q)==null)A.ap(A.fX("Segmenter is not supported."))
 return A.cr3(A.bUf(A.bUf(A.uM(),"Intl"),q),A.ckp([]),A.c6w(B.b7T))})
 s($,"cCf","cfN",()=>A.c_0(4))
 s($,"cCd","c30",()=>A.c_0(16))

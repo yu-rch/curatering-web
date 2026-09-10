@@ -18,68 +18,10 @@
   <link rel="manifest" href="manifest.json">
   <link rel="dns-prefetch" href="https://curatering.up.railway.app">
   <link rel="preconnect" href="https://curatering.up.railway.app" crossorigin>
-  <script>
-    /* Inlined (was console_filter.js) to avoid a render-blocking request. */
-    (function () {
-      var suppressPatterns = [
-        /v8BreakIterator/i,
-        /deprecated/i,
-        /service worker/i,
-        /Exception while loading service worker/i,
-      ];
-
-      function shouldSuppress(args) {
-        try {
-          var msg = Array.prototype.join.call(args, ' ');
-          for (var i = 0; i < suppressPatterns.length; i++) {
-            if (suppressPatterns[i].test(msg)) return true;
-          }
-        } catch (_) {}
-        return false;
-      }
-
-      ['warn', 'error', 'info', 'debug'].forEach(function (level) {
-        var original = console[level];
-        if (typeof original !== 'function') return;
-        console[level] = function () {
-          if (shouldSuppress(arguments)) return;
-          return original.apply(console, arguments);
-        };
-      });
-
-      if (typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function') {
-        try {
-          Object.defineProperty(Intl, 'v8BreakIterator', {
-            configurable: true,
-            get: function () {
-              return undefined;
-            },
-          });
-        } catch (_) {}
-      }
-    })();
-  </script>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pacifico&family=Playfair+Display:wght@400;700&family=Poppins:wght@400;500;600;700;800&family=Scheherazade+New:wght@400;700&display=swap" media="print" onload="this.media='all'">
-  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pacifico&family=Playfair+Display:wght@400;700&family=Poppins:wght@400;500;600;700;800&family=Scheherazade+New:wght@400;700&display=swap"></noscript>
-  <script>
-    (function () {
-      var host = (location.hostname || '').toLowerCase().replace(/^www\./, '');
-      var staff =
-        host === 'staff.curatering.com' || host.split('.')[0] === 'staff';
-      var webp = staff ? 'splash-staff.webp' : 'splash-customer.webp';
-
-      // Preload only the WebP actually shown (PNG is onerror fallback).
-      var link = document.createElement('link');
-      link.rel = 'preload';
-      link.as = 'image';
-      link.href = webp;
-      link.type = 'image/webp';
-      link.fetchPriority = 'high';
-      link.imageSizes = '320px';
-      document.head.appendChild(link);
-    })();
-  </script>
-
+  <!-- External only: CSP blocks inline scripts / on* handlers. -->
+  <script src="console_filter.js"></script>
+  <script src="splash_preload.js"></script>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pacifico&family=Playfair+Display:wght@400;700&family=Poppins:wght@400;500;600;700;800&family=Scheherazade+New:wght@400;700&display=swap">
   <style>
     html, body {
       margin: 0;

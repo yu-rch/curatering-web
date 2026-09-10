@@ -41,9 +41,12 @@ Future<void> main() async {
   setUrlStrategy(PathUrlStrategy());
 
   try {
-    await dotenv.load(fileName: ".env");
+    // Web uses compile-time --dart-define; skip AssetManifest .env fetch (404).
+    if (!kIsWeb) {
+      await dotenv.load(fileName: ".env");
+    }
   } catch (e) {
-    // Ignore .env loading error for web deployment
+    // Ignore .env loading error for deployments without a local file.
   }
 
   if (!isCustomerSiteHost &&
