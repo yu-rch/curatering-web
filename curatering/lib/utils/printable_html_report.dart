@@ -1,4 +1,7 @@
 /// Builds a self-contained HTML report suitable for browser print / Save as PDF.
+///
+/// Buttons use element ids (no inline JS). [openHtmlDocument] wires print/close
+/// from the opener so CSP without `'unsafe-inline'` still works.
 String buildPrintableHtmlReport({
   required String title,
   required String subtitle,
@@ -73,12 +76,14 @@ String buildPrintableHtmlReport({
     ..writeln('<body>')
     ..writeln('<div class="toolbar">')
     ..writeln(
-      '<button type="button" onclick="window.print()">Print / Save as PDF</button>',
+      '<button type="button" id="print-btn">Print / Save as PDF</button>',
     )
     ..writeln(
-      '<button type="button" class="secondary" onclick="window.close()">Close</button>',
+      '<button type="button" class="secondary" id="close-btn">Close</button>',
     )
-    ..writeln('<span class="sub">Use your browser print dialog to save a PDF.</span>')
+    ..writeln(
+      '<span class="sub">Use your browser print dialog to save a PDF.</span>',
+    )
     ..writeln('</div>')
     ..writeln('<h1>${_esc(title)}</h1>')
     ..writeln('<div class="sub">${_esc(subtitle)}</div>');
@@ -100,11 +105,7 @@ String buildPrintableHtmlReport({
     buf.writeln('</tbody></table>');
   }
 
-  if (autoPrint) {
-    buf.writeln(
-      '<script>window.addEventListener("load",function(){setTimeout(function(){window.print();},250);});</script>',
-    );
-  }
+  // autoPrint is handled by openHtmlDocument (CSP-safe), not inline script.
   buf
     ..writeln('</body>')
     ..writeln('</html>');
@@ -140,23 +141,18 @@ String buildPrintableHtmlImageReport({
     ..writeln('</style></head><body>')
     ..writeln('<div class="toolbar">')
     ..writeln(
-      '<button type="button" onclick="window.print()">Print / Save as PDF</button>',
+      '<button type="button" id="print-btn">Print / Save as PDF</button>',
     )
     ..writeln(
-      '<button type="button" class="secondary" onclick="window.close()">Close</button>',
+      '<button type="button" class="secondary" id="close-btn">Close</button>',
     )
     ..writeln('</div>')
     ..writeln('<h1>${_esc(title)}</h1>')
     ..writeln('<div class="sub">${_esc(subtitle)}</div>')
     ..writeln(
       '<img class="preview" alt="${_esc(title)}" src="data:$imageMime;base64,$imageBase64">',
-    );
-  if (autoPrint) {
-    buf.writeln(
-      '<script>window.addEventListener("load",function(){setTimeout(function(){window.print();},250);});</script>',
-    );
-  }
-  buf.writeln('</body></html>');
+    )
+    ..writeln('</body></html>');
   return buf.toString();
 }
 

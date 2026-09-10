@@ -12,18 +12,25 @@ void openOrDownloadPdfBytes(Uint8List bytes, String filename) {
     BlobPropertyBag(type: 'application/pdf'),
   );
   final url = URL.createObjectURL(blob);
+
+  // Prefer a real download — more reliable than relying on the browser PDF
+  // viewer print UI (and avoids popup blockers swallowing blob tabs).
+  final anchor =
+      HTMLAnchorElement()
+        ..href = url
+        ..download = filename
+        ..rel = 'noopener'
+        ..style.display = 'none';
+  document.body?.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+
+  // Also try opening a preview tab when popups are allowed.
   final opened = window.open(url, '_blank');
   if (opened == null) {
-    final anchor =
-        HTMLAnchorElement()
-          ..href = url
-          ..download = filename
-          ..target = '_blank';
-    document.body?.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
+    // Download already triggered above.
   }
-  // Keep the blob URL alive briefly so the new tab can load it.
+
   Future<void>.delayed(const Duration(minutes: 2), () {
     URL.revokeObjectURL(url);
   });
