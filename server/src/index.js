@@ -6065,7 +6065,10 @@ app.post(
     requireRoles(req, res, next, new Set(["manager", "admin", "super_admin"])),
   async (req, res) => {
     try {
-      const {
+      const body = req.body || {};
+      const asDraft = body.asDraft === true || body.as_draft === true;
+      const existingOrderId = String(body.orderId || body.id || '').trim();
+      let {
         eventTitle,
         orderType,
         eventType,
@@ -6080,12 +6083,32 @@ app.post(
         menu,
         themeDesign,
         allergens,
-      } = req.body || {};
+      } = body;
       const allergensText = String(allergens ?? '').trim();
 
-      // For catering-only orders, event-specific fields are optional
+      // Drafts may be incomplete — fill safe defaults so the row can list.
+      if (asDraft) {
+        orderType = orderType || 'catering';
+        customerName = String(customerName || '').trim() || 'Draft customer';
+        contactPerson = String(contactPerson || '').trim() || customerName;
+        contactNumber = String(contactNumber || '').trim() || '0000000000';
+        emailAddress = String(emailAddress || '').trim() || 'draft@local';
+        address = String(address || '').trim() || 'TBD';
+        if (guestCount === undefined || guestCount === null || guestCount === '') {
+          guestCount = 0;
+        }
+        if (!Array.isArray(scheduleSlots)) scheduleSlots = [];
+        if (!Array.isArray(menu)) menu = [];
+        if (!themeDesign || typeof themeDesign !== 'object') themeDesign = {};
+        if (orderType !== 'catering') {
+          eventTitle = String(eventTitle || '').trim() || 'Draft event';
+          eventType = String(eventType || '').trim() || 'Other';
+          formalityLevel = String(formalityLevel || '').trim() || 'Casual';
+        }
+      }
+
       const isCateringOnly = orderType === 'catering';
-      
+
       if (
         !orderType ||
         !customerName ||
@@ -6096,45 +6119,189 @@ app.post(
         guestCount === undefined ||
         !Array.isArray(scheduleSlots) ||
         !Array.isArray(menu) ||
-        (!isCateringOnly && !themeDesign)
+        (!isCateringOnly && !themeDesign && !asDraft)
       ) {
         return res.status(400).json({ message: "Missing required fields" });
       }
 
-      // For catering+event orders, require event-specific fields
       if (!isCateringOnly && (!eventTitle || !eventType || !formalityLevel)) {
         return res.status(400).json({ message: "Missing required event fields" });
       }
 
-      const transactionId = await allocateCateringTransactionId();
-      let result;
-      
-      if (isCateringOnly) {
-        // Use separate catering_orders table for catering-only orders
-        result = await pool.query(
-          `INSERT INTO catering_orders
-            (source, status, order_type, catering_id, customer_name, contact_person, contact_number, email_address,
-             schedule_slots, address, guest_count, menu, allergens, created_by, updated_by)
-          VALUES
-            ('new_event', 'for_processing', 'catering', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      const mergedTheme = {
+        ...(themeDesign && typeof themeDesign === 'object' ? themeDesign : {}),
+        isDraft: asDraft === true,
+        draftSavedAt: asDraft ? new Date().toISOString() : undefined,
+      };
+      if (!asDraft) {
+        delete mergedTheme.isDraft;
+        delete mergedTheme.draftSavedAt;
+      }
+
+      // Update existing New Event draft / order.
+      if (existingOrderId) {
+        let updated = await pool.query(
+          `UPDATE event_orders SET
+             event_title = $1,
+             order_type = $2,
+             event_type = $3,
+             formality_level = $4,
+             customer_name = $5,
+             contact_person = $6,
+             contact_number = $7,
+             email_address = $8,
+             schedule_slots = $9,
+             address = $10,
+             guest_count = $11,
+             menu = $12,
+             theme_design = $13,
+             allergens = $14,
+             updated_by = $15,
+             updated_at = now()
+           WHERE id = $16
+             AND source = 'new_event'
+             AND status = 'for_processing'
            RETURNING id, catering_id;`,
           [
-            transactionId,
+            isCateringOnly ? null : eventTitle,
+            orderType,
+            isCateringOnly ? null : eventType,
+            isCateringOnly ? null : formalityLevel,
             customerName,
             contactPerson,
             contactNumber,
             emailAddress,
             JSON.stringify(scheduleSlots),
             address,
-            Number(guestCount),
+            Number(guestCount) || 0,
             JSON.stringify(menu),
+            JSON.stringify(mergedTheme),
             allergensText,
             req.user.id,
-            req.user.id,
-          ]
+            existingOrderId,
+          ],
         );
+        if (updated.rowCount === 0) {
+          const cateringCols = await getTableColumnNames('catering_orders');
+          if (cateringCols.has('theme_design') && cateringCols.has('allergens')) {
+            updated = await pool.query(
+              `UPDATE catering_orders SET
+                 customer_name = $1, contact_person = $2, contact_number = $3,
+                 email_address = $4, schedule_slots = $5, address = $6,
+                 guest_count = $7, menu = $8, theme_design = $9, allergens = $10,
+                 updated_by = $11, updated_at = now()
+               WHERE id = $12 AND source = 'new_event' AND status = 'for_processing'
+               RETURNING id, catering_id;`,
+              [
+                customerName, contactPerson, contactNumber, emailAddress,
+                JSON.stringify(scheduleSlots), address, Number(guestCount) || 0,
+                JSON.stringify(menu), JSON.stringify(mergedTheme), allergensText,
+                req.user.id, existingOrderId,
+              ],
+            );
+          } else if (cateringCols.has('allergens')) {
+            updated = await pool.query(
+              `UPDATE catering_orders SET
+                 customer_name = $1, contact_person = $2, contact_number = $3,
+                 email_address = $4, schedule_slots = $5, address = $6,
+                 guest_count = $7, menu = $8, allergens = $9,
+                 updated_by = $10, updated_at = now()
+               WHERE id = $11 AND source = 'new_event' AND status = 'for_processing'
+               RETURNING id, catering_id;`,
+              [
+                customerName, contactPerson, contactNumber, emailAddress,
+                JSON.stringify(scheduleSlots), address, Number(guestCount) || 0,
+                JSON.stringify(menu), allergensText, req.user.id, existingOrderId,
+              ],
+            );
+          } else {
+            updated = await pool.query(
+              `UPDATE catering_orders SET
+                 customer_name = $1, contact_person = $2, contact_number = $3,
+                 email_address = $4, schedule_slots = $5, address = $6,
+                 guest_count = $7, menu = $8,
+                 updated_by = $9, updated_at = now()
+               WHERE id = $10 AND source = 'new_event' AND status = 'for_processing'
+               RETURNING id, catering_id;`,
+              [
+                customerName, contactPerson, contactNumber, emailAddress,
+                JSON.stringify(scheduleSlots), address, Number(guestCount) || 0,
+                JSON.stringify(menu), req.user.id, existingOrderId,
+              ],
+            );
+          }
+        }
+        if (updated.rowCount === 0) {
+          return res.status(404).json({ message: 'Draft/order not found' });
+        }
+        await logAction({
+          userId: req.user.id,
+          feature: 'Events',
+          action: asDraft ? 'saved new event draft' : 'updated new event',
+          other: { orderId: updated.rows[0].id },
+        });
+        return res.json({
+          ok: true,
+          id: updated.rows[0].id,
+          cateringId: updated.rows[0].catering_id,
+          asDraft: !!asDraft,
+        });
+      }
+
+      const transactionId = await allocateCateringTransactionId();
+      let result;
+
+      if (isCateringOnly) {
+        const cateringCols = await getTableColumnNames('catering_orders');
+        if (cateringCols.has('theme_design')) {
+          result = await pool.query(
+            `INSERT INTO catering_orders
+              (source, status, order_type, catering_id, customer_name, contact_person, contact_number, email_address,
+               schedule_slots, address, guest_count, menu, theme_design, allergens, created_by, updated_by)
+            VALUES
+              ('new_event', 'for_processing', 'catering', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+             RETURNING id, catering_id;`,
+            [
+              transactionId,
+              customerName,
+              contactPerson,
+              contactNumber,
+              emailAddress,
+              JSON.stringify(scheduleSlots),
+              address,
+              Number(guestCount) || 0,
+              JSON.stringify(menu),
+              JSON.stringify(mergedTheme),
+              allergensText,
+              req.user.id,
+              req.user.id,
+            ],
+          );
+        } else {
+          result = await pool.query(
+            `INSERT INTO catering_orders
+              (source, status, order_type, catering_id, customer_name, contact_person, contact_number, email_address,
+               schedule_slots, address, guest_count, menu, allergens, created_by, updated_by)
+            VALUES
+              ('new_event', 'for_processing', 'catering', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+             RETURNING id, catering_id;`,
+            [
+              transactionId,
+              customerName,
+              contactPerson,
+              contactNumber,
+              emailAddress,
+              JSON.stringify(scheduleSlots),
+              address,
+              Number(guestCount) || 0,
+              JSON.stringify(menu),
+              allergensText,
+              req.user.id,
+              req.user.id,
+            ],
+          );
+        }
       } else {
-        // Use event_orders table for catering+event orders
         result = await pool.query(
           `INSERT INTO event_orders
             (source, status, event_title, order_type, event_type, formality_level, catering_id,
@@ -6156,20 +6323,20 @@ app.post(
             emailAddress,
             JSON.stringify(scheduleSlots),
             address,
-            Number(guestCount),
+            Number(guestCount) || 0,
             JSON.stringify(menu),
-            JSON.stringify(themeDesign),
+            JSON.stringify(mergedTheme),
             allergensText,
             req.user.id,
             req.user.id,
-          ]
+          ],
         );
       }
 
       await logAction({
         userId: req.user.id,
         feature: "Events",
-        action: "submitted new event",
+        action: asDraft ? "saved new event draft" : "submitted new event",
         other: { orderId: result.rows[0].id, cateringId: result.rows[0].catering_id },
       });
 
@@ -6177,6 +6344,7 @@ app.post(
         ok: true,
         id: result.rows[0].id,
         cateringId: result.rows[0].catering_id,
+        asDraft: !!asDraft,
       });
     } catch (e) {
       console.error(e);
@@ -7213,11 +7381,16 @@ app.post(
       const normalizedAction = String(action || '').toLowerCase();
       const isPostChanges = normalizedAction === 'post_changes';
       const isCancelEvent = normalizedAction === 'cancel_event';
-      const nextStatus = isPostChanges ? 'online_inquiries' : 'for_down_payment';
 
       if (!['post_changes', 'confirm_inquiry', 'cancel_event'].includes(normalizedAction)) {
         return res.status(400).json({ message: "Invalid finalize action" });
       }
+
+      const finalizableWhere = `
+             AND (
+               (source = 'online_inquiry' AND status = 'online_inquiries')
+               OR (source = 'new_event' AND status = 'for_processing')
+             )`;
 
       if (isCancelEvent) {
         // Keep cancel behavior consistent with shared cancel endpoint.
@@ -7228,8 +7401,7 @@ app.post(
              updated_by = $1,
              updated_at = now()
            WHERE id = $2
-             AND source = 'online_inquiry'
-             AND status = 'online_inquiries'
+             ${finalizableWhere}
            RETURNING id;`,
           [req.user.id, orderId],
         );
@@ -7242,8 +7414,7 @@ app.post(
                updated_by = $1,
                updated_at = now()
              WHERE id = $2
-               AND source = 'online_inquiry'
-               AND status = 'online_inquiries'
+               ${finalizableWhere}
              RETURNING id;`,
             [req.user.id, orderId],
           );
@@ -7268,6 +7439,7 @@ app.post(
       let sourceTable = 'event_orders';
       let existingOrderResult = await pool.query(
         `SELECT
+           source,
            event_title AS "eventTitle",
            event_type AS "eventType",
            formality_level AS "formalityLevel",
@@ -7285,8 +7457,10 @@ app.post(
            note
          FROM event_orders
          WHERE id = $1
-           AND source = 'online_inquiry'
-           AND status = 'online_inquiries'
+           AND (
+             (source = 'online_inquiry' AND status = 'online_inquiries')
+             OR (source = 'new_event' AND status = 'for_processing')
+           )
          LIMIT 1;`,
         [orderId],
       );
@@ -7305,6 +7479,7 @@ app.post(
           : "''::text AS note";
         existingOrderResult = await pool.query(
           `SELECT
+             source,
              null AS "eventTitle",
              null AS "eventType",
              null AS "formalityLevel",
@@ -7322,8 +7497,10 @@ app.post(
              ${catNoteSel}
            FROM catering_orders
            WHERE id = $1
-             AND source = 'online_inquiry'
-             AND status = 'online_inquiries'
+             AND (
+               (source = 'online_inquiry' AND status = 'online_inquiries')
+               OR (source = 'new_event' AND status = 'for_processing')
+             )
            LIMIT 1;`,
           [orderId],
         );
@@ -7332,10 +7509,14 @@ app.post(
       if (existingOrderResult.rowCount === 0) {
         return res
           .status(404)
-          .json({ message: "Online inquiry not found or not finalizable" });
+          .json({ message: "Order not found or not finalizable" });
       }
 
       const existing = existingOrderResult.rows[0];
+      const existingSource = String(existing.source || '').toLowerCase();
+      const nextStatus = isPostChanges
+        ? (existingSource === 'new_event' ? 'for_processing' : 'online_inquiries')
+        : 'for_down_payment';
       const changedFields = [];
       const addChanged = (key, oldValue, newValue) => {
         if (JSON.stringify(oldValue ?? null) !== JSON.stringify(newValue ?? null)) {
@@ -7410,8 +7591,13 @@ app.post(
               : undefined,
           changedFields,
           postedAt: new Date().toISOString(),
+          contentVersion: Date.now(),
         },
       };
+      if (!isPostChanges) {
+        delete mergedThemeDesign.isDraft;
+        delete mergedThemeDesign.draftSavedAt;
+      }
 
       const tableCols = await getTableColumnNames(sourceTable);
 
@@ -7509,8 +7695,10 @@ app.post(
               `UPDATE event_orders
                SET ${sets.join(', ')}
                WHERE id = $${p}
-                 AND source = 'online_inquiry'
-                 AND status = 'online_inquiries'
+                 AND (
+                   (source = 'online_inquiry' AND status = 'online_inquiries')
+                   OR (source = 'new_event' AND status = 'for_processing')
+                 )
                RETURNING id;`,
               params,
             );
@@ -7608,8 +7796,10 @@ app.post(
               `UPDATE catering_orders
                SET ${catSets.join(', ')}
                WHERE id = $${p}
-                 AND source = 'online_inquiry'
-                 AND status = 'online_inquiries'
+                 AND (
+                   (source = 'online_inquiry' AND status = 'online_inquiries')
+                   OR (source = 'new_event' AND status = 'for_processing')
+                 )
                RETURNING id;`,
               catParams,
             );
@@ -10434,6 +10624,12 @@ async function registerRoutesAfterDbInit() {
         }
         res.status(201).json({ dish: result.rows[0] });
       } catch (error) {
+        if (error?.code === '23505') {
+          return res.status(409).json({
+            error:
+              'A dish with this name already exists in this menu. Use a different name, or edit/unarchive the existing dish.',
+          });
+        }
         console.error('Error creating menu dish:', error);
         res.status(500).json({ error: 'Failed to create menu dish' });
       }
@@ -10519,6 +10715,12 @@ async function registerRoutesAfterDbInit() {
         
         res.json({ dish: result.rows[0] });
       } catch (error) {
+        if (error?.code === '23505') {
+          return res.status(409).json({
+            error:
+              'A dish with this name already exists in this menu. Use a different name, or edit/unarchive the existing dish.',
+          });
+        }
         console.error('Error updating menu dish:', error);
         res.status(500).json({ error: 'Failed to update menu dish' });
       }

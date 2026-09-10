@@ -873,6 +873,15 @@ export async function initDb() {
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_menu_dishes_archived ON menu_dishes (archived)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_menu_dishes_category_name ON menu_dishes (category, name)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_menu_dishes_available ON menu_dishes (available)`);
+    // Allow same dish name across catering vs restaurant, and reuse names after archive.
+    // Old global UNIQUE(name) blocked both and caused silent "Dish save failed" on add.
+    await pool.query(`ALTER TABLE menu_dishes DROP CONSTRAINT IF EXISTS menu_dishes_name_key`);
+    await pool.query(`DROP INDEX IF EXISTS menu_dishes_name_key`);
+    await pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS menu_dishes_name_category_active_key
+      ON menu_dishes (lower(trim(name)), category)
+      WHERE archived IS NOT TRUE
+    `);
   } catch (err) {
     console.log("Index create (menu_dishes):", err.message);
   }

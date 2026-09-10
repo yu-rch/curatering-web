@@ -59,13 +59,34 @@ class EventsApi {
     return _orderFromJson(raw);
   }
 
-  Future<void> managerSubmitNewEventToProcessing({
+  Future<Map<String, dynamic>> managerSubmitNewEventToProcessing({
     required Map<String, dynamic> payload,
   }) async {
-    await ApiClient.instance.postJson(
+    final decoded = await ApiClient.instance.postJson(
       '/api/manager/events/orders',
       body: payload,
     );
+    return decoded is Map<String, dynamic>
+        ? decoded
+        : Map<String, dynamic>.from(decoded as Map);
+  }
+
+  Future<Map<String, dynamic>> managerSaveNewEventDraft({
+    required Map<String, dynamic> payload,
+    String? orderId,
+  }) async {
+    final body = {
+      ...payload,
+      'asDraft': true,
+      if (orderId != null && orderId.trim().isNotEmpty) 'orderId': orderId.trim(),
+    };
+    final decoded = await ApiClient.instance.postJson(
+      '/api/manager/events/orders',
+      body: body,
+    );
+    return decoded is Map<String, dynamic>
+        ? decoded
+        : Map<String, dynamic>.from(decoded as Map);
   }
 
   Future<void> managerFinalizeOnlineInquiry({
@@ -603,6 +624,13 @@ class EventsApi {
             themeRaw['travelCost'] ??
             themeRaw['travel_cost'],
       ),
+      isDraft: _toBool(themeRaw['isDraft'] ?? themeRaw['is_draft']),
+      managerUpdateNotice: () {
+        final n = _toMap(
+          themeRaw['managerUpdateNotice'] ?? themeRaw['manager_update_notice'],
+        );
+        return n.isEmpty ? null : n;
+      }(),
     );
 
     final seatingPlan = SeatingPlanData.fromJson(

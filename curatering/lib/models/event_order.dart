@@ -50,6 +50,8 @@ class EventThemeDesignDto {
   final double? dishCost;
   final double? laborCost;
   final double? travelCost;
+  final bool isDraft;
+  final Map<String, dynamic>? managerUpdateNotice;
 
   const EventThemeDesignDto({
     required this.picksBase64,
@@ -71,6 +73,8 @@ class EventThemeDesignDto {
     this.dishCost,
     this.laborCost,
     this.travelCost,
+    this.isDraft = false,
+    this.managerUpdateNotice,
   });
 }
 

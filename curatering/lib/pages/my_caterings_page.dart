@@ -43,6 +43,8 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
   DateTime? _dateFrom;
   DateTime? _dateTo;
   static const Duration _requestTimeout = Duration(seconds: 45);
+  Timer? _liveSyncTimer;
+  String _lastContentFingerprint = '';
 
   String get _apiBaseUrl {
     return apiBaseUrl;
@@ -52,10 +54,17 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
   void initState() {
     super.initState();
     _loadCaterings();
+    // Poll while this page is open so staff "Post changes" appears without
+    // requiring a manual refresh.
+    _liveSyncTimer = Timer.periodic(const Duration(seconds: 12), (_) {
+      if (!mounted || _isLoading) return;
+      unawaited(_loadCaterings(force: true, silent: true));
+    });
   }
 
   @override
   void dispose() {
+    _liveSyncTimer?.cancel();
     _searchCtrl.dispose();
     super.dispose();
   }
@@ -338,7 +347,7 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
     }
   }
 
-  Future<void> _loadCaterings({bool force = false}) async {
+  Future<void> _loadCaterings({bool force = false, bool silent = false}) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('customer_token');
@@ -360,11 +369,12 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
               _error = null;
             });
           }
+          _lastContentFingerprint = _ordersFingerprint(cached);
           return;
         }
       }
 
-      if (mounted) {
+      if (mounted && !silent) {
         setState(() {
           _isLoading = true;
           _error = null;
@@ -412,11 +422,33 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
       final list = data['orders'] ?? data['caterings'] ?? [];
       final asList = list is List ? List<dynamic>.from(list) : <dynamic>[];
       CustomerOrdersCache.instance.setEventOrders(asList);
+      final maps =
+          asList
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList();
+      final fingerprint = _ordersFingerprint(asList);
+      final hadUpdate =
+          silent &&
+          _lastContentFingerprint.isNotEmpty &&
+          fingerprint != _lastContentFingerprint &&
+          _hasFreshManagerNotice(maps);
+      _lastContentFingerprint = fingerprint;
       if (mounted) {
         setState(() {
           _caterings = asList;
           _isLoading = false;
         });
+        if (hadUpdate) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Macrina posted updates to your inquiry. Refreshing details.',
+              ),
+              backgroundColor: Color(0xFF1DB954),
+            ),
+          );
+        }
       }
     } on TimeoutException {
       if (mounted) {
@@ -697,6 +729,43 @@ class _MyCateringsPageState extends State<MyCateringsPage> {
       } catch (_) {}
     }
     return {};
+  }
+
+  String _ordersFingerprint(List<dynamic> orders) {
+    final buf = StringBuffer();
+    for (final raw in orders) {
+      if (raw is! Map) continue;
+      final m = Map<String, dynamic>.from(raw);
+      final theme = m['themeDesign'] ?? m['theme_design'];
+      var noticeStamp = '';
+      if (theme is Map) {
+        final notice =
+            theme['managerUpdateNotice'] ?? theme['manager_update_notice'];
+        if (notice is Map) {
+          noticeStamp =
+              '${notice['postedAt'] ?? ''}|${notice['contentVersion'] ?? ''}';
+        }
+      }
+      buf.write(
+        '${m['id']}|${m['updatedAt'] ?? m['updated_at']}|${m['status']}|$noticeStamp;',
+      );
+    }
+    return buf.toString();
+  }
+
+  bool _hasFreshManagerNotice(List<Map<String, dynamic>> orders) {
+    for (final m in orders) {
+      final theme = m['themeDesign'] ?? m['theme_design'];
+      if (theme is! Map) continue;
+      final notice =
+          theme['managerUpdateNotice'] ?? theme['manager_update_notice'];
+      if (notice is! Map) continue;
+      final action = (notice['action'] ?? '').toString();
+      if (action == 'post_changes' || notice['estimateUpdated'] == true) {
+        return true;
+      }
+    }
+    return false;
   }
 
   bool _hasManagerEstimateUpdate(Map<String, dynamic> themeDesign) {

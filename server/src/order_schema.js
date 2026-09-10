@@ -983,10 +983,14 @@ const STAFF_EVENTS_STATUS_WHERE = `
   WHERE
     status = $1
     OR ($1 = 'for_down_payment' AND status = 'for_downpayment')
-    OR ($1 = 'on_going' AND status IN ('ongoing', 'for_processing'))
+    OR ($1 = 'on_going' AND (
+      status = 'ongoing'
+      OR (status = 'for_processing' AND COALESCE(source, '') <> 'new_event')
+    ))
     OR ($1 = 'for_full_payment' AND status = 'for_post_analysis')
     OR ($1 = 'for_post_analysis' AND status = 'for_full_payment')
-    OR ($1 = 'new_event' AND source = 'new_event' AND status = 'for_processing')`;
+    OR ($1 = 'new_event' AND source = 'new_event' AND status = 'for_processing')
+    OR ($1 = 'for_processing' AND status = 'for_processing')`;
 
 /** Manager/supervisor list: catering_orders UNION event_orders by status. */
 export function buildStaffEventsOrdersListSql(

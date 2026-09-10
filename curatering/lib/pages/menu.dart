@@ -9,6 +9,7 @@ import '../widgets/antd_staff.dart';
 import '../widgets/paginated_data_table.dart';
 import '../models/menu_dish.dart';
 import '../constants/catering_meal_types.dart';
+import '../services/api_client.dart';
 import '../services/menu_store.dart';
 import '../services/set_menu_store.dart';
 import '../utils/debouncer.dart';
@@ -990,9 +991,13 @@ class _MenuState extends State<Menu> {
                               }
                             } catch (e) {
                               if (context.mounted) {
+                                final msg =
+                                    e is ApiError
+                                        ? e.message
+                                        : e.toString();
                                 showAntdMessage(
                                   context,
-                                  'Dish save failed: $e',
+                                  'Dish save failed: $msg',
                                   type: AntdMessageType.error,
                                 );
                               }

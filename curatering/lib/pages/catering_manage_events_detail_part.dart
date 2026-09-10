@@ -371,9 +371,21 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                     ),
                     const SizedBox(height: 8),
                     OutlinedButton.icon(
-                      onPressed: () => _openFinalizeOnlineInquiryDialog(order),
+                      onPressed: () {
+                        if (stage == 'new_event' ||
+                            order.source.toLowerCase() == 'new_event') {
+                          _openNewEventFormForEdit(order);
+                          return;
+                        }
+                        _openFinalizeOnlineInquiryDialog(order);
+                      },
                       icon: const Icon(Icons.edit_outlined, size: 18),
-                      label: const Text('Edit'),
+                      label: Text(
+                        stage == 'new_event' ||
+                                order.source.toLowerCase() == 'new_event'
+                            ? 'Edit draft'
+                            : 'Edit',
+                      ),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: const Color(0xFF1E1E1E),
                         side: BorderSide(color: Colors.grey.shade400),

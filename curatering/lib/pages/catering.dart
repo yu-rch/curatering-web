@@ -419,6 +419,8 @@ class _ManageEventsState extends State<ManageEvents>
   int _newEventOuterMenuTabIndex = 1; // 0=Allergens, 1=Menu
   int _newEventMenuPrefTabIndex = 0; // 0=Custom dishes, 1=Set menu
   bool _isSavingNewEventDraft = false;
+  /// When set, Save Draft / Submit updates this New Event row instead of creating.
+  String? _editingNewEventOrderId;
 
   static const _stageKeys = [
     'new_event',
@@ -661,21 +663,43 @@ class _ManageEventsState extends State<ManageEvents>
   static const _newEventDraftPrefsKey = 'manage_events_new_event_draft_v1';
 
   Future<void> _saveNewEventDraft() async {
-    setState(() => _isSavingNewEventDraft = true);
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final payload = _buildPayloadFromForm();
-      payload['menuBlocks'] = _newEventMenuBlocks;
-      payload['_draftMeta'] = {
-        'outerMenuTab': _newEventOuterMenuTabIndex,
-        'menuPrefTab': _newEventMenuPrefTabIndex,
-        'sideTab': _activeNewEventSideTab.name,
-      };
-      await prefs.setString(_newEventDraftPrefsKey, jsonEncode(payload));
-      if (!mounted) return;
+    if (_orderType == null &&
+        _customerController.text.trim().isEmpty &&
+        _eventTitleController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Draft saved. You can continue later on this device.'),
+          content: Text(
+            'Enter at least a service type, customer name, or event title before saving a draft.',
+          ),
+        ),
+      );
+      return;
+    }
+    setState(() => _isSavingNewEventDraft = true);
+    try {
+      final payload = _buildPayloadFromForm();
+      // Ensure orderType for draft defaults.
+      payload['orderType'] ??= _orderType ?? 'catering';
+      final result = await EventsApi.instance.managerSaveNewEventDraft(
+        payload: payload,
+        orderId: _editingNewEventOrderId,
+      );
+      final id = (result['id'] ?? '').toString();
+      if (id.isNotEmpty) {
+        _editingNewEventOrderId = id;
+      }
+      await _clearNewEventDraft();
+      await _refreshOrders();
+      if (!mounted) return;
+      setState(() {
+        _showNewEventForm = false;
+        _activeNewEventSideTab = _NewEventSideTab.eventInfo;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Draft saved to New Event. You can edit it or move it to Down Payment.',
+          ),
           backgroundColor: Color(0xFF1DB954),
         ),
       );
@@ -690,6 +714,31 @@ class _ManageEventsState extends State<ManageEvents>
     } finally {
       if (mounted) setState(() => _isSavingNewEventDraft = false);
     }
+  }
+
+  void _openNewEventFormForCreate() {
+    _resetForm();
+    setState(() {
+      _editingNewEventOrderId = null;
+      _showNewEventForm = true;
+      _activeNewEventSideTab = _NewEventSideTab.eventInfo;
+    });
+  }
+
+  void _openNewEventFormForEdit(EventOrderDto order) {
+    _applyOrderToForm(order);
+    setState(() {
+      _editingNewEventOrderId = order.id;
+      _orderType =
+          order.orderType.trim().isEmpty
+              ? (order.eventTitle.trim().isEmpty ? 'catering' : 'catering+event')
+              : (order.orderType == 'catering' || order.orderType == 'catering_only'
+                  ? 'catering'
+                  : 'catering+event');
+      _showNewEventForm = true;
+      _activeNewEventSideTab = _NewEventSideTab.eventInfo;
+      _selectedOnlineInquiryOrder = null;
+    });
   }
 
   Future<void> _restoreNewEventDraftIfAny() async {
@@ -7410,9 +7459,25 @@ class _ManageEventsState extends State<ManageEvents>
 
     try {
       final payload = _buildPayloadFromForm();
-      await EventsApi.instance.managerSubmitNewEventToProcessing(
+      if (_editingNewEventOrderId != null) {
+        payload['orderId'] = _editingNewEventOrderId;
+      }
+      final created = await EventsApi.instance.managerSubmitNewEventToProcessing(
         payload: payload,
       );
+      final orderId =
+          (created['id'] ?? _editingNewEventOrderId ?? '').toString();
+      if (orderId.isNotEmpty) {
+        // Move listed New Event item into For Down Payment.
+        try {
+          await EventsApi.instance.managerFinalizeOnlineInquiry(
+            orderId: orderId,
+            payload: {...payload, 'action': 'confirm_inquiry'},
+          );
+        } catch (_) {
+          // Row is still listed under New Event if finalize is blocked.
+        }
+      }
       await _clearNewEventDraft();
       await _refreshOrders();
       if (!mounted) return;
@@ -7420,7 +7485,15 @@ class _ManageEventsState extends State<ManageEvents>
         const SnackBar(content: Text('Order submitted successfully.')),
       );
       _resetForm();
-      setState(() => _selectedStatus = EventStatus.forDownpayment);
+      setState(() {
+        _editingNewEventOrderId = null;
+        _showNewEventForm = false;
+        _selectedStatus = EventStatus.forDownpayment;
+        _tabController.index = _stageKeys.indexOf('for_down_payment').clamp(
+          0,
+          _tabCount - 1,
+        );
+      });
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -8515,8 +8588,12 @@ class _ManageEventsState extends State<ManageEvents>
   }
 
   List<EventOrderDto> get _newEventOrders => _processingOrdersDto.where((o) {
+        final source = o.source.trim().toLowerCase();
         final s = o.status.trim().toLowerCase();
-        return s == 'new_event' || s == 'for_processing';
+        if (source == 'new_event') {
+          return s == 'for_processing' || s == 'new_event';
+        }
+        return s == 'new_event';
       }).toList();
 
   int _orderCountForTab(int tabIndex) {
@@ -8584,11 +8661,23 @@ class _ManageEventsState extends State<ManageEvents>
                 TextButton.icon(
                   onPressed: () => setState(() {
                     _showNewEventForm = false;
+                    _editingNewEventOrderId = null;
                     _activeNewEventSideTab = _NewEventSideTab.eventInfo;
                   }),
                   icon: const Icon(Icons.arrow_back),
                   label: const Text('Back to list'),
                 ),
+                if (_editingNewEventOrderId != null)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: Text(
+                      'Editing draft',
+                      style: TextStyle(
+                        color: Colors.grey.shade700,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -8608,10 +8697,7 @@ class _ManageEventsState extends State<ManageEvents>
             child: Align(
               alignment: Alignment.centerLeft,
               child: FilledButton.icon(
-                onPressed: () => setState(() {
-                  _showNewEventForm = true;
-                  _activeNewEventSideTab = _NewEventSideTab.eventInfo;
-                }),
+                onPressed: _openNewEventFormForCreate,
                 icon: const Icon(Icons.add_circle_outline),
                 label: const Text(
                   'CREATE NEW EVENT',
@@ -8628,7 +8714,7 @@ class _ManageEventsState extends State<ManageEvents>
           child: _buildOrdersTablePanel(
             title: '',
             orders: orders,
-            emptyMessage: 'No new events.',
+            emptyMessage: 'No new events. Save a draft to list one here.',
             showGuestsAndTotal: false,
           ),
         ),
