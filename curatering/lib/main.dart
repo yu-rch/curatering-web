@@ -209,7 +209,7 @@ class _CustomerExtraPageState extends State<_CustomerExtraPage> {
   @override
   void initState() {
     super.initState();
-    ensureCustomerPagesLoaded()
+    ensureCustomerRouteLoaded(widget.path)
         .then((_) {
           if (!mounted) return;
           setState(() => _ready = true);

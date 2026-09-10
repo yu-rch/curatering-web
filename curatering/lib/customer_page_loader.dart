@@ -2,14 +2,18 @@ import 'package:flutter/material.dart';
 
 import 'config/site_routes.dart';
 import 'customer_extra_pages.dart' deferred as customer_pages;
+import 'pages/catering_menu_page.dart' deferred as catering_menu_page;
 import 'pages/customer_website.dart' deferred as customer_home;
+import 'pages/gallery_page.dart' deferred as gallery_page;
 import 'services/cms_draft_flag.dart';
 import 'utils/web_boot_bridge.dart';
 
-/// Ensures secondary customer routes (/gallery, /checkout, …) are loaded.
-/// Homepage does not need this — extras live in a deferred JS chunk.
+/// Ensures secondary customer routes (/checkout, /inquire, …) are loaded.
+/// Homepage / gallery / catering-menu use their own deferred chunks.
 Future<void>? _customerExtrasLoading;
 Future<void>? _customerHomeLoading;
+Future<void>? _galleryLoading;
+Future<void>? _cateringMenuLoading;
 
 Future<void> ensureCustomerPagesLoaded() {
   return _customerExtrasLoading ??= customer_pages.loadLibrary();
@@ -18,6 +22,19 @@ Future<void> ensureCustomerPagesLoaded() {
 /// Loads the deferred homepage library (kept out of the initial main.dart.js).
 Future<void> ensureCustomerHomeLoaded() {
   return _customerHomeLoading ??= customer_home.loadLibrary();
+}
+
+/// Loads only the deferred chunk needed for [path].
+Future<void> ensureCustomerRouteLoaded(String path) {
+  final route = stripLegacyCustomerPrefix(normalizeRoutePath(path));
+  switch (route) {
+    case '/gallery':
+      return _galleryLoading ??= gallery_page.loadLibrary();
+    case '/catering-menu':
+      return _cateringMenuLoading ??= catering_menu_page.loadLibrary();
+    default:
+      return ensureCustomerPagesLoaded();
+  }
 }
 
 Widget buildCustomerWebsiteScreen({
@@ -97,9 +114,22 @@ bool get isCmsDraftPreviewOnStaff =>
 Widget buildCustomerExtraPage(String path) {
   final route = stripLegacyCustomerPrefix(normalizeRoutePath(path));
   final editable = isCmsDraftPreviewOnStaff;
-  return customer_pages.customerExtraPageFor(
-    route,
-    contentEditable: editable,
-    showStaffChrome: editable,
-  );
+  switch (route) {
+    case '/gallery':
+      return gallery_page.GalleryPage(
+        contentEditable: editable,
+        showStaffChrome: editable,
+      );
+    case '/catering-menu':
+      return catering_menu_page.CateringMenuPage(
+        contentEditable: editable,
+        showStaffChrome: editable,
+      );
+    default:
+      return customer_pages.customerExtraPageFor(
+        route,
+        contentEditable: editable,
+        showStaffChrome: editable,
+      );
+  }
 }

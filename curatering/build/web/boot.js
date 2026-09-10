@@ -269,9 +269,10 @@
     );
   }, SPLASH_TIMEOUT_MS);
 
-  // Start Flutter after the HTML hero has painted. On the customer homepage,
-  // wait for first input or a short idle delay so lab tools can score the
-  // complete shell before main.dart.js blocks the main thread.
+  // Start Flutter after the HTML hero has painted. On customer shell routes
+  // (home, gallery, catering menu), wait for first input or a short idle delay
+  // so lab tools can score the complete shell before main.dart.js blocks the
+  // main thread.
   var flutterStarted = false;
   function startFlutter() {
     if (flutterStarted) return;
@@ -283,8 +284,29 @@
   }
 
   var path = (location.pathname || '/').replace(/\/+$/, '') || '/';
-  var customerHome = !staffHost && path === '/';
-  if (!customerHome) {
+  // Match Flutter customer content routes that benefit from an HTML-first paint.
+  var customerShellRoutes = {
+    '/': true,
+    '/gallery': true,
+    '/catering-menu': true,
+  };
+  var customerShell = !staffHost && !!customerShellRoutes[path];
+
+  if (customerShell) {
+    var titleEl = document.getElementById('app-splash-title');
+    var subEl = document.getElementById('app-splash-sub');
+    if (path === '/gallery') {
+      if (titleEl) titleEl.textContent = 'Gallery';
+      if (subEl) subEl.textContent = 'Event designs and completed catering setups.';
+      document.title = "Gallery - Macrina's Kitchen and Catering";
+    } else if (path === '/catering-menu') {
+      if (titleEl) titleEl.textContent = 'Catering Menu';
+      if (subEl) subEl.textContent = 'Browse dishes for your next event.';
+      document.title = "Catering Menu - Macrina's Kitchen and Catering";
+    }
+  }
+
+  if (!customerShell) {
     startFlutter();
   } else {
     var kick = function () {

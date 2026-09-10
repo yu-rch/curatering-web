@@ -1,0 +1,16 @@
+{
+  "version": 3,
+  "engine": "v2",
+  "file": "main.dart.js_23.part.js",
+  "sourceRoot": "",
+  "sources": ["../../../../../../../AppData/Local/Pub/Cache/hosted/pub.dev/image_picker_platform_interface-2.11.1/lib/src/types/image_options.dart","../../../../../../../AppData/Local/Pub/Cache/hosted/pub.dev/image_picker-1.2.2/lib/image_picker.dart","../../../../../../../AppData/Local/Pub/Cache/hosted/pub.dev/image_picker_platform_interface-2.11.1/lib/src/platform_interface/image_picker_platform.dart","../../../../../../../AppData/Local/Pub/Cache/hosted/pub.dev/image_picker_platform_interface-2.11.1/lib/src/types/multi_image_picker_options.dart"],
+  "names": ["ImageOptions.createAndValidate","ImagePicker.pickImage","ImagePickerOptions.createAndValidate","ImagePicker.platform","ImagePicker.pickImage[function-entry$0$source]","ImagePicker.pickImage[function-entry$0$imageQuality$maxWidth$source]","ImagePicker.pickMultiImage","ImagePicker.pickMultiImage[function-entry$0$imageQuality$maxWidth]","createAndValidate","instance","platform"],
+  "mappings": "A;;GAmDEA;;QAWAA,C;;;;;GCSeC,UDhDfA,iBC4D2BA;AD5D3BC;ACgEED,OCzDyCE,QDyDzBF,OAIlBA,C;GApBeG,sC;GAAAC,oC;GAyDKC,QAOgBA,wBCzGOH;ADgHzCG,OAAOA,KE7HTA,kBFmIAA,C;GApBoBC,gC",
+  "x_org_dartlang_dart2js": {
+    "minified_names": {
+      "global": "",
+      "instance": ""
+    },
+    "frames": "gMAmDEQgB;iFC4BgDAiB;cAAAAAD5BhDAgB,A;OCoCSEAA9DsDDQ,A;iIAqHtDCAArHsDDQ,A;YAsH1BDkB;"
+  }
+}

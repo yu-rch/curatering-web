@@ -1,0 +1,16 @@
+{
+  "version": 3,
+  "engine": "v2",
+  "file": "main.dart.js_65.part.js",
+  "sourceRoot": "",
+  "sources": ["org-dartlang-sdk:///dart-sdk/lib/async/future.dart","org-dartlang-sdk:///dart-sdk/lib/async/future_impl.dart","../../../lib/services/set_menu_store.dart","org-dartlang-sdk:///dart-sdk/lib/internal/iterable.dart","org-dartlang-sdk:///dart-sdk/lib/_internal/js_runtime/lib/core_patch.dart","org-dartlang-sdk:///dart-sdk/lib/core/iterable.dart","../../../../../../flutter/packages/flutter/lib/src/foundation/change_notifier.dart","org-dartlang-sdk:///dart-sdk/lib/_internal/js_runtime/lib/js_array.dart","org-dartlang-sdk:///dart-sdk/lib/async/async_error.dart","org-dartlang-sdk:///dart-sdk/lib/_internal/js_runtime/lib/js_string.dart"],
+  "names": ["Future.microtask","SetMenu.fromJson","Iterable.toList","SetMenuStore._internal","ChangeNotifier","SetMenuStore.loadSetMenus","ListIterable.toList","SetMenuStore.activeSetMenus","JSArray.where","SetMenuStore.addSetMenu","SetMenuStore.updateSetMenu","JSArray.map","Future.microtask.<anonymous function>","_completeWithErrorCallback","_interceptCaughtError","SetMenu.fromJson.<anonymous function>","JSString.isNotEmpty","SetMenuStore._internal.<anonymous function>","SetMenuStore.loadSetMenus.<anonymous function>","SetMenuStore.activeSetMenus.<anonymous function>","SetMenuStore.updateSetMenu.<anonymous function>","SetMenuStore.instance","","_internal","_items","_listeners","isEmpty","isNotEmpty","map","of","toList","where"],
+  "mappings": "A;;GAyRUA,MCsERA,gBAAyBA,IAAzBA;ADpEEA,KAAkBA;AAUlBA,QACFA,C;;;GEpRQC,IACSA,uDAAoBA;cAAmBA;AAErCA,OAAXA;WAAyBA;AACVA,OAAbA;WADuBA;AAEZA,aACXA,SAAWA,iBC+J4BA,KD/JDA;AEmV5BC,QCyJhBD,wBH3eMA;AACqBA,OAAjBA;AACCA,kBACIA,KAAaA,IAAJA;AAR1BA,OAVFA,sBAqBAA,C;GAKAE,mBIiHiCC;AJjHjCD;QAIAA,C;;;;;;;;;;;;;;;;;;;;;;;;;;;GAJAA,GACWA,IAOQA;AALVA,MAAUA,oBACnBA,C;EAWaE,GACXA;kBADWA,cACXA;;CACEA;AAEAA;AAEgBA;WAAgBA,OAASA,oCAAzBA;;AACJA;AAEJA,aACGA,CAjBIA;KAmBJA;AE4SKC,QD5IhBD;CDnLeA,MAsBfA;AACAA;;;;;;AAfFA;AAiBEA,OAAUA,+BAA4BA;AAC7BA;CACTA;AACAA;;;;;OAEJA;;AAtBEA,uBAsBFA,C;GAGkBE,eAjCCA;;AKoOVA,SJkLTC;ACvFoBN,MDuFpBM,UDrXiDD,eGub7CA;AHvbgCA,QAAyCA,C;EAEhEE,MAIXA,oBAgBFA,C;GApBaA,MAIXA;kBAJWA,cAIXA;;AACkBA;WAAgBA,OAASA,oBAEjCA,YACIA,0CAHIA;;AAQWA,QAA4BA,MAAnBA;GAhDrBA;;AE+TCA;;AF9QKA;CAjDNA;AAkDfA;;;;;;AAXFA;AAaEA,OAAUA,6BAA0BA;AACpCA;;;;;OAlBSA;;AAIXA,uBAJWA,C;EAsBAC,QAKXA,sBAgBFA,C;GArBaA,QAKXA;kBALWA,cAKXA;;AACkBA;WAAgBA,OAASA,uBAEjCA,YACIA,0CAHIA;;AAQeA,QAA4BA,MAAnBA;GAvEzBA;;AKuRVA,SJmHTC;AC3EoBL,kCD5IhBI;CDnLeA;AAyEfA;;;;;;AAXFA;AAaEA,OAAUA,+BAA4BA;AACtCA;;;;;OAnBSA;;AAKXA,uBALWA,C;;;EFsLOE,GACJA;IAEUA,uBADtBA;AAEEA;AACmCA;AAAGA;ACjQ1CC;AOjBFC;ARi0CAF,IA/iCiCA;AAC3BA,MAGHA,CADCA,YACDA,C;;AE5QyBG;EAAPA,IAAOA,aAAYA,C;;;EAAQA,IAAOA,QOsYnCC,WPtY+CD,C;;AAe1CE;EAANA,GAAMA,kBAAcA,C;;AAwBEC;EAAlBA,IAAUA,aAAsBA,SAAwBA,C;;;EAc9BC,IAAOA,QAAGA,EAAQA,C;;;EAuC3CC,IAAOA,QAAEA,SAAMA,OAAKA,IAAkBA,C;;;;;;;;eA1EpCC,IAAwBA,OAAxBA,A",
+  "x_org_dartlang_dart2js": {
+    "minified_names": {
+      "global": "",
+      "instance": ""
+    },
+    "frames": "sJA0RwBsBkC;8RElQLSK;aAAyBDAG4etCDQ,wB;0EHhfKPsB;yBAgBTAAIiHiCGQ,A;AJjHjCFQ;gaACECe;2RAwBIAoB;0BAEaMACgKfDQ,kB;ADhKELM;+PAc8BAgB;AAAAOSKmM3BTU,A;ALnMkCQAGubvCDM,A;AHvbgCEAKmM3BTU,A;eLnMkCQY;wUAgB1BNgB;AAAJKiB;WAATLK;8hBAuBSAgB;AAAAISK+MJNa,A;AL/MWQAC2GhBDkC,c;AD3GALK;+WF4KEXAA+iCsBCYChzCYQgB,A,I;oHCPiBKAOwYjCDW,A;"
+  }
+}

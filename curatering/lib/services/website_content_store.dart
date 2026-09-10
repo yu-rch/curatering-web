@@ -651,18 +651,23 @@ class WebsiteContentStore extends ChangeNotifier {
     }
   }
 
-  Future<void> ensureLoaded({bool force = false}) async {
+  Future<void> ensureLoaded({
+    bool force = false,
+    bool resolveHomeMedia = true,
+  }) async {
     if (_loaded && !force && !_draftMode) return;
 
     if (!_hydratedFromLocalCache) {
       await _loadFromLocalCache();
       _hydratedFromLocalCache = true;
       notifyListeners();
-      try {
-        await resolveHomeMediaRefs();
-        notifyListeners();
-      } catch (_) {
-        /* keep text/metadata already applied */
+      if (resolveHomeMedia) {
+        try {
+          await resolveHomeMediaRefs();
+          notifyListeners();
+        } catch (_) {
+          /* keep text/metadata already applied */
+        }
       }
     }
 
@@ -677,7 +682,9 @@ class WebsiteContentStore extends ChangeNotifier {
         _applyMap(Map<String, dynamic>.from(content));
         publishedAt = DateTime.tryParse('${decoded['publishedAt'] ?? ''}');
         await _writeLocalCacheBestEffort(_toMap());
-        await resolveHomeMediaRefs();
+        if (resolveHomeMedia) {
+          await resolveHomeMediaRefs();
+        }
       }
     } catch (_) {
       // Keep local/defaults already applied above.

@@ -66,14 +66,27 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
         if (widget.contentEditable) {
           await WebsiteContentStore.instance.loadDraft();
         } else {
-          await WebsiteContentStore.instance.ensureLoaded();
+          // Skip home hero/collage media — unused on this route.
+          await WebsiteContentStore.instance.ensureLoaded(
+            resolveHomeMedia: false,
+          );
         }
       } catch (_) {
-        await WebsiteContentStore.instance.ensureLoaded();
+        await WebsiteContentStore.instance.ensureLoaded(
+          resolveHomeMedia: false,
+        );
       }
     }());
-    unawaited(MenuStore.instance.ensureImagesLoaded());
+    // Metadata first (lean /api/menu/dishes). Photos are ~25MB and dominate
+    // main-thread JSON/base64 work — load them after first paint.
+    unawaited(MenuStore.instance.loadDishes());
     SetMenuStore.instance.loadSetMenus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future<void>.delayed(const Duration(milliseconds: 1800), () {
+        if (!mounted) return;
+        unawaited(MenuStore.instance.ensureImagesLoaded());
+      });
+    });
   }
 
   @override

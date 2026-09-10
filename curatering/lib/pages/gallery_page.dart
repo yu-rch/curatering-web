@@ -9,7 +9,7 @@ import '../config.dart';
 import '../services/website_content_store.dart';
 import '../utils/gallery_search.dart';
 import '../utils/image_cache.dart';
-import '../utils/website_image_utils.dart';
+import '../utils/website_image_utils.dart' deferred as web_images;
 import '../widgets/customer_website_topbar.dart';
 import '../widgets/customer_site_footer.dart';
 import '../widgets/customer_antd_page_hero.dart';
@@ -71,22 +71,37 @@ class _GalleryPageState extends State<GalleryPage> {
         try {
           await WebsiteContentStore.instance.loadDraft();
         } catch (_) {
-          await WebsiteContentStore.instance.ensureLoaded();
+          await WebsiteContentStore.instance.ensureLoaded(
+            resolveHomeMedia: false,
+          );
         }
       } else {
-        await WebsiteContentStore.instance.ensureLoaded();
+        // Paint categories/text first; skip home media resolve on this route.
+        await WebsiteContentStore.instance.ensureLoaded(
+          resolveHomeMedia: false,
+        );
       }
-      await WebsiteContentStore.instance.resolveGalleryMediaRefs();
     } catch (_) {
       try {
-        await WebsiteContentStore.instance.ensureLoaded();
-        await WebsiteContentStore.instance.resolveGalleryMediaRefs();
+        await WebsiteContentStore.instance.ensureLoaded(
+          resolveHomeMedia: false,
+        );
       } catch (_) {}
     }
     if (mounted) setState(() {});
-    if (!widget.contentEditable) {
-      unawaited(_loadFallbackGalleryImages());
-    }
+
+    // Heavy base64 media + fallback highlights after first frame.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(() async {
+        try {
+          await WebsiteContentStore.instance.resolveGalleryMediaRefs();
+        } catch (_) {}
+        if (mounted) setState(() {});
+        if (!widget.contentEditable) {
+          unawaited(_loadFallbackGalleryImages());
+        }
+      }());
+    });
   }
 
   Future<void> _loadFallbackGalleryImages() async {
@@ -624,7 +639,9 @@ class _GalleryPageState extends State<GalleryPage> {
               const SizedBox(width: 10),
               FilledButton.icon(
                 onPressed: () async {
-                  final b64s = await pickMultipleWebsiteImagesBase64();
+                  await web_images.loadLibrary();
+                  final b64s =
+                      await web_images.pickMultipleWebsiteImagesBase64();
                   if (b64s.isEmpty) return;
                   cat.addImagesFromBase64(b64s);
                   await w.saveDraft();
