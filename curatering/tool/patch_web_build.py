@@ -42,6 +42,27 @@ def patch_flutter_bootstrap(text: str) -> str:
     return text
 
 
+def ensure_source_mapping_urls() -> None:
+    """Attach sourceMappingURL comments when matching .map files exist."""
+    for js_path in sorted(ROOT.glob("*.js")):
+        if path_should_skip_patch(js_path):
+            continue
+        map_path = Path(str(js_path) + ".map")
+        if not map_path.is_file():
+            # Also accept foo.js.map beside foo.js
+            map_path = js_path.with_suffix(js_path.suffix + ".map")
+        if not map_path.is_file():
+            continue
+        text = js_path.read_text(encoding="utf-8")
+        marker = f"//# sourceMappingURL={map_path.name}"
+        # Remove any stale mapping comments first.
+        text = re.sub(r"\n?//[#@]\s*sourceMappingURL=[^\s]+", "", text)
+        if not text.endswith("\n"):
+            text += "\n"
+        text += marker + "\n"
+        js_path.write_text(text, encoding="utf-8")
+
+
 def strip_broken_source_mapping_urls() -> None:
     """Remove sourceMappingURL comments that point at missing / SPA-rewritten maps."""
     for js_path in ROOT.rglob("*.js"):
@@ -96,6 +117,7 @@ def main() -> None:
         if patched != original:
             path.write_text(patched, encoding="utf-8")
 
+    ensure_source_mapping_urls()
     strip_broken_source_mapping_urls()
     print(f"Patched web build in {ROOT}")
 

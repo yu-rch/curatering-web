@@ -15,7 +15,7 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $root = Split-Path -Parent $scriptDir
 Set-Location $root
 
-$flutterArgs = @("build", "web", "--release", "--tree-shake-icons", "--optimization-level=4")
+$flutterArgs = @("build", "web", "--release", "--tree-shake-icons", "--optimization-level=4", "--source-maps")
 if ($env:API_BASE_URL) {
     $flutterArgs += "--dart-define=API_BASE_URL=$($env:API_BASE_URL)"
 }

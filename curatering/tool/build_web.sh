@@ -13,7 +13,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-args=(build web --release --tree-shake-icons --optimization-level=4)
+args=(build web --release --tree-shake-icons --optimization-level=4 --source-maps)
 if [[ -n "${API_BASE_URL:-}" ]]; then
   args+=("--dart-define=API_BASE_URL=${API_BASE_URL}")
 fi

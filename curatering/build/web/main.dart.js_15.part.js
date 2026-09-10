@@ -1,6 +1,6 @@
 ((a,b)=>{a[b]=a[b]||{}})(self,"$__dart_deferred_initializers__")
 $__dart_deferred_initializers__.current=function(a,b,c,$){var J,A,C,D,E,F,B={
-c4P(d,e){var x,w,v,u,t,s,r,q,p,o,n=new B.aua(),m=new B.au9(),l=new B.au8(),k=d.h(0,"positive_prompt")
+c4R(d,e){var x,w,v,u,t,s,r,q,p,o,n=new B.auc(),m=new B.aub(),l=new B.aua(),k=d.h(0,"positive_prompt")
 if(k==null)k=d.h(0,"prompt")
 x=C.e.k(A.h(k==null?e:k))
 if(x.length===0)throw A.q(A.bF("NLP prompt expansion returned no positive prompt."))
@@ -16,24 +16,24 @@ n=n.$1(r==null?d.h(0,"visual_direction"):r)
 r=d.h(0,"recommended_strength")
 r=m.$1(r==null?d.h(0,"strength"):r)
 m=m.$1(d.h(0,"cfg_scale"))
-q=new B.au7().$1(d.h(0,"steps"))
+q=new B.au9().$1(d.h(0,"steps"))
 p=l.$1(d.h(0,"controlnet"))
 o=d.h(0,"mode")
 o=o==null?null:J.u(o)
-return new B.a1V(x,k,w,v,u,t,s,n,r,m,q,p,o,l.$1(d.h(0,"transformation_plan")))},
-aJ6(d){var x=y.w,w=y.b
+return new B.a1X(x,k,w,v,u,t,s,n,r,m,q,p,o,l.$1(d.h(0,"transformation_plan")))},
+aJ8(d){var x=y.w,w=y.b
 return y.B.b(d)?A.aH(d,x,w):A.J(x,w)},
-c7a(d){var x,w,v=B.aJ6(d.h(0,"output")),u=B.aJ6(v.h(0,"result"))
+c7c(d){var x,w,v=B.aJ8(d.h(0,"output")),u=B.aJ8(v.h(0,"result"))
 if(u.a!==0)return u
-x=B.aJ6(v.h(0,"analysis"))
+x=B.aJ8(v.h(0,"analysis"))
 if(x.a!==0)return x
 if(v.a!==0)return v
-w=B.aJ6(d.h(0,"result"))
+w=B.aJ8(d.h(0,"result"))
 if(w.a!==0)return w
 return d},
-PW(d,e){return B.cmr(d,e)},
+PY(d,e){return B.cmr(d,e)},
 cmr(d,e){var x=0,w=A.m(y.q),v,u=2,t=[],s,r,q,p,o,n,m,l,k,j,i,h,g
-var $async$PW=A.n(function(f,a0){if(f===1){t.push(a0)
+var $async$PY=A.n(function(f,a0){if(f===1){t.push(a0)
 x=u}for(;;)switch(x){case 0:u=4
 if(D.wI().length===0)A.ap(A.bF("API_BASE_URL is empty; set --dart-define=API_BASE_URL=... so the RunPod proxy can be reached."))
 k=y.w
@@ -44,23 +44,23 @@ s=A.by(D.wI()+"/api/public/runpod/nlp/run",0,null)
 j=A.M(["Content-Type","application/json"],k,k)
 i=y.y
 x=7
-return A.d(A.ej(s,C.a4.ca(A.M(["input",r],k,i),null),null,j).cr(C.pU),$async$PW)
+return A.d(A.ej(s,C.a4.ca(A.M(["input",r],k,i),null),null,j).cr(C.pU),$async$PY)
 case 7:q=a0
-if(q.b!==200)D.c_h(q)
+if(q.b!==200)D.c_j(q)
 s=q
 p=i.a(C.a4.bl(A.cr(A.cq(s.e)).bb(s.w),null))
-o=D.a6x(J.a8(p,"status"))
-n=D.c79(p)
-if(o==="COMPLETED"||J.a8(p,"output")!=null){s=B.c4P(B.c7a(p),e)
+o=D.a6z(J.a8(p,"status"))
+n=D.c7b(p)
+if(o==="COMPLETED"||J.a8(p,"output")!=null){s=B.c4R(B.c7c(p),e)
 v=s
 x=1
 break}s=o
-if(s==="FAILED"||s==="CANCELLED"){s=A.bF(D.aJ5(p))
+if(s==="FAILED"||s==="CANCELLED"){s=A.bF(D.aJ7(p))
 throw A.q(s)}if(n==null||n.length===0){s=A.bF("NLP prompt expansion did not return a job id.")
 throw A.q(s)}x=8
-return A.d(B.a6y(n),$async$PW)
+return A.d(B.a6A(n),$async$PY)
 case 8:m=a0
-s=B.c4P(B.c7a(m),e)
+s=B.c4R(B.c7c(m),e)
 v=s
 x=1
 break
@@ -78,31 +78,31 @@ case 3:x=2
 break
 case 6:case 1:return A.k(v,w)
 case 2:return A.j(t.at(-1),w)}})
-return A.l($async$PW,w)},
-a6y(d){return B.cmp(d)},
+return A.l($async$PY,w)},
+a6A(d){return B.cmp(d)},
 cmp(d){var x=0,w=A.m(y.y),v,u=2,t=[],s,r,q,p,o,n,m,l,k,j,i,h,g,f,e
-var $async$a6y=A.n(function(a0,a1){if(a0===1){t.push(a1)
+var $async$a6A=A.n(function(a0,a1){if(a0===1){t.push(a1)
 x=u}for(;;)switch(x){case 0:g=0
 f=null
 m=y.g,l=y.b,k=y.y
 case 3:if(!(g<130)){x=4
 break}x=5
-return A.d(A.h4(E.pV,null,l),$async$a6y)
+return A.d(A.h4(E.pV,null,l),$async$a6A)
 case 5:++g
 u=7
 x=10
-return A.d(A.fJ(A.by(D.wI()+"/api/public/runpod/nlp/status/"+A.eN(2,d,C.bb,!1),0,null),null).cr(F.f3),$async$a6y)
+return A.d(A.fJ(A.by(D.wI()+"/api/public/runpod/nlp/status/"+A.eN(2,d,C.bb,!1),0,null),null).cr(F.f3),$async$a6A)
 case 10:s=a1
 if(s.b===429){j=A.bF("Too many requests \u2014 wait a moment and try again.")
 throw A.q(j)}if(s.b===200){j=s
 r=k.a(C.a4.bl(A.cr(A.cq(j.e)).bb(j.w),null))
-q=D.a6x(J.a8(r,"status"))
+q=D.a6z(J.a8(r,"status"))
 if(q==="COMPLETED"){j=r
 v=j
 x=1
 break}j=q
-if(j==="FAILED"||j==="CANCELLED"){j=A.bF(D.aJ5(r))
-throw A.q(j)}}else D.c_h(s)
+if(j==="FAILED"||j==="CANCELLED"){j=A.bF(D.aJ7(r))
+throw A.q(j)}}else D.c_j(s)
 u=2
 x=9
 break
@@ -113,11 +113,11 @@ if(m.b(j)){p=j
 o=J.u(p)
 if(J.iv(o,"Job failed")||J.iv(o,"AI generation exceeded")||J.iv(o,"Worker returned"))throw e
 f=p
-A.ZK("NLP polling error (attempt "+A.h(g)+"): "+A.h(p))}else{n=j
+A.ZM("NLP polling error (attempt "+A.h(g)+"): "+A.h(p))}else{n=j
 f=n
 j=A.h(g)
 h=A.h(n)
-A.ZK("NLP polling error (attempt "+j+"): "+h)}x=9
+A.ZM("NLP polling error (attempt "+j+"): "+h)}x=9
 break
 case 6:x=2
 break
@@ -127,8 +127,8 @@ case 4:if(m.b(f))throw A.q(f)
 throw A.q(A.bF("NLP task timed out after 650s waiting for the AI worker. Try again in a moment."))
 case 1:return A.k(v,w)
 case 2:return A.j(t.at(-1),w)}})
-return A.l($async$a6y,w)},
-a1V:function a1V(d,e,f,g,h,i,j,k,l,m,n,o,p,q){var _=this
+return A.l($async$a6A,w)},
+a1X:function a1X(d,e,f,g,h,i,j,k,l,m,n,o,p,q){var _=this
 _.a=d
 _.b=e
 _.c=f
@@ -143,12 +143,12 @@ _.z=n
 _.Q=o
 _.as=p
 _.at=q},
-aua:function aua(){},
-aub:function aub(){},
 auc:function auc(){},
+aud:function aud(){},
+aue:function aue(){},
+aub:function aub(){},
 au9:function au9(){},
-au7:function au7(){},
-au8:function au8(){}},G
+aua:function aua(){}},G
 J=c[1]
 A=c[0]
 C=c[2]
@@ -157,7 +157,7 @@ E=c[27]
 F=c[28]
 B=a.updateHolder(c[14],B)
 G=c[33]
-B.a1V.prototype={
+B.a1X.prototype={
 arq(){var x,w,v=this,u=A.J(y.w,y.b)
 u.p(0,"positive_prompt",v.a)
 x=v.b
@@ -209,33 +209,34 @@ x=v.at
 if(x!=null)u.p(0,"transformation_plan",x)
 return u}}
 var z=a.updateTypes([])
-B.aua.prototype={
+B.auc.prototype={
 $1(d){var x
 y.d.a(d)
 x=d==null?C.bs:d
-x=J.c8(x,new B.aub(),y.w).cu(0,new B.auc())
+x=J.c8(x,new B.aud(),y.w).cu(0,new B.aue())
 x=A.x(x,x.$ti.i("y.E"))
 return x},
 $S:243}
-B.aub.prototype={
+B.aud.prototype={
 $1(d){return C.e.k(A.h(d))},
 $S:14}
-B.auc.prototype={
+B.aue.prototype={
 $1(d){return d.length!==0},
 $S:4}
-B.au9.prototype={
+B.aub.prototype={
 $1(d){if(typeof d=="number")return d
 return A.bx(A.h(d))},
 $S:250}
-B.au7.prototype={
+B.au9.prototype={
 $1(d){if(typeof d=="number")return C.p.aD(d)
 return A.cd(A.h(d),null)},
 $S:952}
-B.au8.prototype={
+B.aua.prototype={
 $1(d){if(y.B.b(d))return A.aH(d,y.w,y.b)
 return null},
 $S:235};(function inheritance(){var x=a.inherit,w=a.inheritMany
-x(B.a1V,A.Z)
-w(A.i6,[B.aua,B.aub,B.auc,B.au9,B.au7,B.au8])})()
-var y={q:A.an("a1V"),g:A.an("cl"),y:A.an("R<e,@>"),B:A.an("R<@,@>"),w:A.an("e"),b:A.an("@"),d:A.an("a2<@>?")};(function constants(){G.GH=new A.ai(57531,"MaterialIcons",!1)})()};
-(a=>{a["A7Hu81rFzqapBANIU8yxKDi3sLY="]=a.current})($__dart_deferred_initializers__);
+x(B.a1X,A.Z)
+w(A.i6,[B.auc,B.aud,B.aue,B.aub,B.au9,B.aua])})()
+var y={q:A.an("a1X"),g:A.an("cl"),y:A.an("R<e,@>"),B:A.an("R<@,@>"),w:A.an("e"),b:A.an("@"),d:A.an("a2<@>?")};(function constants(){G.GI=new A.ai(57531,"MaterialIcons",!1)})()};
+(a=>{a["eluTUuRIJCglooZmh9CckE4oZ9A="]=a.current})($__dart_deferred_initializers__);
+//# sourceMappingURL=main.dart.js_15.part.js.map

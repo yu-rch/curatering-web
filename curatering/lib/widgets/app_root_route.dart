@@ -29,7 +29,7 @@ class _AppRootRouteState extends State<AppRootRoute> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       signalCurateringUiReady();
       // Delay warm-up so cold-load JS eval stays focused on the homepage chunk.
-      Future<void>.delayed(const Duration(seconds: 4), () {
+      Future<void>.delayed(const Duration(seconds: 8), () {
         if (!mounted) return;
         ensureCustomerPagesLoaded();
       });
