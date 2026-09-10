@@ -75,10 +75,72 @@ def build_index(console_js: str, splash_js: str) -> str:
       justify-content: center;
       background: #000000;
       color: #ffffff;
-      font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+      font-family: Georgia, 'Times New Roman', serif;
       text-align: center;
       padding: clamp(12px, 4vw, 24px);
-      transition: opacity 220ms ease;
+      transition: opacity 120ms ease;
+      overflow: hidden;
+    }}
+    #app-splash.app-splash-shell {{
+      justify-content: flex-end;
+      align-items: stretch;
+      padding: 0;
+      background: #1a120c;
+    }}
+    #app-splash-hero {{
+      display: none;
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }}
+    #app-splash.app-splash-shell #app-splash-hero {{
+      display: block;
+    }}
+    #app-splash-scrim {{
+      display: none;
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(0,0,0,.25) 0%, rgba(20,12,8,.72) 55%, rgba(20,12,8,.92) 100%);
+    }}
+    #app-splash.app-splash-shell #app-splash-scrim {{
+      display: block;
+    }}
+    #app-splash-copy {{
+      position: relative;
+      z-index: 1;
+      display: none;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 10px;
+      padding: clamp(24px, 6vw, 56px);
+      max-width: 720px;
+      text-align: left;
+    }}
+    #app-splash.app-splash-shell #app-splash-copy {{
+      display: flex;
+    }}
+    #app-splash.app-splash-shell #app-splash-logo {{
+      width: min(70vw, 280px);
+      max-height: none;
+      margin-bottom: 8px;
+    }}
+    #app-splash-title {{
+      margin: 0;
+      color: #fff8f0;
+      font-size: clamp(28px, 6vw, 48px);
+      line-height: 1.15;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }}
+    #app-splash-sub {{
+      margin: 0;
+      color: rgba(255,248,240,.88);
+      font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+      font-size: clamp(14px, 2.6vw, 18px);
+      line-height: 1.45;
+      max-width: 34ch;
     }}
     #app-splash.app-splash-hide {{
       opacity: 0;
@@ -98,6 +160,8 @@ def build_index(console_js: str, splash_js: str) -> str:
       color: #d0d0d0;
       font-size: 15px;
       line-height: 1.4;
+      position: relative;
+      z-index: 2;
     }}
     #app-splash.has-error #app-splash-error {{
       display: block;
@@ -106,11 +170,16 @@ def build_index(console_js: str, splash_js: str) -> str:
   <script src="boot.js" defer></script>
 </head>
 <body>
-  <div id="app-splash" aria-busy="true" aria-live="polite">
-    <img id="app-splash-logo" alt="Loading" width="320" height="160" sizes="320px" decoding="async" fetchpriority="high" />
+  <div id="app-splash" class="app-splash-shell" aria-busy="true" aria-live="polite">
+    <img id="app-splash-hero" alt="" width="1280" height="720" sizes="100vw" decoding="async" fetchpriority="high" />
+    <div id="app-splash-scrim" aria-hidden="true"></div>
+    <div id="app-splash-copy">
+      <img id="app-splash-logo" alt="Loading" width="320" height="160" sizes="280px" decoding="async" fetchpriority="high" />
+      <p id="app-splash-title">Macrina's Kitchen and Catering</p>
+      <p id="app-splash-sub">Restaurant orders, catering menus, and event inquiries.</p>
+    </div>
     <p id="app-splash-error"></p>
   </div>
-  <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>
 """
@@ -147,7 +216,13 @@ def sync_build_output() -> None:
     html = INDEX.read_text(encoding="utf-8").replace("$FLUTTER_BASE_HREF", "/")
     (BUILD_WEB / "index.html").write_text(html, encoding="utf-8", newline="\n")
     shutil.copy2(VERCEL, BUILD_WEB / "vercel.json")
-    for name in ("boot.js", "console_filter.js", "splash_preload.js"):
+    for name in (
+        "boot.js",
+        "console_filter.js",
+        "splash_preload.js",
+        "shell-hero.webp",
+        "shell-hero.jpg",
+    ):
         src = WEB / name
         if src.is_file():
             shutil.copy2(src, BUILD_WEB / name)

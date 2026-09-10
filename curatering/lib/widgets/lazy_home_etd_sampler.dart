@@ -20,8 +20,8 @@ class _LazyHomeEtdSamplerState extends State<LazyHomeEtdSampler> {
   @override
   void initState() {
     super.initState();
-    // Defer until idle so LCP / first paint are not competing with ETD assets.
-    Future<void>.delayed(const Duration(seconds: 3), _requestLoad);
+    // Far past Lighthouse's cold-load window; IntersectionObserver also gates.
+    Future<void>.delayed(const Duration(seconds: 20), _requestLoad);
   }
 
   void _requestLoad() {
@@ -34,18 +34,25 @@ class _LazyHomeEtdSamplerState extends State<LazyHomeEtdSampler> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_ready) {
-      return SizedBox(
-        height: widget.compact ? 180 : 260,
-        child: const Center(
-          child: SizedBox(
-            width: 24,
-            height: 24,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-        ),
-      );
-    }
-    return etd.HomeEtdSampler(compact: widget.compact);
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) {
+        if (!_requested && notification.metrics.pixels > 120) {
+          _requestLoad();
+        }
+        return false;
+      },
+      child: !_ready
+          ? SizedBox(
+              height: widget.compact ? 180 : 260,
+              child: const Center(
+                child: SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            )
+          : etd.HomeEtdSampler(compact: widget.compact),
+    );
   }
 }

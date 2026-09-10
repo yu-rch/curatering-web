@@ -2,10 +2,11 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'api_client.dart';
-import 'mobile_ui_cms.dart';
 import '../utils/api_cache.dart';
 import '../utils/website_publish_diff.dart';
+import 'api_client.dart';
+import 'cms_draft_flag.dart';
+import 'mobile_ui_cms.dart';
 
 /// Image that is either inline base64 (legacy) or a media-library id.
 class CmsImageRef {
@@ -604,6 +605,11 @@ class WebsiteContentStore extends ChangeNotifier {
 
   bool get isDraftMode => _draftMode;
 
+  void _setDraftMode(bool value) {
+    _draftMode = value;
+    cmsDraftModeActive = value;
+  }
+
   Map<String, dynamic>? get publishedBaseline => _publishedBaseline;
 
   /// Compare current draft to last published live content.
@@ -676,7 +682,7 @@ class WebsiteContentStore extends ChangeNotifier {
     } catch (_) {
       // Keep local/defaults already applied above.
     }
-    _draftMode = false;
+    _setDraftMode(false);
     _loaded = true;
     notifyListeners();
   }
@@ -696,7 +702,7 @@ class WebsiteContentStore extends ChangeNotifier {
       publishedAt = DateTime.tryParse('${decoded['publishedAt'] ?? ''}');
       await refreshPublishedBaseline();
       await resolveMediaRefs();
-      _draftMode = true;
+      _setDraftMode(true);
       _loaded = true;
       notifyListeners();
     } catch (e) {
@@ -708,7 +714,7 @@ class WebsiteContentStore extends ChangeNotifier {
   /// Pull latest published content from the server (e.g. after CMS publish).
   Future<void> reloadFromServer() async {
     _loaded = false;
-    _draftMode = false;
+    _setDraftMode(false);
     await ensureLoaded(force: true);
   }
 
@@ -805,7 +811,7 @@ class WebsiteContentStore extends ChangeNotifier {
       await resolveMediaRefs();
     }
     draftUpdatedAt = DateTime.tryParse('${result['draftUpdatedAt'] ?? ''}');
-    _draftMode = true;
+    _setDraftMode(true);
     notifyListeners();
   }
 
@@ -827,7 +833,7 @@ class WebsiteContentStore extends ChangeNotifier {
     }
     publishedAt = DateTime.tryParse('${result['publishedAt'] ?? ''}');
     _publishedBaseline = Map<String, dynamic>.from(_toMap());
-    _draftMode = false;
+    _setDraftMode(false);
     notifyListeners();
   }
 
@@ -933,7 +939,7 @@ class WebsiteContentStore extends ChangeNotifier {
     if (content is Map && content.isNotEmpty) {
       _applyMap(Map<String, dynamic>.from(content));
       await resolveMediaRefs();
-      _draftMode = true;
+      _setDraftMode(true);
       notifyListeners();
     }
   }

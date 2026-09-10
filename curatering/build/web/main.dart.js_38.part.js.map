@@ -1,0 +1,16 @@
+{
+  "version": 3,
+  "engine": "v2",
+  "file": "main.dart.js_38.part.js",
+  "sourceRoot": "",
+  "sources": ["../../../lib/widgets/contact_address_map.dart","../../../../../../../AppData/Local/Pub/Cache/hosted/pub.dev/flutter_map-7.0.2/lib/src/map/widget.dart"],
+  "names": ["ContactAddressMap.build","ContactAddressMap._pin",""],
+  "mappings": "A;;;;;;;;;CAqBSA,IAEwBA,uBAIYA,UAA1BA;AALfA,OAAOA,OAEEA,KCLLA,SDSYA,KACRA,6EAIAA,MACWA,KACPA,OAIeA,qCAdfA,WA0BdA,C;;;;;gBAjCoBC,IAAOA,2BAAPA,A",
+  "x_org_dartlang_dart2js": {
+    "minified_names": {
+      "global": "",
+      "instance": ""
+    },
+    "frames": "kUA0BeES;"
+  }
+}

@@ -29,7 +29,7 @@ import '../widgets/pexels_attribution_badge.dart';
 import '../widgets/catering_dish_info_dialog.dart';
 import '../widgets/website_rich_text.dart';
 import '../widgets/image_focus_dialog.dart';
-import '../widgets/cms_sections.dart';
+import '../widgets/cms_sections_view.dart';
 import '../widgets/customer_site_footer.dart';
 import '../widgets/customer_website_topbar.dart';
 import '../widgets/lazy_home_etd_sampler.dart';

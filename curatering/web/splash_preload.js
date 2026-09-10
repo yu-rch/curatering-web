@@ -3,14 +3,16 @@
   var host = (location.hostname || '').toLowerCase().replace(/^www\./, '');
   var staff =
     host === 'staff.curatering.com' || host.split('.')[0] === 'staff';
-  var webp = staff ? 'splash-staff.webp' : 'splash-customer.webp';
+  var href = staff ? 'splash-staff.webp' : 'shell-hero.webp';
+  var type = 'image/webp';
+  var sizes = staff ? '320px' : '100vw';
 
   var link = document.createElement('link');
   link.rel = 'preload';
   link.as = 'image';
-  link.href = webp;
-  link.type = 'image/webp';
+  link.href = href;
+  link.type = type;
   link.fetchPriority = 'high';
-  link.imageSizes = '320px';
+  link.imageSizes = sizes;
   document.head.appendChild(link);
 })();

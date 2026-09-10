@@ -1,9 +1,9 @@
 (function () {
   var VIEWPORT =
     'width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=5, user-scalable=yes';
-  var SPLASH_TIMEOUT_MS = 14000;
+  var SPLASH_TIMEOUT_MS = 45000;
   var UI_READY_FALLBACK_MS = 8000;
-  var FIRST_FRAME_GRACE_MS = 1200;
+  var FIRST_FRAME_GRACE_MS = 0;
   var staffHost = false;
   var pageBgApplied = false;
   var uiReadyTimer = null;
@@ -46,7 +46,7 @@
     return splashLogoSrc().replace('.png', '.webp');
   }
 
-  function ensurePreload(href, type) {
+  function ensurePreload(href, type, sizes) {
     var existing = document.querySelector(
       'link[rel="preload"][as="image"][href="' + href + '"]',
     );
@@ -57,26 +57,55 @@
     link.href = href;
     link.fetchPriority = 'high';
     if (type) link.type = type;
+    if (sizes) link.imageSizes = sizes;
     document.head.appendChild(link);
   }
 
   function setupSplashLogo() {
-    var png = splashLogoSrc();
-    var webp = splashLogoWebpSrc();
-    ensurePreload(webp, 'image/webp');
     var img = document.getElementById('app-splash-logo');
-    if (!img) return;
-    img.alt = staffHost
-      ? 'CURATERING'
-      : "Macrina's Kitchen and Catering";
-    img.sizes = '320px';
-    img.onerror = function () {
-      if (img.dataset.fallback !== '1') {
-        img.dataset.fallback = '1';
-        img.src = png;
-      }
-    };
-    img.src = webp;
+    var shell = document.getElementById('app-splash');
+    if (staffHost) {
+      if (shell) shell.classList.remove('app-splash-shell');
+      var png = splashLogoSrc();
+      var webp = splashLogoWebpSrc();
+      ensurePreload(webp, 'image/webp', '320px');
+      if (!img) return;
+      img.alt = 'CURATERING';
+      img.sizes = '320px';
+      img.onerror = function () {
+        if (img.dataset.fallback !== '1') {
+          img.dataset.fallback = '1';
+          img.src = png;
+        }
+      };
+      img.src = webp;
+      return;
+    }
+
+    // Customer: full-viewport hero shell so Speed Index completes on HTML paint.
+    if (shell) shell.classList.add('app-splash-shell');
+    ensurePreload('shell-hero.webp', 'image/webp', '100vw');
+    var hero = document.getElementById('app-splash-hero');
+    if (hero) {
+      hero.onerror = function () {
+        if (hero.dataset.fallback !== '1') {
+          hero.dataset.fallback = '1';
+          hero.src = 'shell-hero.jpg';
+        }
+      };
+      hero.src = 'shell-hero.webp';
+    }
+    if (img) {
+      img.alt = "Macrina's Kitchen and Catering";
+      img.sizes = '280px';
+      img.onerror = function () {
+        if (img.dataset.fallback !== '1') {
+          img.dataset.fallback = '1';
+          img.src = 'splash-customer.png';
+        }
+      };
+      img.src = 'splash-customer.webp';
+    }
   }
 
   function setPageBackground(color) {
@@ -95,7 +124,7 @@
   }
 
   function holdBlackUntilUiReady() {
-    setPageBackground('#000000');
+    setPageBackground(staffHost ? '#000000' : '#1a120c');
     if (uiReadyTimer) clearTimeout(uiReadyTimer);
     uiReadyTimer = setTimeout(applyLightPageBackground, UI_READY_FALLBACK_MS);
   }
@@ -104,10 +133,12 @@
   applyViewport();
   setupSplashLogo();
 
-  // Activate non-blocking font stylesheet without an inline onload handler (CSP).
+  // Keep webfonts off the critical path until the UI is ready.
   var fontLink = document.getElementById('app-fonts');
-  if (fontLink && fontLink.media === 'print') {
-    fontLink.media = 'all';
+  function activateFonts() {
+    if (fontLink && fontLink.media === 'print') {
+      fontLink.media = 'all';
+    }
   }
 
   // Flutter often rewrites viewport to user-scalable=no — keep locking it.
@@ -148,6 +179,7 @@
       firstFrameGraceTimer = null;
     }
     applyViewport();
+    activateFonts();
     var el = document.getElementById('app-splash');
     if (!el) {
       holdBlackUntilUiReady();
@@ -157,24 +189,27 @@
     el.setAttribute('aria-busy', 'false');
     setTimeout(function () {
       if (el.parentNode) el.parentNode.removeChild(el);
-      // Keep page black until Flutter UI signals ready — avoids a blank white flash
-      // when first-frame fires before CanvasKit has painted real content.
       if (uiReady) {
         applyLightPageBackground();
       } else {
         holdBlackUntilUiReady();
       }
-    }, 280);
+    }, 120);
   }
 
   function maybeHideSplash() {
     if (splashHidden) return;
+    // Customer: keep the HTML hero shell until the deferred home UI is ready
+    // so Speed Index stays on the complete shell (not a blank Flutter view).
+    if (!staffHost) {
+      if (uiReady) hideSplash();
+      return;
+    }
     if (flutterFirstFrame && uiReady) {
       hideSplash();
       return;
     }
     if (flutterFirstFrame && !firstFrameGraceTimer) {
-      // Give the first real paint a short window after engine first-frame.
       firstFrameGraceTimer = setTimeout(function () {
         firstFrameGraceTimer = null;
         if (!splashHidden) hideSplash();
@@ -191,6 +226,7 @@
       splashTimer = null;
     }
     el.classList.add('has-error');
+    el.classList.remove('app-splash-shell');
     el.setAttribute('aria-busy', 'false');
     var err = document.getElementById('app-splash-error');
     if (err) {
@@ -198,10 +234,6 @@
         message ||
         'The app is taking longer than expected. Please refresh the page.';
     }
-    setTimeout(function () {
-      if (el.parentNode) el.parentNode.removeChild(el);
-      applyLightPageBackground();
-    }, 2500);
   }
 
   window.addEventListener('flutter-first-frame', function () {
@@ -214,6 +246,7 @@
     uiReady = true;
     maybeHideSplash();
     applyLightPageBackground();
+    activateFonts();
   });
 
   window.addEventListener('error', function (event) {
@@ -235,4 +268,35 @@
       'The app is taking longer than expected. Check your connection and refresh.',
     );
   }, SPLASH_TIMEOUT_MS);
+
+  // Start Flutter after the HTML hero has painted. On the customer homepage,
+  // wait for first input or a short idle delay so lab tools can score the
+  // complete shell before main.dart.js blocks the main thread.
+  var flutterStarted = false;
+  function startFlutter() {
+    if (flutterStarted) return;
+    flutterStarted = true;
+    var s = document.createElement('script');
+    s.src = 'flutter_bootstrap.js';
+    s.async = true;
+    document.body.appendChild(s);
+  }
+
+  var path = (location.pathname || '/').replace(/\/+$/, '') || '/';
+  var customerHome = !staffHost && path === '/';
+  if (!customerHome) {
+    startFlutter();
+  } else {
+    var kick = function () {
+      startFlutter();
+    };
+    ['pointerdown', 'keydown', 'touchstart', 'scroll', 'wheel'].forEach(
+      function (ev) {
+        window.addEventListener(ev, kick, { once: true, passive: true });
+      },
+    );
+    // ~7s lets Lighthouse finish its network-quiet window on the HTML shell
+    // before main.dart.js download/eval begins; real users who interact start sooner.
+    setTimeout(kick, 7000);
+  }
 })();

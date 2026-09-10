@@ -8,7 +8,7 @@ import 'pages/archive.dart';
 import 'pages/catering.dart';
 import 'pages/customer_feedback_page.dart';
 import 'pages/customer_management.dart';
-import 'pages/customer_website.dart';
+import 'customer_page_loader.dart';
 import 'pages/dashboard.dart';
 import 'pages/help_requests.dart';
 import 'pages/inventory.dart';
@@ -165,9 +165,9 @@ Widget staffPageFor(String path) {
         ),
       );
     case '/website':
-      return const RoleGuard(
+      return RoleGuard(
         requiredRole: Role.superAdmin,
-        child: CustomerWebsiteScreen(
+        child: buildCustomerWebsiteScreen(
           contentEditable: true,
           showStaffChrome: true,
           returnRoute: '/website-admin',

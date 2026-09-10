@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../config/site_routes.dart';
 import '../customer_page_loader.dart';
 import '../utils/browser_tab_title.dart';
-import '../utils/web_boot_bridge.dart';
 
 /// Host-aware `/` entry.
 class AppRootRoute extends StatefulWidget {
@@ -26,14 +25,7 @@ class _AppRootRouteState extends State<AppRootRoute> {
       return;
     }
     setBrowserTabTitle('Home', staff: false);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      signalCurateringUiReady();
-      // Delay warm-up so cold-load JS eval stays focused on the homepage chunk.
-      Future<void>.delayed(const Duration(seconds: 8), () {
-        if (!mounted) return;
-        ensureCustomerPagesLoaded();
-      });
-    });
+    // Extras warm-up removed: deferred checkout/maps JS must not load on `/`.
   }
 
   @override
