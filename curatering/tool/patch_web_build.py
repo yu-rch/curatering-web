@@ -9,8 +9,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent / "build" / "web"
 
 
-def patch_v8_break_iterator(text: str) -> str:
-    """Rewrite deprecated Intl.v8BreakIterator checks to Intl.Segmenter."""
+def patch_loader_break_iterator_check(text: str) -> str:
+    """Only touch Flutter *loader* feature detection.
+
+    Do NOT rewrite main.dart.js: the engine still calls the V8 BreakIterator
+    API (adoptText, etc.). Replacing it with Intl.Segmenter blanks the UI.
+    """
     replacements = [
         (
             'typeof Intl.v8BreakIterator<"u"&&typeof Intl.Segmenter<"u"',
@@ -20,23 +24,9 @@ def patch_v8_break_iterator(text: str) -> str:
             'typeof Intl.v8BreakIterator!=="undefined"&&typeof Intl.Segmenter!=="undefined"',
             'typeof Intl.Segmenter!=="undefined"',
         ),
-        (
-            "s.Intl.v8BreakIterator!=null&&s.Intl.Segmenter!=null",
-            "s.Intl.Segmenter!=null",
-        ),
-        (
-            "self.Intl.v8BreakIterator!=null&&self.Intl.Segmenter!=null",
-            "self.Intl.Segmenter!=null",
-        ),
-        ('"v8BreakIterator"', '"Segmenter"'),
-        ("'v8BreakIterator'", "'Segmenter'"),
-        ("v8BreakIterator is not supported.", "Segmenter is not supported."),
-        ("Intl.v8BreakIterator", "Intl.Segmenter"),
     ]
     for old, new in replacements:
         text = text.replace(old, new)
-    # Catch any remaining identifier uses in minified bundles.
-    text = re.sub(r"\bv8BreakIterator\b", "Segmenter", text)
     return text
 
 
@@ -66,7 +56,6 @@ def strip_broken_source_mapping_urls() -> None:
         changed = False
         for match in reversed(matches):
             map_name = match.group(1).strip()
-            # Absolute/remote maps are left alone; relative must exist beside the JS.
             if map_name.startswith("http://") or map_name.startswith("https://"):
                 continue
             map_path = (js_path.parent / map_name).resolve()
@@ -82,7 +71,6 @@ def path_should_skip_patch(path: Path) -> bool:
     name = path.name
     if name in {"boot.js", "console_filter.js", "splash_preload.js"}:
         return True
-    # Never rewrite CanvasKit/skwasm engine files.
     parts = {p.lower() for p in path.parts}
     if "canvaskit" in parts:
         return True
@@ -97,7 +85,12 @@ def main() -> None:
         if path_should_skip_patch(path):
             continue
         original = path.read_text(encoding="utf-8")
-        patched = patch_v8_break_iterator(original)
+        patched = original
+        # Never rewrite the app bundle — BreakIterator API must stay intact.
+        if path.name in {"flutter.js", "flutter_bootstrap.js"} or path.name.startswith(
+            "flutter."
+        ):
+            patched = patch_loader_break_iterator_check(patched)
         if path.name == "flutter_bootstrap.js":
             patched = patch_flutter_bootstrap(patched)
         if patched != original:

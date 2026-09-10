@@ -18,12 +18,13 @@
   <link rel="manifest" href="manifest.json">
   <link rel="dns-prefetch" href="https://curatering.up.railway.app">
   <link rel="preconnect" href="https://curatering.up.railway.app" crossorigin>
-  <script>/* Suppress noisy Flutter web console warnings; block deprecated Intl.v8BreakIterator. */
+  <script>/* Suppress noisy Flutter web console warnings only. Do not shadow Intl APIs. */
 (function () {
   var suppressPatterns = [
     /v8BreakIterator/i,
     /Exception while loading service worker/i,
     /Loading the service worker using Flutter bootstrap is deprecated/i,
+    /assets\/\.env/i,
   ];
 
   function shouldSuppress(args) {
@@ -44,17 +45,6 @@
       return original.apply(console, arguments);
     };
   });
-
-  if (typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function') {
-    try {
-      Object.defineProperty(Intl, 'v8BreakIterator', {
-        configurable: true,
-        get: function () {
-          return undefined;
-        },
-      });
-    } catch (_) {}
-  }
 })();</script>
   <link id="app-fonts" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pacifico&family=Playfair+Display:wght@400;700&family=Poppins:wght@400;500;600;700;800&family=Scheherazade+New:wght@400;700&display=swap" media="print">
   <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pacifico&family=Playfair+Display:wght@400;700&family=Poppins:wght@400;500;600;700;800&family=Scheherazade+New:wght@400;700&display=swap"></noscript>

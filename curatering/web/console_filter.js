@@ -1,9 +1,10 @@
-/* Suppress noisy Flutter web console warnings; block deprecated Intl.v8BreakIterator. */
+/* Suppress noisy Flutter web console warnings only. Do not shadow Intl APIs. */
 (function () {
   var suppressPatterns = [
     /v8BreakIterator/i,
     /Exception while loading service worker/i,
     /Loading the service worker using Flutter bootstrap is deprecated/i,
+    /assets\/\.env/i,
   ];
 
   function shouldSuppress(args) {
@@ -24,15 +25,4 @@
       return original.apply(console, arguments);
     };
   });
-
-  if (typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function') {
-    try {
-      Object.defineProperty(Intl, 'v8BreakIterator', {
-        configurable: true,
-        get: function () {
-          return undefined;
-        },
-      });
-    } catch (_) {}
-  }
 })();
