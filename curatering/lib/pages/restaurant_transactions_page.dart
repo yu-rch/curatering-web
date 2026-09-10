@@ -5,6 +5,7 @@ import '../config.dart';
 import '../auth/auth_session.dart';
 import '../utils/responsive_layout.dart';
 import '../utils/order_display_utils.dart';
+import '../utils/payment_proof_image.dart';
 import '../widgets/antd_dialog.dart';
 import '../widgets/antd_message.dart';
 import '../widgets/antd_buttons.dart';
@@ -2019,7 +2020,11 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                           const SizedBox(height: 8),
                           ClipRRect(
                             borderRadius: BorderRadius.circular(8),
-                            child: _paymentProofImage(proof),
+                            child: buildPaymentProofPreview(
+                              _paymentProofRaw(proof),
+                              height: 180,
+                              emptyLabel: 'No payment proof',
+                            ),
                           ),
                         ],
                         const SizedBox(height: 16),

@@ -27,6 +27,10 @@ String normalizeCateringMealType(String raw) {
     case 'beverage':
     case 'beverages':
       return 'drinks';
+    // Restaurant leftover values must not pollute catering filters.
+    case 'other':
+    case 'others':
+      return '';
     default:
       return value;
   }

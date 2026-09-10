@@ -10393,7 +10393,14 @@ async function registerRoutesAfterDbInit() {
         const additionalCharge = Number(
           menuDishesAdditionalChargeAmount ?? additionalChargeAmount ?? 0,
         );
-        const resolvedMealType = String(mealType ?? '').trim() || String(type ?? '').trim();
+        // Catering course filters use meal_type only. Never fall back to legacy
+        // `type` (often restaurant "others"), which wipes appetizer/main/etc.
+        const mealTypeRaw = String(mealType ?? '').trim();
+        const typeRaw = String(type ?? '').trim();
+        const resolvedMealType =
+          dishCategory === 'catering'
+            ? mealTypeRaw
+            : (mealTypeRaw || typeRaw);
         const mealTypeSaved = resolvedMealType
           ? await upsertMenuMealType(resolvedMealType)
           : '';
@@ -10412,7 +10419,7 @@ async function registerRoutesAfterDbInit() {
             Boolean(supportsAddOns) || (Array.isArray(sauces) && sauces.length > 0),
             JSON.stringify(ingredients || []),
             imageBase64 || null,
-            dishCategory === 'restaurant' ? '' : (type || ''),
+            '',
             JSON.stringify([]),
             available !== false,
             String(publicDescription ?? '').trim(),
@@ -10457,7 +10464,12 @@ async function registerRoutesAfterDbInit() {
         const additionalCharge = Number(
           menuDishesAdditionalChargeAmount ?? additionalChargeAmount ?? 0,
         );
-        const resolvedMealType = String(mealType ?? '').trim() || String(type ?? '').trim();
+        const mealTypeRaw = String(mealType ?? '').trim();
+        const typeRaw = String(type ?? '').trim();
+        const resolvedMealType =
+          dishCategory === 'catering'
+            ? mealTypeRaw
+            : (mealTypeRaw || typeRaw);
         const mealTypeSaved = resolvedMealType
           ? await upsertMenuMealType(resolvedMealType)
           : '';
@@ -10485,7 +10497,7 @@ async function registerRoutesAfterDbInit() {
             JSON.stringify(ingredients ?? []),
             // null/undefined = keep existing photo (list endpoint omits images)
             imageBase64 == null ? null : imageBase64,
-            dishCategory === 'restaurant' ? '' : type,
+            '',
             JSON.stringify(req.body.setMenus || []),
             available !== false,
             String(publicDescription ?? '').trim(),
@@ -12655,6 +12667,7 @@ async function registerRoutesAfterDbInit() {
         unit: row.unit,
         notes: row.description,
         lastUpdated: row.updated_at,
+        minStockLevel: min,
         lowStock: min > 0 ? qty <= min : false,
         available: String(row.status || 'active').toLowerCase() === 'active',
         status: row.status || 'active',

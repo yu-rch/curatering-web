@@ -383,11 +383,14 @@ class _MenuState extends State<Menu> {
   void _startEditingDish(MenuDish dish) {
     _editingAvailable = dish.available;
     _editingImageBase64 = dish.imageBase64;
-    _editingType = _normalizeRestaurantMealType(dish.effectiveMealType);
-    if (dish.category == 'restaurant' &&
-        (_editingType.isEmpty ||
-            !_restaurantMealTypes.contains(_editingType))) {
-      _editingType = 'others';
+    if (dish.category == 'restaurant') {
+      _editingType = _normalizeRestaurantMealType(dish.effectiveMealType);
+      if (_editingType.isEmpty ||
+          !_restaurantMealTypes.contains(_editingType)) {
+        _editingType = 'others';
+      }
+    } else {
+      _editingType = '';
     }
     _typeController.text = _editingType;
     _nameController.text = dish.name;
@@ -407,10 +410,10 @@ class _MenuState extends State<Menu> {
     _publicDescriptionController.text = dish.publicDescription;
     _allergensController.text = dish.allergens;
     if (dish.category == 'catering') {
-      _editingMealType = normalizeCateringMealType(dish.effectiveMealType);
-      if (_editingMealType.isEmpty ||
-          !kCateringMealTypes.contains(_editingMealType)) {
-        _editingMealType = 'main';
+      _editingMealType = normalizeCateringMealType(dish.mealType);
+      // Do not silently coerce invalid/legacy values (e.g. "others") to Main.
+      if (!kCateringMealTypes.contains(_editingMealType)) {
+        _editingMealType = '';
       }
     } else {
       _editingMealType = '';
@@ -713,16 +716,19 @@ class _MenuState extends State<Menu> {
                       if (category == 'catering') ...[
                         const SizedBox(height: 12),
                         DropdownButtonFormField<String>(
-                          key: ValueKey('catering_meal_$_editingMealType'),
+                          key: ValueKey(
+                            'catering_meal_${_editingMealType.isEmpty ? 'unset' : _editingMealType}',
+                          ),
                           initialValue:
                               kCateringMealTypes.contains(_editingMealType)
                                   ? _editingMealType
-                                  : 'main',
+                                  : null,
                           decoration: const InputDecoration(
                             labelText: 'Meal type',
                             helperText:
-                                'Appetizer, main, sides, pasta, or drinks',
+                                'Used by the catering menu category filters',
                           ),
+                          hint: const Text('Select meal type'),
                           items:
                               kCateringMealTypes
                                   .map(
@@ -895,6 +901,16 @@ class _MenuState extends State<Menu> {
                               });
                               return;
                             }
+                            if (category == 'catering' &&
+                                !kCateringMealTypes.contains(
+                                  normalizeCateringMealType(_editingMealType),
+                                )) {
+                              dialogSetState(() {
+                                formError =
+                                    'Please select a meal type (Appetizer, Main, Sides, Pasta, or Drinks).';
+                              });
+                              return;
+                            }
                             dialogSetState(() => formError = null);
                             dialogSetState(() => isSaving = true);
                             try {
@@ -915,10 +931,7 @@ class _MenuState extends State<Menu> {
                                   supportsAddOns:
                                       category == 'restaurant' &&
                                       _editingSupportsAddOns,
-                                  type:
-                                      category == 'restaurant'
-                                          ? ''
-                                          : _editingType,
+                                  type: '',
                                   mealType:
                                       category == 'catering'
                                           ? normalizeCateringMealType(
@@ -950,10 +963,7 @@ class _MenuState extends State<Menu> {
                                   supportsAddOns:
                                       category == 'restaurant' &&
                                       _editingSupportsAddOns,
-                                  type:
-                                      category == 'restaurant'
-                                          ? ''
-                                          : _editingType,
+                                  type: '',
                                   mealType:
                                       category == 'catering'
                                           ? normalizeCateringMealType(
@@ -1101,7 +1111,8 @@ class _MenuState extends State<Menu> {
           sauces: d.sauces,
           supportsAddOns: d.supportsAddOns,
           ingredients: d.ingredients,
-          type: d.type,
+          type: '',
+          mealType: d.mealType.isNotEmpty ? d.mealType : d.type,
           available: d.available,
           publicDescription: d.publicDescription,
           allergens: d.allergens,

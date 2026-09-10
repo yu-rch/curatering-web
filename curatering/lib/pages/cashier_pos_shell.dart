@@ -326,11 +326,82 @@ class _CashierPosShellState extends State<CashierPosShell> {
   // Add-to-tray dialog (matches restaurant_order_page.dart)
   // ---------------------------------------------------------------------------
 
-  void _showAddToTrayDialog(MenuDish dish) {
-    int quantity = 1;
-    String? selectedAddOn;
-    int addOnQty = 1;
-    final notesCtrl = TextEditingController();
+  void _addOrMergeTrayLine(Map<String, dynamic> line) {
+    final dishId = (line['dish_id'] ?? '').toString().trim();
+    final dip = (line['dip'] ?? line['add_on'] ?? '').toString().trim().toLowerCase();
+    final matchIndex = _tray.indexWhere((existing) {
+      final existingId = (existing['dish_id'] ?? '').toString().trim();
+      if (dishId.isEmpty || existingId != dishId) return false;
+      final existingDip =
+          (existing['dip'] ?? existing['add_on'] ?? '')
+              .toString()
+              .trim()
+              .toLowerCase();
+      return existingDip == dip;
+    });
+    if (matchIndex < 0) {
+      _tray.add(line);
+      return;
+    }
+    final existing = Map<String, dynamic>.from(_tray[matchIndex]);
+    existing['qty'] = _toQty(existing['qty']) + _toQty(line['qty']);
+    final addDipQty = _toQty(line['dip_qty'] ?? line['add_on_qty']);
+    if (dip.isNotEmpty || addDipQty > 0) {
+      existing['dip'] = line['dip'] ?? existing['dip'] ?? '';
+      existing['dip_qty'] =
+          _toQty(existing['dip_qty'] ?? existing['add_on_qty']) + addDipQty;
+    }
+    final newNote = (line['note'] ?? '').toString().trim();
+    if (newNote.isNotEmpty) {
+      final oldNote = (existing['note'] ?? '').toString().trim();
+      existing['note'] =
+          oldNote.isEmpty || oldNote == newNote
+              ? newNote
+              : '$oldNote; $newNote';
+    }
+    _tray[matchIndex] = existing;
+  }
+
+  MenuDish? _menuDishForTrayLine(Map<String, dynamic> item) {
+    final id = (item['dish_id'] ?? '').toString().trim();
+    if (id.isEmpty) return null;
+    for (final dish in MenuStore.instance.activeDishes) {
+      if (dish.id == id) return dish;
+    }
+    final name = (item['item_name'] ?? '').toString().trim().toLowerCase();
+    if (name.isEmpty) return null;
+    for (final dish in MenuStore.instance.activeDishes) {
+      if (dish.name.trim().toLowerCase() == name) return dish;
+    }
+    return null;
+  }
+
+  void _showAddToTrayDialog(MenuDish dish, {int? editIndex}) {
+    final editing =
+        editIndex != null && editIndex >= 0 && editIndex < _tray.length
+            ? _tray[editIndex]
+            : null;
+    int quantity = editing != null ? _toQty(editing['qty']) : 1;
+    final existingDip =
+        editing == null
+            ? ''
+            : (editing['dip'] ?? editing['add_on'] ?? '').toString().trim();
+    String? selectedAddOn = existingDip.isEmpty ? null : existingDip;
+    int addOnQty =
+        editing != null
+            ? (() {
+              final q = _toQty(editing['dip_qty'] ?? editing['add_on_qty'] ?? 1);
+              return q < 1 ? 1 : q;
+            })()
+            : 1;
+    final addOnOptions = <String>[
+      ...dish.sauces,
+      if (selectedAddOn != null && !dish.sauces.contains(selectedAddOn))
+        selectedAddOn,
+    ];
+    final notesCtrl = TextEditingController(
+      text: editing?['note']?.toString() ?? '',
+    );
 
     showDialog(
       context: context,
@@ -338,6 +409,7 @@ class _CashierPosShellState extends State<CashierPosShell> {
         builder: (dialogCtx, setDialogState) {
           final dishPrice = double.tryParse(dish.price) ?? 0;
           final totalPrice = dishPrice * quantity;
+          final isEdit = editing != null;
 
           return Dialog(
             shape: RoundedRectangleBorder(
@@ -455,7 +527,7 @@ class _CashierPosShellState extends State<CashierPosShell> {
                                     fontSize: 12,
                                     color: Colors.red.shade700)),
                           ],
-                          if (dish.sauces.isNotEmpty) ...[
+                          if (addOnOptions.isNotEmpty) ...[
                             const SizedBox(height: 12),
                             const Text('Add-on',
                                 style: TextStyle(
@@ -474,7 +546,7 @@ class _CashierPosShellState extends State<CashierPosShell> {
                               items: [
                                 const DropdownMenuItem<String?>(
                                     value: null, child: Text('None')),
-                                ...dish.sauces.map((s) =>
+                                ...addOnOptions.map((s) =>
                                     DropdownMenuItem<String?>(
                                         value: s, child: Text(s))),
                               ],
@@ -586,23 +658,31 @@ class _CashierPosShellState extends State<CashierPosShell> {
                               Expanded(
                                 child: ElevatedButton(
                                   onPressed: () {
+                                    final line = <String, dynamic>{
+                                      'item_name': dish.name,
+                                      'dish_id': dish.id,
+                                      'image_base64': dish.imageBase64,
+                                      'dip': selectedAddOn ?? '',
+                                      'dip_qty': selectedAddOn != null
+                                          ? addOnQty
+                                          : 0,
+                                      'qty': quantity,
+                                      'price': dishPrice,
+                                      'note': notesCtrl.text.trim(),
+                                    };
                                     setState(() {
-                                      _tray.add({
-                                        'item_name': dish.name,
-                                        'dish_id': dish.id,
-                                        'image_base64': dish.imageBase64,
-                                        'dip': selectedAddOn ?? '',
-                                        'dip_qty': selectedAddOn != null
-                                            ? addOnQty
-                                            : 0,
-                                        'qty': quantity,
-                                        'price': dishPrice,
-                                        'note': notesCtrl.text.trim(),
-                                      });
+                                      if (isEdit && editIndex != null) {
+                                        _tray[editIndex] = line;
+                                      } else {
+                                        _addOrMergeTrayLine(line);
+                                      }
                                     });
                                     Navigator.pop(dialogCtx);
                                     _snack(
-                                        '${dish.name} x$quantity added to tray');
+                                      isEdit
+                                          ? '${dish.name} updated'
+                                          : '${dish.name} x$quantity added to tray',
+                                    );
                                   },
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: AntdTokens.brandPrimary,
@@ -615,7 +695,9 @@ class _CashierPosShellState extends State<CashierPosShell> {
                                             BorderRadius.circular(8)),
                                   ),
                                   child: Text(
-                                    'ADD TO TRAY  ₱${totalPrice.toStringAsFixed(0)}',
+                                    isEdit
+                                        ? 'UPDATE  ₱${totalPrice.toStringAsFixed(0)}'
+                                        : 'ADD TO TRAY  ₱${totalPrice.toStringAsFixed(0)}',
                                     style: const TextStyle(
                                         fontWeight: FontWeight.w600,
                                         fontSize: 13),
@@ -642,7 +724,18 @@ class _CashierPosShellState extends State<CashierPosShell> {
           );
         },
       ),
-    );
+    ).whenComplete(notesCtrl.dispose);
+  }
+
+  void _editTrayLine(int index) {
+    if (index < 0 || index >= _tray.length) return;
+    final item = _tray[index];
+    final dish = _menuDishForTrayLine(item);
+    if (dish == null) {
+      _snack('Dish not found in menu — refresh menu and try again.');
+      return;
+    }
+    _showAddToTrayDialog(dish, editIndex: index);
   }
 
   // ---------------------------------------------------------------------------
@@ -770,13 +863,17 @@ class _CashierPosShellState extends State<CashierPosShell> {
         _gcashRefCtrl.clear();
         _gcashProofBytes = null;
         _gcashProofBase64 = null;
+        _selectedTab = 2; // WALK-IN ORDERS
+        _walkInSubTab = 0; // Preparing (ready to claim next)
       });
       await _refreshWalkIn();
       if (mounted) {
         final change = result['change'] ?? 0;
-        await _snack(
-          'Walk-in ${result['order_no']} submitted · change ₱$change',
-          success: true,
+        await showCurateringSuccessDialog(
+          context: context,
+          title: 'Success',
+          body:
+              'Walk-in ${result['order_no']} submitted · change ₱$change',
         );
       }
     } catch (e) {
@@ -1126,9 +1223,14 @@ class _CashierPosShellState extends State<CashierPosShell> {
       if (mounted) {
         setState(() {
           _selectedWalkIn = null;
-          _walkInSubTab = 1;
+          _selectedTab = 2; // WALK-IN ORDERS
+          _walkInSubTab = 1; // Claimed
         });
-        await _snack('Order claimed', success: true);
+        await showCurateringSuccessDialog(
+          context: context,
+          title: 'Success',
+          body: 'Order claimed successfully.',
+        );
       }
     } catch (e) {
       if (mounted) await _snack('$e');
@@ -1858,22 +1960,41 @@ class _CashierPosShellState extends State<CashierPosShell> {
                   const SizedBox(height: 8),
                   OutlinedButton.icon(
                     onPressed: _pickGcashProof,
-                    icon: const Icon(Icons.upload_file, size: 18),
-                    label: Text(_gcashProofBytes != null
-                        ? 'Proof uploaded'
-                        : 'Upload payment proof'),
+                    icon: Icon(
+                      _gcashProofBytes != null
+                          ? Icons.image_outlined
+                          : Icons.upload_file,
+                      size: 18,
+                    ),
+                    label: Text(
+                      _gcashProofBytes != null
+                          ? 'Change image'
+                          : 'Upload payment proof',
+                    ),
                   ),
                   if (_gcashProofBytes != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 4),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(6),
-                        child: RepaintBoundary(
-                          child: Image.memory(
-                            _gcashProofBytes!,
-                            height: 60,
-                            fit: BoxFit.cover,
-                            gaplessPlayback: true,
+                      child: Tooltip(
+                        message: 'Tap to enlarge',
+                        child: MouseRegion(
+                          cursor: SystemMouseCursors.click,
+                          child: GestureDetector(
+                            onTap: () => showPaymentProofLightbox(
+                              context,
+                              _gcashProofBytes!,
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(6),
+                              child: RepaintBoundary(
+                                child: Image.memory(
+                                  _gcashProofBytes!,
+                                  height: 60,
+                                  fit: BoxFit.cover,
+                                  gaplessPlayback: true,
+                                ),
+                              ),
+                            ),
                           ),
                         ),
                       ),
@@ -2083,102 +2204,210 @@ class _CashierPosShellState extends State<CashierPosShell> {
     final qty = _toQty(item['qty']);
     final price = _toMoney(item['price']);
     final imageB64 = item['image_base64']?.toString();
+    final dip = (item['dip'] ?? item['add_on'] ?? '').toString().trim();
+    final dipQty = _toQty(item['dip_qty'] ?? item['add_on_qty'] ?? 0);
+    final hasAddOn = dip.isNotEmpty;
+
+    void bumpDish(int delta) {
+      setState(() {
+        final next = qty + delta;
+        if (next <= 0) {
+          _tray.removeAt(index);
+        } else {
+          _tray[index] = {
+            ...Map<String, dynamic>.from(_tray[index]),
+            'qty': next,
+          };
+        }
+      });
+      onChanged?.call();
+    }
+
+    void bumpAddOn(int delta) {
+      if (!hasAddOn) return;
+      setState(() {
+        final next = dipQty + delta;
+        if (next <= 0) {
+          _tray[index] = {
+            ...Map<String, dynamic>.from(_tray[index]),
+            'dip': '',
+            'dip_qty': 0,
+          };
+        } else {
+          _tray[index] = {
+            ...Map<String, dynamic>.from(_tray[index]),
+            'dip': dip,
+            'dip_qty': next,
+          };
+        }
+      });
+      onChanged?.call();
+    }
 
     return Card(
       elevation: 1,
       margin: const EdgeInsets.symmetric(vertical: 4),
-      child: Padding(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        child: Row(
-          children: [
-            if (imageB64 != null && imageB64.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: RepaintBoundary(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
-                    child: Image.memory(
-                      base64Decode(imageB64),
-                      width: 40,
-                      height: 40,
-                      fit: BoxFit.cover,
-                      gaplessPlayback: true,
+      child: InkWell(
+        onTap: () => _editTrayLine(index),
+        borderRadius: BorderRadius.circular(4),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  if (imageB64 != null && imageB64.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: RepaintBoundary(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: Image.memory(
+                            base64Decode(imageB64),
+                            width: 40,
+                            height: 40,
+                            fit: BoxFit.cover,
+                            gaplessPlayback: true,
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade200,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Icon(
+                          Icons.fastfood,
+                          size: 18,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          name,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          '₱${price.toStringAsFixed(2)} × $qty = ₱${(price * qty).toStringAsFixed(2)}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey.shade700,
+                          ),
+                        ),
+                        Text(
+                          'Tap to edit add-ons',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: Colors.grey.shade500,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ),
-              )
-            else
-              Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade200,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: const Icon(Icons.fastfood,
-                      size: 18, color: Colors.grey),
-                ),
-              ),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(name,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w700, fontSize: 12),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis),
-                  Text(
-                    '₱${price.toStringAsFixed(2)} × $qty = ₱${(price * qty).toStringAsFixed(2)}',
-                    style: TextStyle(
-                        fontSize: 11, color: Colors.grey.shade700),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.remove_circle_outline, size: 20),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 28,
+                          minHeight: 28,
+                        ),
+                        onPressed: () => bumpDish(-1),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                        child: Text(
+                          '$qty',
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.add_circle_outline, size: 20),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 28,
+                          minHeight: 28,
+                        ),
+                        onPressed: () => bumpDish(1),
+                      ),
+                    ],
                   ),
                 ],
               ),
-            ),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.remove_circle_outline,
-                      size: 20),
-                  padding: EdgeInsets.zero,
-                  constraints:
-                      const BoxConstraints(minWidth: 28, minHeight: 28),
-                  onPressed: () {
-                    setState(() {
-                      if (qty <= 1) {
-                        _tray.removeAt(index);
-                      } else {
-                        item['qty'] = qty - 1;
-                      }
-                    });
-                    onChanged?.call();
-                  },
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 6),
-                  child: Text('$qty',
-                      style:
-                          const TextStyle(fontWeight: FontWeight.w800)),
-                ),
-                IconButton(
-                  icon:
-                      const Icon(Icons.add_circle_outline, size: 20),
-                  padding: EdgeInsets.zero,
-                  constraints:
-                      const BoxConstraints(minWidth: 28, minHeight: 28),
-                  onPressed: () {
-                    setState(() => item['qty'] = qty + 1);
-                    onChanged?.call();
-                  },
+              if (hasAddOn) ...[
+                const SizedBox(height: 6),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Add-on: $dip',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey.shade800,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      IconButton(
+                        icon:
+                            const Icon(Icons.remove_circle_outline, size: 18),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 26,
+                          minHeight: 26,
+                        ),
+                        onPressed: () => bumpAddOn(-1),
+                      ),
+                      Text(
+                        '$dipQty',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12,
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.add_circle_outline, size: 18),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 26,
+                          minHeight: 26,
+                        ),
+                        onPressed: () => bumpAddOn(1),
+                      ),
+                    ],
+                  ),
                 ),
               ],
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

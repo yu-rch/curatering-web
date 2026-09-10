@@ -980,17 +980,6 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Close button
-                        Align(
-                          alignment: Alignment.topRight,
-                          child: IconButton(
-                            onPressed: () => Navigator.of(context).pop(),
-                            icon: const Icon(Icons.close, color: Colors.black),
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
                         // Title
                         const Text(
                           'POINTS - ADD CONDITION',
@@ -1209,17 +1198,6 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Close button
-                        Align(
-                          alignment: Alignment.topRight,
-                          child: IconButton(
-                            onPressed: () => Navigator.of(context).pop(),
-                            icon: const Icon(Icons.close, color: Colors.black),
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
                         // Title
                         const Text(
                           'POINTS - EDIT CONDITION',
@@ -1392,17 +1370,6 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Close button
-                  Align(
-                    alignment: Alignment.topRight,
-                    child: IconButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(Icons.close, color: Colors.black),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
                   // Title
                   const Text(
                     'ARCHIVE CONDITION',
@@ -1543,17 +1510,6 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Close button
-                        Align(
-                          alignment: Alignment.topRight,
-                          child: IconButton(
-                            onPressed: () => Navigator.of(context).pop(),
-                            icon: const Icon(Icons.close, color: Colors.black),
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
                         // Title
                         const Text(
                           'REWARDS - ADD CONDITION',
@@ -1790,17 +1746,6 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Close button
-                        Align(
-                          alignment: Alignment.topRight,
-                          child: IconButton(
-                            onPressed: () => Navigator.of(context).pop(),
-                            icon: const Icon(Icons.close, color: Colors.black),
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
                         // Title
                         const Text(
                           'REWARDS - EDIT CONDITION',
@@ -2025,17 +1970,6 @@ class _ManageLoyaltyRewardsState extends State<ManageLoyaltyRewards> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Close button
-                  Align(
-                    alignment: Alignment.topRight,
-                    child: IconButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(Icons.close, color: Colors.black),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
                   // Title
                   const Text(
                     'ARCHIVE CONDITION',

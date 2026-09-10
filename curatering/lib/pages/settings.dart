@@ -15,7 +15,6 @@ class _SettingsState extends State<Settings> {
   String _selectedIssue = 'Select problem';
 
   final List<String> _issues = [
-    'Login issue',
     'Data not loading',
     'Missing Orders',
     'Other',

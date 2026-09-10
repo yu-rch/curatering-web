@@ -365,7 +365,8 @@ class MenuStore extends ChangeNotifier {
           // Omit null so the API keeps the existing photo (list loads omit images).
           if (imageBase64 != null) 'imageBase64': imageBase64,
           'type': type ?? '',
-          'mealType': mealType ?? '',
+          // Preserve existing meal type when callers omit it (e.g. partial updates).
+          'mealType': mealType ?? existingDish?.mealType ?? '',
           'available': available ?? true,
           'setMenus': setMenusToKeep,
           'publicDescription': (publicDescription ?? '').trim(),

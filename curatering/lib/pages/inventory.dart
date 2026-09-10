@@ -22,6 +22,7 @@ class InventoryItem {
   final String unit;
   final DateTime lastUpdated;
   final String? notes;
+  final int minStockLevel;
   final bool lowStock;
   final bool available;
   final bool archived;
@@ -36,6 +37,7 @@ class InventoryItem {
     required this.unit,
     required this.lastUpdated,
     this.notes,
+    this.minStockLevel = 0,
     this.lowStock = false,
     this.available = true,
     this.archived = false,
@@ -51,6 +53,7 @@ class InventoryItem {
     String? unit,
     DateTime? lastUpdated,
     String? notes,
+    int? minStockLevel,
     bool? lowStock,
     bool? available,
     bool? archived,
@@ -65,6 +68,7 @@ class InventoryItem {
       unit: unit ?? this.unit,
       lastUpdated: lastUpdated ?? this.lastUpdated,
       notes: notes ?? this.notes,
+      minStockLevel: minStockLevel ?? this.minStockLevel,
       lowStock: lowStock ?? this.lowStock,
       available: available ?? this.available,
       archived: archived ?? this.archived,
@@ -104,6 +108,10 @@ class InventoryItem {
       unit: (json['unit'] ?? 'pcs').toString(),
       lastUpdated: parsedUpdated?.toLocal() ?? DateTime.now(),
       notes: json['notes']?.toString(),
+      minStockLevel:
+          (json['minStockLevel'] is int)
+              ? json['minStockLevel'] as int
+              : int.tryParse('${json['minStockLevel'] ?? ''}') ?? 0,
       lowStock: json['lowStock'] == true,
       available: json['available'] != false,
       archived: json['archived'] == true,
@@ -414,7 +422,7 @@ class _InventoryState extends State<Inventory> {
     if (!_categories.contains(_categoryController.text)) {
       _categoryController.text = 'Other';
     }
-    _minStockController.text = '10';
+    _minStockController.text = item == null ? '10' : item.minStockLevel.toString();
     _editingAvailable = item?.available ?? true;
 
     showDialog<void>(
@@ -441,132 +449,127 @@ class _InventoryState extends State<Inventory> {
               content: SizedBox(
                 width: 560,
                 child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      AntdFieldShell(
-                        label: 'Item',
-                        required: true,
-                        errorText:
-                            item == null &&
-                                    !createNewItem &&
-                                    _nameController.text.trim().isNotEmpty &&
-                                    (_stockTargetItem == null ||
-                                        _stockTargetItem!.name
-                                                .toLowerCase()
-                                                .trim() !=
-                                            _nameController.text
-                                                .toLowerCase()
-                                                .trim())
-                                ? 'Select a matching inventory item'
-                                : null,
-                        child:
-                            item == null && !createNewItem
-                                ? Autocomplete<InventoryItem>(
-                                  displayStringForOption:
-                                      (option) => option.name,
-                                  optionsBuilder: (value) {
-                                    final query =
-                                        value.text.trim().toLowerCase();
-                                    if (query.isEmpty) {
-                                      return _activeItems.take(12);
-                                    }
-                                    return _activeItems.where(
-                                      (i) => _matchesInventoryPrefix(i, query),
-                                    );
-                                  },
-                                  fieldViewBuilder: (
-                                    context,
-                                    controller,
-                                    focusNode,
-                                    onSubmit,
-                                  ) {
-                                    if (controller.text !=
-                                        _nameController.text) {
-                                      controller.text = _nameController.text;
-                                    }
-                                    return TextField(
-                                      controller: controller,
-                                      focusNode: focusNode,
-                                      decoration: const InputDecoration(
-                                        hintText:
-                                            'Search by first letter / prefix…',
-                                        border: InputBorder.none,
-                                        isDense: true,
-                                      ),
-                                      onChanged: (value) {
+                  child: Builder(
+                    builder: (context) {
+                      final isAddStock = item == null && !createNewItem;
+                      final isEdit = item != null;
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          AntdFieldShell(
+                            label: 'Item',
+                            required: true,
+                            errorText:
+                                isAddStock &&
+                                        _nameController.text.trim().isNotEmpty &&
+                                        (_stockTargetItem == null ||
+                                            _stockTargetItem!.name
+                                                    .toLowerCase()
+                                                    .trim() !=
+                                                _nameController.text
+                                                    .toLowerCase()
+                                                    .trim())
+                                    ? 'Select a matching inventory item'
+                                    : null,
+                            child:
+                                isAddStock
+                                    ? Autocomplete<InventoryItem>(
+                                      displayStringForOption:
+                                          (option) => option.name,
+                                      optionsBuilder: (value) {
+                                        final query =
+                                            value.text.trim().toLowerCase();
+                                        if (query.isEmpty) {
+                                          return _activeItems.take(12);
+                                        }
+                                        return _activeItems.where(
+                                          (i) =>
+                                              _matchesInventoryPrefix(i, query),
+                                        );
+                                      },
+                                      fieldViewBuilder: (
+                                        context,
+                                        controller,
+                                        focusNode,
+                                        onSubmit,
+                                      ) {
+                                        if (controller.text !=
+                                            _nameController.text) {
+                                          controller.text =
+                                              _nameController.text;
+                                        }
+                                        return TextField(
+                                          controller: controller,
+                                          focusNode: focusNode,
+                                          decoration: const InputDecoration(
+                                            hintText:
+                                                'Search by first letter / prefix…',
+                                            border: InputBorder.none,
+                                            isDense: true,
+                                          ),
+                                          onChanged: (value) {
+                                            setModalState(() {
+                                              _nameController.text = value;
+                                              InventoryItem? match;
+                                              final normalized =
+                                                  value.toLowerCase().trim();
+                                              for (final i in _activeItems) {
+                                                if (i.name
+                                                        .toLowerCase()
+                                                        .trim() ==
+                                                    normalized) {
+                                                  match = i;
+                                                  break;
+                                                }
+                                              }
+                                              _stockTargetItem = match;
+                                              _editingItemId = match?.id;
+                                              if (match != null) {
+                                                _unitController.text =
+                                                    match.unit;
+                                              }
+                                            });
+                                          },
+                                        );
+                                      },
+                                      onSelected: (selected) {
                                         setModalState(() {
-                                          _nameController.text = value;
-                                          InventoryItem? match;
-                                          final normalized =
-                                              value.toLowerCase().trim();
-                                          for (final i in _activeItems) {
-                                            if (i.name.toLowerCase().trim() ==
-                                                normalized) {
-                                              match = i;
-                                              break;
-                                            }
-                                          }
-                                          _stockTargetItem = match;
-                                          _editingItemId = match?.id;
+                                          _stockTargetItem = selected;
+                                          _editingItemId = selected.id;
+                                          _nameController.text = selected.name;
+                                          _categoryController.text =
+                                              _categories.contains(
+                                                    selected.category,
+                                                  )
+                                                  ? selected.category
+                                                  : 'Other';
+                                          _unitController.text =
+                                              _units.contains(selected.unit)
+                                                  ? selected.unit
+                                                  : 'pcs';
+                                          _descriptionController.text =
+                                              selected.notes ?? '';
+                                          _editingAvailable =
+                                              selected.available;
                                         });
                                       },
-                                    );
-                                  },
-                                  onSelected: (selected) {
-                                    setModalState(() {
-                                      _stockTargetItem = selected;
-                                      _editingItemId = selected.id;
-                                      _nameController.text = selected.name;
-                                      _categoryController.text =
-                                          _categories.contains(
-                                                selected.category,
-                                              )
-                                              ? selected.category
-                                              : 'Other';
-                                      _unitController.text =
-                                          _units.contains(selected.unit)
-                                              ? selected.unit
-                                              : 'pcs';
-                                      _descriptionController.text =
-                                          selected.notes ?? '';
-                                      _editingAvailable = selected.available;
-                                    });
-                                  },
-                                )
-                                : AntdOutlineInput(
-                                  controller: _nameController,
-                                  readOnly: item != null,
-                                  hintText: 'Item name',
-                                ),
-                      ),
-                      const SizedBox(height: 14),
-                      AntdFieldShell(
-                        label: 'Category',
-                        required: true,
-                        child: DropdownButtonFormField<String>(
-                          value: _categoryController.text,
-                          isExpanded: true,
-                          decoration: const InputDecoration(
-                            border: InputBorder.none,
-                            isDense: true,
+                                    )
+                                    : AntdOutlineInput(
+                                      controller: _nameController,
+                                      // New item and edit: allow typing item name.
+                                      readOnly: false,
+                                      hintText: 'Item name',
+                                    ),
                           ),
-                          items: [
-                            for (final c in _categories)
-                              DropdownMenuItem(value: c, child: Text(c)),
-                          ],
-                          onChanged: (v) {
-                            if (v != null) _categoryController.text = v;
-                          },
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: AntdFieldShell(
-                              label: 'Quantity',
+                          if (isAddStock) ...[
+                            const SizedBox(height: 14),
+                            AntdFieldShell(
+                              label: 'Quantity to add',
                               required: true,
+                              helperText:
+                                  _stockTargetItem == null
+                                      ? 'Select an item first. Unit stays on the existing item.'
+                                      : 'Adds to current stock (${_stockTargetItem!.quantity} ${_stockTargetItem!.unit}).',
                               child: AntdOutlineInput(
                                 controller: _quantityController,
                                 keyboardType: TextInputType.number,
@@ -576,72 +579,139 @@ class _InventoryState extends State<Inventory> {
                                 hintText: '0',
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: AntdFieldShell(
-                              label: 'Unit',
+                          ] else ...[
+                            const SizedBox(height: 14),
+                            AntdFieldShell(
+                              label: 'Category',
                               required: true,
                               child: DropdownButtonFormField<String>(
-                                value:
-                                    _units.contains(_unitController.text)
-                                        ? _unitController.text
-                                        : 'pcs',
+                                value: _categoryController.text,
                                 isExpanded: true,
                                 decoration: const InputDecoration(
                                   border: InputBorder.none,
                                   isDense: true,
                                 ),
                                 items: [
-                                  for (final u in _units)
-                                    DropdownMenuItem(value: u, child: Text(u)),
+                                  for (final c in _categories)
+                                    DropdownMenuItem(
+                                      value: c,
+                                      child: Text(c),
+                                    ),
                                 ],
                                 onChanged: (v) {
-                                  if (v != null) _unitController.text = v;
+                                  if (v != null) _categoryController.text = v;
                                 },
                               ),
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
-                      AntdFieldShell(
-                        label: 'Low stock alert',
-                        helperText:
-                            'Item is marked low when quantity is at or below this value.',
-                        child: AntdOutlineInput(
-                          controller: _minStockController,
-                          keyboardType: TextInputType.number,
-                          inputFormatters: [
-                            FilteringTextInputFormatter.digitsOnly,
+                            const SizedBox(height: 14),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: AntdFieldShell(
+                                    label: 'Quantity',
+                                    required: true,
+                                    helperText:
+                                        isEdit
+                                            ? 'Locked. Archive and add a new item to change quantity/unit.'
+                                            : null,
+                                    child: AntdOutlineInput(
+                                      controller: _quantityController,
+                                      readOnly: isEdit,
+                                      keyboardType: TextInputType.number,
+                                      inputFormatters: [
+                                        FilteringTextInputFormatter.digitsOnly,
+                                      ],
+                                      hintText: '0',
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: AntdFieldShell(
+                                    label: 'Unit',
+                                    required: true,
+                                    helperText:
+                                        isEdit
+                                            ? 'Locked. Archive and recreate to change unit.'
+                                            : null,
+                                    child:
+                                        isEdit
+                                            ? AntdOutlineInput(
+                                              controller: _unitController,
+                                              readOnly: true,
+                                            )
+                                            : DropdownButtonFormField<String>(
+                                              value:
+                                                  _units.contains(
+                                                        _unitController.text,
+                                                      )
+                                                      ? _unitController.text
+                                                      : 'pcs',
+                                              isExpanded: true,
+                                              decoration: const InputDecoration(
+                                                border: InputBorder.none,
+                                                isDense: true,
+                                              ),
+                                              items: [
+                                                for (final u in _units)
+                                                  DropdownMenuItem(
+                                                    value: u,
+                                                    child: Text(u),
+                                                  ),
+                                              ],
+                                              onChanged: (v) {
+                                                if (v != null) {
+                                                  _unitController.text = v;
+                                                }
+                                              },
+                                            ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 14),
+                            AntdFieldShell(
+                              label: 'Low stock alert',
+                              helperText:
+                                  'Item is marked low when quantity is at or below this value.',
+                              child: AntdOutlineInput(
+                                controller: _minStockController,
+                                keyboardType: TextInputType.number,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                ],
+                                hintText: '10',
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                            SwitchListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text('Available stock'),
+                              subtitle: Text(
+                                _editingAvailable
+                                    ? 'This item can be used for operations.'
+                                    : 'This item is marked unavailable.',
+                              ),
+                              value: _editingAvailable,
+                              activeColor: AntdTokens.success,
+                              onChanged:
+                                  (v) => setModalState(
+                                    () => _editingAvailable = v,
+                                  ),
+                            ),
+                            const SizedBox(height: 14),
+                            AntdFieldShell(
+                              label: 'Description',
+                              child: AntdOutlineInput(
+                                controller: _descriptionController,
+                                maxLines: 3,
+                                hintText: 'Optional notes',
+                              ),
+                            ),
                           ],
-                          hintText: '10',
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Available stock'),
-                        subtitle: Text(
-                          _editingAvailable
-                              ? 'This item can be used for operations.'
-                              : 'This item is marked unavailable.',
-                        ),
-                        value: _editingAvailable,
-                        activeColor: AntdTokens.success,
-                        onChanged:
-                            (v) => setModalState(() => _editingAvailable = v),
-                      ),
-                      const SizedBox(height: 14),
-                      AntdFieldShell(
-                        label: 'Description',
-                        child: AntdOutlineInput(
-                          controller: _descriptionController,
-                          maxLines: 3,
-                          hintText: 'Optional notes',
-                        ),
-                      ),
-                    ],
+                        ],
+                      );
+                    },
                   ),
                 ),
               ),
@@ -652,7 +722,10 @@ class _InventoryState extends State<Inventory> {
                   onPressed: () => Navigator.pop(dialogContext),
                 ),
                 AntdPrimaryButton(
-                  label: item == null ? 'Add' : 'Update',
+                  label:
+                      item == null
+                          ? (createNewItem ? 'Add' : 'Add stock')
+                          : 'Update',
                   loading: _isSavingInventory,
                   onPressed: () => _saveInventoryItem(dialogContext),
                 ),
@@ -666,10 +739,25 @@ class _InventoryState extends State<Inventory> {
 
   Future<void> _saveInventoryItem(BuildContext dialogContext) async {
     if (_isSavingInventory) return;
+
+    // `_creatingNewInventoryItem` is true for New Item AND Edit.
+    // Add Stock sets it false.
+    final isAddStockMode = !_creatingNewInventoryItem;
+
     if (_nameController.text.trim().isEmpty ||
-        _quantityController.text.trim().isEmpty ||
-        _unitController.text.trim().isEmpty ||
-        _categoryController.text.trim().isEmpty) {
+        _quantityController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please fill in all required fields'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    if (!isAddStockMode &&
+        (_unitController.text.trim().isEmpty ||
+            _categoryController.text.trim().isEmpty)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please fill in all required fields'),
@@ -690,7 +778,7 @@ class _InventoryState extends State<Inventory> {
     try {
       setState(() => _isSavingInventory = true);
       final target = _stockTargetItem;
-      if (!_creatingNewInventoryItem && target == null) {
+      if (isAddStockMode && target == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Please select an existing inventory item'),
@@ -700,26 +788,42 @@ class _InventoryState extends State<Inventory> {
         return;
       }
       final savedQuantity =
-          target != null && !_creatingNewInventoryItem
-              ? target.quantity + q
-              : q;
+          isAddStockMode && target != null ? target.quantity + q : q;
       final body = {
-        'name': _nameController.text.trim(),
-        'category': _categoryController.text.trim(),
+        'name':
+            isAddStockMode && target != null
+                ? target.name
+                : _nameController.text.trim(),
+        'category':
+            isAddStockMode && target != null
+                ? target.category
+                : _categoryController.text.trim(),
         'quantity': savedQuantity,
         'unitCost': 0,
-        'unit': _unitController.text.trim(),
+        'unit':
+            isAddStockMode && target != null
+                ? target.unit
+                : _unitController.text.trim(),
         'notes':
-            _descriptionController.text.trim().isEmpty
-                ? null
-                : _descriptionController.text.trim(),
-        'minStockLevel': int.tryParse(_minStockController.text.trim()) ?? 0,
-        'available': _editingAvailable,
+            isAddStockMode && target != null
+                ? target.notes
+                : (_descriptionController.text.trim().isEmpty
+                    ? null
+                    : _descriptionController.text.trim()),
+        'minStockLevel':
+            isAddStockMode && target != null
+                ? target.minStockLevel
+                : (int.tryParse(_minStockController.text.trim()) ?? 0),
+        'available':
+            isAddStockMode && target != null
+                ? target.available
+                : _editingAvailable,
       };
 
-      if (_editingItemId != null) {
+      final editingId = _editingItemId;
+      if (editingId != null) {
         await ApiClient.instance.putJson(
-          '/api/inventory/$_editingItemId',
+          '/api/inventory/$editingId',
           body: body,
         );
       } else {
@@ -734,7 +838,9 @@ class _InventoryState extends State<Inventory> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              _editingItemId != null ? 'Item updated' : 'Item added',
+              isAddStockMode
+                  ? 'Stock added'
+                  : (editingId != null ? 'Item updated' : 'Item added'),
             ),
             backgroundColor: Colors.green,
           ),
@@ -804,6 +910,8 @@ class _InventoryState extends State<Inventory> {
     _minStockController.text = '10';
     _editingAvailable = true;
     _editingItemId = null;
+    _stockTargetItem = null;
+    _creatingNewInventoryItem = false;
   }
 
   Widget _buildTabularView(List<InventoryItem> items) {
