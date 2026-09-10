@@ -6,14 +6,15 @@ import 'package:pdf/widgets.dart' as pw;
 
 import 'pdf_print.dart';
 import 'printable_html_report.dart';
-import 'web_html_print.dart';
+import 'web_pdf_download.dart';
 
-export 'printable_html_report.dart' show PrintableHtmlSection, buildPrintableHtmlReport;
+export 'printable_html_report.dart'
+    show PrintableHtmlSection, buildPrintableHtmlReport;
 
 /// Shared Print PDF path used by Action Logs / tables / dashboards.
 ///
-/// On web, opens a printable HTML preview (avoids `package:pdf` freezing the
-/// UI). On native, builds a PDF and opens the system print dialog.
+/// Builds a real PDF, opens it in a new tab on web for preview, then uses
+/// Flutter's native [Printing.layoutPdf] dialog for Print / Save as PDF.
 Future<void> printTabularReport({
   required String title,
   required List<PrintableHtmlSection> sections,
@@ -24,21 +25,8 @@ Future<void> printTabularReport({
       subtitle ??
       "Macrina's Kitchen and Catering · Generated ${DateTime.now().toLocal()}";
 
-  if (kIsWeb) {
-    final htmlName =
-        filename.toLowerCase().endsWith('.pdf')
-            ? '${filename.substring(0, filename.length - 4)}.html'
-            : '$filename.html';
-    openHtmlDocument(
-      buildPrintableHtmlReport(
-        title: title,
-        subtitle: resolvedSubtitle,
-        sections: sections,
-      ),
-      filename: htmlName,
-    );
-    return;
-  }
+  // Open during the user gesture so the preview tab is not blocked.
+  final previewTab = kIsWeb ? openBlankPdfTab() : null;
 
   final doc = pw.Document(title: title, compress: false);
   doc.addPage(
@@ -100,8 +88,13 @@ Future<void> printTabularReport({
     ),
   );
 
-  final bytes = await doc.save();
-  await printPdfBytes(bytes, name: filename);
+  try {
+    final bytes = await doc.save();
+    await printPdfBytes(bytes, name: filename, previewTab: previewTab);
+  } catch (e) {
+    closePdfTab(previewTab);
+    rethrow;
+  }
 }
 
 /// Convenience for a single table (Action Logs / inventory style).
@@ -127,8 +120,7 @@ Future<void> printSingleTableReport({
   );
 }
 
-/// Opens already-built PDF bytes. Prefer [printTabularReport] for table data
-/// so web stays responsive.
+/// Opens already-built PDF bytes via preview tab + native print dialog.
 Future<void> printBuiltPdfBytes(
   Uint8List bytes, {
   String name = 'document.pdf',

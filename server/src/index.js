@@ -4177,12 +4177,22 @@ async function logAction({
   action,
   other = null,
 }) {
+  if (!userId || !action) return;
   const q = client ?? pool;
-  await q.query(
-    `INSERT INTO action_logs (user_id, feature, action, other)
-     VALUES ($1, $2, $3, $4);`,
-    [userId, feature, action, other],
-  );
+  let otherValue = other;
+  if (otherValue != null && typeof otherValue === "object") {
+    // Ensure jsonb-friendly payload
+    otherValue = otherValue;
+  }
+  try {
+    await q.query(
+      `INSERT INTO action_logs (user_id, feature, action, other)
+       VALUES ($1, $2, $3, $4);`,
+      [String(userId), String(feature || ""), String(action), otherValue],
+    );
+  } catch (e) {
+    console.error("logAction failed:", e.message);
+  }
 }
 
 app.post("/api/auth/login", async (req, res) => {
@@ -4690,10 +4700,10 @@ app.get(
       );
 
       const recentActions = await pool.query(
-        `SELECT al.id, COALESCE(u.full_name, 'System') AS "userName",
+        `SELECT al.id, COALESCE(NULLIF(trim(u.full_name), ''), 'System') AS "userName",
                 al.feature, al.action, al.created_at AS "createdAt"
          FROM action_logs al
-         LEFT JOIN users u ON u.id = al.user_id
+         LEFT JOIN users u ON u.id::text = al.user_id::text
          ORDER BY al.created_at DESC
          LIMIT 8`,
       );
@@ -5012,6 +5022,7 @@ app.get(
   authRequired,
   requireSuperAdmin,
   async (req, res) => {
+    try {
     const { search, role, archived } = req.query || {};
 
     const where = [];
@@ -5065,6 +5076,10 @@ app.get(
         employmentType: u.employment_type,
       })),
     });
+    } catch (e) {
+      console.error("super-admin users list failed:", e);
+      return res.status(500).json({ message: "Failed to load users" });
+    }
   },
 );
 
@@ -5538,46 +5553,72 @@ app.get(
   authRequired,
   requireSuperAdmin,
   async (req, res) => {
-    const { search } = req.query || {};
+    try {
+      const { search } = req.query || {};
 
-    const params = [];
-    let whereSql = "";
-    if (search) {
-      whereSql = `WHERE (
-      u.full_name ILIKE $1 OR
-      al.feature ILIKE $1 OR
-      al.action ILIKE $1
-    )`;
-      params.push(`%${search}%`);
+      const params = [];
+      let whereSql = "";
+      if (search) {
+        whereSql = `WHERE (
+        COALESCE(u.full_name, '') ILIKE $1 OR
+        al.feature ILIKE $1 OR
+        al.action ILIKE $1 OR
+        COALESCE(al.other::text, '') ILIKE $1
+      )`;
+        params.push(`%${search}%`);
+      }
+
+      // LEFT JOIN so logs remain visible if the user row was deleted / id mismatch.
+      const result = await pool.query(
+        `SELECT
+        al.id,
+        al.user_id,
+        COALESCE(NULLIF(trim(u.full_name), ''), NULLIF(trim(u.email), ''), 'Unknown user') AS "userName",
+        al.feature,
+        al.action,
+        al.other,
+        al.created_at AS "createdAt"
+       FROM action_logs al
+       LEFT JOIN users u ON u.id::text = al.user_id::text
+       ${whereSql}
+       ORDER BY al.created_at DESC
+       LIMIT 500;`,
+        params,
+      );
+
+      return res.json({
+        actionLogs: result.rows.map((r) => {
+          let other = r.other;
+          if (other == null) other = "n/a";
+          else if (typeof other === "object") {
+            try {
+              other = JSON.stringify(other);
+            } catch (_) {
+              other = String(other);
+            }
+          } else {
+            other = String(other);
+          }
+          const created =
+            r.createdAt instanceof Date
+              ? r.createdAt.toISOString()
+              : r.createdAt
+                ? new Date(r.createdAt).toISOString()
+                : new Date().toISOString();
+          return {
+            id: String(r.id),
+            userName: String(r.userName || "Unknown user"),
+            feature: String(r.feature || ""),
+            action: String(r.action || ""),
+            other,
+            createdAt: created,
+          };
+        }),
+      });
+    } catch (e) {
+      console.error("action-logs list failed:", e);
+      return res.status(500).json({ message: "Failed to load action logs" });
     }
-
-    const result = await pool.query(
-      `SELECT
-      al.id,
-      al.user_id,
-      u.full_name AS "userName",
-      al.feature,
-      al.action,
-      al.other,
-      al.created_at AS "createdAt"
-     FROM action_logs al
-     JOIN users u ON u.id = al.user_id
-     ${whereSql}
-     ORDER BY al.created_at DESC
-     LIMIT 500;`,
-      params,
-    );
-
-    return res.json({
-      actionLogs: result.rows.map((r) => ({
-        id: r.id,
-        userName: r.userName,
-        feature: r.feature,
-        action: r.action,
-        other: r.other,
-        createdAt: r.createdAt.toISOString(),
-      })),
-    });
   },
 );
 
@@ -10424,7 +10465,12 @@ async function registerRoutesAfterDbInit() {
         const result = await pool.query(
           `UPDATE menu_dishes
            SET name = $1, price = $2, category = $3, pax_options = $4, 
-               sauces = $5, supports_addons = $6, ingredients = $7, image_base64 = $8, type = $9, set_menus = $10,
+               sauces = $5, supports_addons = $6, ingredients = $7,
+               image_base64 = CASE
+                 WHEN $8::text IS NULL THEN image_base64
+                 ELSE $8
+               END,
+               type = $9, set_menus = $10,
                available = $11, public_description = $12, allergens = $13, meal_type = $14,
                menu_dishes_additional_charge_amount = $15, updated_at = now()
            WHERE id = $16
@@ -10433,11 +10479,12 @@ async function registerRoutesAfterDbInit() {
             name,
             price,
             dishCategory,
-            JSON.stringify(paxOptions),
-            JSON.stringify(sauces),
+            JSON.stringify(paxOptions ?? []),
+            JSON.stringify(sauces ?? []),
             Boolean(supportsAddOns) || (Array.isArray(sauces) && sauces.length > 0),
-            JSON.stringify(ingredients),
-            imageBase64,
+            JSON.stringify(ingredients ?? []),
+            // null/undefined = keep existing photo (list endpoint omits images)
+            imageBase64 == null ? null : imageBase64,
             dishCategory === 'restaurant' ? '' : type,
             JSON.stringify(req.body.setMenus || []),
             available !== false,
@@ -10486,6 +10533,28 @@ async function registerRoutesAfterDbInit() {
       } catch (error) {
         console.error('Error archiving menu dish:', error);
         res.status(500).json({ error: 'Failed to archive menu dish' });
+      }
+    });
+
+    // Permanent delete — only archived dishes (safety).
+    app.delete('/api/menu/dishes/:dishId', authRequired, async (req, res) => {
+      try {
+        const { dishId } = req.params;
+        const result = await pool.query(
+          `DELETE FROM menu_dishes
+           WHERE id = $1 AND archived = TRUE
+           RETURNING id, name`,
+          [dishId],
+        );
+        if (result.rowCount === 0) {
+          return res.status(404).json({
+            error: 'Archived dish not found (restore/unarchive first is blocked; only archived dishes can be deleted)',
+          });
+        }
+        res.json({ ok: true, dish: result.rows[0] });
+      } catch (error) {
+        console.error('Error deleting menu dish:', error);
+        res.status(500).json({ error: 'Failed to delete menu dish' });
       }
     });
 

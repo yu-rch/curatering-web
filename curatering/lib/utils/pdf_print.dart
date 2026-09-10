@@ -5,20 +5,22 @@ import 'package:printing/printing.dart';
 
 import 'web_pdf_download.dart';
 
-/// Opens the PDF without blocking the Flutter UI.
+/// Opens a PDF preview tab (web) and the native Flutter print dialog.
 ///
-/// On web, [Printing.layoutPdf] can freeze the page while it rasterizes the
-/// PDF for the browser print dialog. Opening a blob URL is much lighter.
+/// On web, [Printing.layoutPdf] drives Print / Save as PDF. A separate tab
+/// shows the raw PDF for preview. Call [openBlankPdfTab] during the click
+/// gesture and pass it as [previewTab] so popup blockers don't eat the tab
+/// after async PDF generation.
 Future<void> printPdfBytes(
   Uint8List bytes, {
   String name = 'document.pdf',
+  Object? previewTab,
 }) async {
   // Let the current frame finish (button press / loading spinner) first.
   await Future<void>.delayed(Duration.zero);
 
   if (kIsWeb) {
-    openOrDownloadPdfBytes(bytes, name);
-    return;
+    showPdfInTab(previewTab, bytes, name);
   }
 
   await Printing.layoutPdf(

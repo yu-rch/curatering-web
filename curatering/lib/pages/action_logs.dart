@@ -95,27 +95,47 @@ class _ActionLogsPageState extends State<ActionLogsPage> {
     });
 
     try {
-      final results = await Future.wait([
-        SuperAdminApi.instance.listActionLogs(),
-        SuperAdminApi.instance.listUsers(archived: false),
-      ]);
-      final data = results[0] as List<ActionLogDto>;
-      final users = results[1] as List<UserDto>;
-      final names =
-          users
-              .map((u) => u.fullName.trim())
-              .where((n) => n.isNotEmpty)
-              .toSet()
-              .toList()
-            ..sort();
+      // Load logs first so a users-filter failure cannot blank the page.
+      final data = await SuperAdminApi.instance.listActionLogs();
+      var staffNames = <String>['All'];
+      try {
+        final users = await SuperAdminApi.instance.listUsers(archived: false);
+        final names =
+            users
+                .map((u) => u.fullName.trim())
+                .where((n) => n.isNotEmpty)
+                .toSet()
+                .toList()
+              ..sort();
+        // Also include names present only in logs (deleted / unmatched users).
+        final fromLogs =
+            data
+                .map((l) => l.userName.trim())
+                .where((n) => n.isNotEmpty && n != 'Unknown user')
+                .toSet();
+        staffNames = ['All', ...{...names, ...fromLogs}.toList()..sort()];
+      } catch (_) {
+        final fromLogs =
+            data
+                .map((l) => l.userName.trim())
+                .where((n) => n.isNotEmpty)
+                .toSet()
+                .toList()
+              ..sort();
+        staffNames = ['All', ...fromLogs];
+      }
+
+      if (!mounted) return;
       setState(() {
         _logs = data;
-        _staffUsers = ['All', ...names];
+        _staffUsers = staffNames;
         if (_userFilter != 'All' && !_staffUsers.contains(_userFilter)) {
           _userFilter = 'All';
         }
+        _error = null;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() => _error = 'Failed to load action logs.');
     } finally {
       if (mounted) setState(() => _loading = false);

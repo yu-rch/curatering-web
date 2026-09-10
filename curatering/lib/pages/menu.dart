@@ -518,7 +518,18 @@ class _MenuState extends State<Menu> {
       _resetEditorState(category: category);
     } else {
       _startEditingDish(dish);
+      // List endpoint omits photos — fetch before edit so Save won't clear them.
+      if (_editingImageBase64 == null || _editingImageBase64!.trim().isEmpty) {
+        final withImage = await MenuStore.instance.loadDishWithImage(dish.id);
+        if (withImage != null &&
+            withImage.imageBase64 != null &&
+            withImage.imageBase64!.trim().isNotEmpty) {
+          _editingImageBase64 = withImage.imageBase64;
+        }
+      }
     }
+
+    if (!mounted) return;
 
     await showDialog<void>(
       context: context,
@@ -581,7 +592,8 @@ class _MenuState extends State<Menu> {
                       if (category == 'restaurant') ...[
                         const SizedBox(height: 16),
                         DropdownButtonFormField<String>(
-                          value:
+                          key: ValueKey('restaurant_meal_$_editingType'),
+                          initialValue:
                               _restaurantMealTypes.contains(_editingType)
                                   ? _editingType
                                   : 'others',
@@ -701,7 +713,8 @@ class _MenuState extends State<Menu> {
                       if (category == 'catering') ...[
                         const SizedBox(height: 12),
                         DropdownButtonFormField<String>(
-                          value:
+                          key: ValueKey('catering_meal_$_editingMealType'),
+                          initialValue:
                               kCateringMealTypes.contains(_editingMealType)
                                   ? _editingMealType
                                   : 'main',
@@ -925,6 +938,7 @@ class _MenuState extends State<Menu> {
                                   price: price,
                                   additionalChargeAmount: additionalCharge,
                                   paxOptions: paxToSave,
+                                  // Only send when we have a photo (null keeps existing on server).
                                   imageBase64: _editingImageBase64,
                                   category: category,
                                   sauces:
@@ -955,6 +969,14 @@ class _MenuState extends State<Menu> {
                               }
                               if (context.mounted) {
                                 Navigator.of(context).pop();
+                              }
+                              if (mounted) {
+                                showAntdMessage(
+                                  this.context,
+                                  dish == null
+                                      ? 'Dish added'
+                                      : 'Dish saved',
+                                );
                               }
                             } catch (e) {
                               if (context.mounted) {

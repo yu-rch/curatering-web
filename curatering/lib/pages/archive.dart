@@ -37,6 +37,7 @@ class ArchivedTransaction {
 class ArchivedDish {
   final String dishNo;
   final String dishName;
+  final String category;
   final String variants;
   final String price;
   final String archiveDate;
@@ -44,6 +45,7 @@ class ArchivedDish {
   ArchivedDish({
     required this.dishNo,
     required this.dishName,
+    required this.category,
     required this.variants,
     required this.price,
     required this.archiveDate,
@@ -61,18 +63,39 @@ class _ArchiveState extends State<Archive> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   List<UserDto> _archivedUsers = [];
   bool _loadingUsers = false;
+  bool _loadingMenu = false;
+
+  bool get _canManageArchive =>
+      AuthSession.instance.currentRole == Role.manager ||
+      AuthSession.instance.currentRole == Role.superAdmin;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 5, vsync: this);
     _loadArchivedUsers();
+    _loadArchivedMenu();
   }
 
   @override
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadArchivedMenu() async {
+    setState(() => _loadingMenu = true);
+    try {
+      await MenuStore.instance.loadAllDishes(silent: true);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to load archived menu dishes.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loadingMenu = false);
+    }
   }
 
   Future<void> _loadArchivedUsers() async {
@@ -87,6 +110,61 @@ class _ArchiveState extends State<Archive> with SingleTickerProviderStateMixin {
     }
   }
 
+  Future<String?> _confirmSuperAdminPassword(String actionLabel) async {
+    final passwordCtrl = TextEditingController();
+    String? errorText;
+    final result = await showAntdModal<String>(
+      context: context,
+      title: 'Confirm password',
+      barrierDismissible: false,
+      body: StatefulBuilder(
+        builder: (context, setDialogState) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Enter your current super admin password to $actionLabel.'),
+              const SizedBox(height: 12),
+              TextField(
+                controller: passwordCtrl,
+                obscureText: true,
+                autofocus: true,
+                decoration: InputDecoration(
+                  labelText: 'Super admin password',
+                  errorText: errorText,
+                  prefixIcon: const Icon(Icons.lock_outline),
+                ),
+                onSubmitted: (_) {
+                  final value = passwordCtrl.text;
+                  if (value.isEmpty) {
+                    setDialogState(() => errorText = 'Password is required.');
+                    return;
+                  }
+                  Navigator.of(context).pop(value);
+                },
+              ),
+            ],
+          );
+        },
+      ),
+      actions: [
+        AntdSecondaryButton(
+          label: 'Cancel',
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        AntdPrimaryButton(
+          label: 'Confirm',
+          onPressed: () {
+            final value = passwordCtrl.text;
+            if (value.isEmpty) return;
+            Navigator.of(context).pop(value);
+          },
+        ),
+      ],
+    );
+    passwordCtrl.dispose();
+    return result;
+  }
+
   List<ArchivedDish> _archivedDishesFromStore() {
     return MenuStore.instance.archivedDishes.map((d) {
       final archivedAt = d.archivedAt;
@@ -97,11 +175,89 @@ class _ArchiveState extends State<Archive> with SingleTickerProviderStateMixin {
       return ArchivedDish(
         dishNo: d.id,
         dishName: d.name,
+        category: d.category,
         variants: d.paxOptions.join(', '),
         price: '₱${d.price}',
         archiveDate: archiveDate,
       );
     }).toList();
+  }
+
+  Future<void> _restoreDish(ArchivedDish dish) async {
+    try {
+      await MenuStore.instance.archiveDish(dish.dishNo, archived: false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Restored "${dish.dishName}"')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Restore failed: $e')));
+      }
+    }
+  }
+
+  Future<void> _deleteDishForever(ArchivedDish dish) async {
+    final ok = await showAntdModal<bool>(
+      context: context,
+      title: 'Delete permanently',
+      body: Text('Remove "${dish.dishName}" forever? This cannot be undone.'),
+      actions: [
+        AntdSecondaryButton(
+          label: 'Cancel',
+          onPressed: () => Navigator.pop(context, false),
+        ),
+        AntdDangerButton(
+          label: 'Delete',
+          icon: Icons.delete_forever,
+          onPressed: () => Navigator.pop(context, true),
+        ),
+      ],
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await MenuStore.instance.deleteDishForever(dish.dishNo);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Dish deleted')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Delete failed: $e')));
+      }
+    }
+  }
+
+  Future<void> _restoreUser(UserDto user) async {
+    try {
+      final password = await _confirmSuperAdminPassword(
+        'restore ${user.fullName}',
+      );
+      if (password == null) return;
+      await SuperAdminApi.instance.setUserArchived(
+        userId: user.id,
+        archived: false,
+        superAdminPassword: password,
+      );
+      await _loadArchivedUsers();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Restored "${user.fullName}"')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Restore failed: $e')));
+      }
+    }
   }
 
   Widget _buildTabButton(String label, int index) {
@@ -139,12 +295,16 @@ class _ArchiveState extends State<Archive> with SingleTickerProviderStateMixin {
   }
 
   Widget _buildMenuArchiveTab() {
+    if (_loadingMenu) {
+      return const AntdLoadingState();
+    }
     return AnimatedBuilder(
       animation: MenuStore.instance,
       builder: (context, _) {
         final archivedDishes = _archivedDishesFromStore();
         return SingleChildScrollView(
           child: _buildTable<ArchivedDish>(
+            title: 'Archived Menu',
             columns: const [
               DataColumn(label: Text('Dish No.')),
               DataColumn(label: Text('Dish Name')),
@@ -152,6 +312,7 @@ class _ArchiveState extends State<Archive> with SingleTickerProviderStateMixin {
               DataColumn(label: Text('Variants')),
               DataColumn(label: Text('Price')),
               DataColumn(label: Text('Archive Date')),
+              DataColumn(label: Text('Actions')),
             ],
             rows:
                 archivedDishes
@@ -160,10 +321,31 @@ class _ArchiveState extends State<Archive> with SingleTickerProviderStateMixin {
                         cells: [
                           DataCell(Text(d.dishNo)),
                           DataCell(Text(d.dishName)),
-                          DataCell(const Text('Menu')),
+                          DataCell(Text(d.category)),
                           DataCell(Text(d.variants)),
                           DataCell(Text(d.price)),
                           DataCell(Text(d.archiveDate)),
+                          DataCell(
+                            _canManageArchive
+                                ? Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    AntdIconActionButton(
+                                      tooltip: 'Restore',
+                                      icon: Icons.unarchive,
+                                      onPressed: () => _restoreDish(d),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    AntdIconActionButton(
+                                      tooltip: 'Delete',
+                                      icon: Icons.delete_forever,
+                                      destructive: true,
+                                      onPressed: () => _deleteDishForever(d),
+                                    ),
+                                  ],
+                                )
+                                : const Text('—'),
+                          ),
                         ],
                       ),
                     )
@@ -216,12 +398,13 @@ class _ArchiveState extends State<Archive> with SingleTickerProviderStateMixin {
 
     return SingleChildScrollView(
       child: _buildTable<UserDto>(
+        title: 'Archived Accounts',
         columns: const [
           DataColumn(label: Text('User ID')),
           DataColumn(label: Text('Full Name')),
           DataColumn(label: Text('Email')),
           DataColumn(label: Text('Role')),
-          DataColumn(label: Text('Archive Date')),
+          DataColumn(label: Text('Actions')),
         ],
         rows:
             _archivedUsers
@@ -232,9 +415,15 @@ class _ArchiveState extends State<Archive> with SingleTickerProviderStateMixin {
                       DataCell(Text(u.fullName)),
                       DataCell(Text(u.email)),
                       DataCell(Text(u.role.displayName)),
-                      const DataCell(
-                        Text('-'),
-                      ), // Archive date not available in UserDto
+                      DataCell(
+                        AuthSession.instance.currentRole == Role.superAdmin
+                            ? AntdIconActionButton(
+                              tooltip: 'Restore',
+                              icon: Icons.unarchive,
+                              onPressed: () => _restoreUser(u),
+                            )
+                            : const Text('—'),
+                      ),
                     ],
                   ),
                 )

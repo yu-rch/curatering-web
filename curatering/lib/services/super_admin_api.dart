@@ -456,28 +456,35 @@ class SuperAdminApi {
     final usersRaw = decoded['users'];
     if (usersRaw is! List) return const <UserDto>[];
 
-    return usersRaw.map((u) {
-      final um = u as Map<String, dynamic>;
-      final permRaw = um['pagePermissions'];
-      return UserDto(
-        id: um['id'].toString(),
-        email: um['email'] as String,
-        fullName: um['fullName'] as String,
-        role: roleFromString(um['role'] as String),
-        archived: _asBool(um['archived']),
-        pagePermissions:
-            permRaw is Map<String, dynamic>
-                ? Map<String, dynamic>.from(permRaw)
-                : (permRaw is Map
-                    ? Map<String, dynamic>.from(
-                      permRaw.map((k, v) => MapEntry(k.toString(), v)),
-                    )
-                    : null),
-        birthday: um['birthday'] as String?,
-        contactNumber: um['contactNumber'] as String?,
-        employmentType: um['employmentType'] as String?,
+    final users = <UserDto>[];
+    for (final u in usersRaw) {
+      if (u is! Map) continue;
+      final um = Map<String, dynamic>.from(u);
+      final permRaw = um['pagePermissions'] ?? um['page_permissions'];
+      users.add(
+        UserDto(
+          id: (um['id'] ?? '').toString(),
+          email: (um['email'] ?? '').toString(),
+          fullName: (um['fullName'] ?? um['full_name'] ?? '').toString(),
+          role: roleFromString((um['role'] ?? 'cashier').toString()),
+          archived: _asBool(um['archived']),
+          pagePermissions:
+              permRaw is Map<String, dynamic>
+                  ? Map<String, dynamic>.from(permRaw)
+                  : (permRaw is Map
+                      ? Map<String, dynamic>.from(
+                        permRaw.map((k, v) => MapEntry(k.toString(), v)),
+                      )
+                      : null),
+          birthday: um['birthday']?.toString(),
+          contactNumber:
+              (um['contactNumber'] ?? um['contact_number'])?.toString(),
+          employmentType:
+              (um['employmentType'] ?? um['employment_type'])?.toString(),
+        ),
       );
-    }).toList();
+    }
+    return users;
   }
 
   Future<void> updateUserPagePermissions({
@@ -601,26 +608,48 @@ class SuperAdminApi {
 
   Future<List<ActionLogDto>> listActionLogs({String? search}) async {
     final query = <String, String>{};
-    if (search != null && search.trim().isNotEmpty)
+    if (search != null && search.trim().isNotEmpty) {
       query['search'] = search.trim();
+    }
 
     final decoded = await ApiClient.instance.getJson(
       '/api/super-admin/action-logs',
       queryParameters: query.isEmpty ? null : query,
+      useCache: false,
     );
     final raw = decoded['actionLogs'];
     if (raw is! List) return const <ActionLogDto>[];
 
-    return raw.map((r) {
-      return ActionLogDto(
-        id: r['id'].toString(),
-        userName: r['userName'] as String,
-        feature: (r['feature'] ?? '').toString(),
-        action: r['action'] as String,
-        createdAt: DateTime.parse(r['createdAt'] as String),
-        other: (r['other'] ?? 'n/a').toString(),
+    final out = <ActionLogDto>[];
+    for (final row in raw) {
+      if (row is! Map) continue;
+      final r = Map<String, dynamic>.from(row);
+      final createdRaw = r['createdAt'] ?? r['created_at'];
+      DateTime createdAt;
+      if (createdRaw is String && createdRaw.isNotEmpty) {
+        createdAt = DateTime.tryParse(createdRaw) ?? DateTime.now();
+      } else {
+        createdAt = DateTime.now();
+      }
+      final otherVal = r['other'];
+      final other =
+          otherVal == null
+              ? 'n/a'
+              : otherVal is String
+              ? otherVal
+              : otherVal.toString();
+      out.add(
+        ActionLogDto(
+          id: (r['id'] ?? '').toString(),
+          userName: (r['userName'] ?? r['user_name'] ?? 'Unknown user').toString(),
+          feature: (r['feature'] ?? '').toString(),
+          action: (r['action'] ?? '').toString(),
+          createdAt: createdAt,
+          other: other.isEmpty ? 'n/a' : other,
+        ),
       );
-    }).toList();
+    }
+    return out;
   }
 
   /// Keys: `admin`, `manager`, `supervisor`, `cashier`. Values are positive ints

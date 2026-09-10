@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -10,8 +9,7 @@ import 'package:pdf/widgets.dart' as pw;
 
 import '../../utils/image_download.dart';
 import '../../utils/pdf_print.dart';
-import '../../utils/printable_html_report.dart';
-import '../../utils/web_html_print.dart';
+import '../../utils/web_pdf_download.dart';
 import 'seating_plan.dart';
 import 'seating_plan_canvas.dart';
 
@@ -76,43 +74,25 @@ Future<void> previewSeatingLayoutPdf({
   String eventDateTime = '',
   String venueAddress = '',
 }) async {
-  final orderLine = [
-    if (transactionNo.trim().isNotEmpty) transactionNo.trim(),
-    if (eventTitle.trim().isNotEmpty) eventTitle.trim(),
-  ].join(' - ');
-  final headerLines = <String>[
-    if (orderLine.isNotEmpty) orderLine,
-    if (eventDateTime.trim().isNotEmpty) eventDateTime.trim(),
-    if (venueAddress.trim().isNotEmpty) venueAddress.trim(),
-  ];
-  final subtitle =
-      headerLines.isEmpty
-          ? "Macrina's Kitchen and Catering"
-          : headerLines.join(' · ');
-
-  if (kIsWeb) {
-    final png = await _captureSeatingLayoutPng(context: context, plan: plan);
-    openHtmlDocument(
-      buildPrintableHtmlImageReport(
-        title: 'Seating Layout',
-        subtitle: subtitle,
-        imageMime: 'image/png',
-        imageBase64: base64Encode(png),
-      ),
-      filename: 'seating-layout.html',
+  final previewTab = kIsWeb ? openBlankPdfTab() : null;
+  try {
+    final bytes = await buildSeatingLayoutPdfBytes(
+      context: context,
+      plan: plan,
+      eventTitle: eventTitle,
+      transactionNo: transactionNo,
+      eventDateTime: eventDateTime,
+      venueAddress: venueAddress,
     );
-    return;
+    await printPdfBytes(
+      bytes,
+      name: 'seating-layout.pdf',
+      previewTab: previewTab,
+    );
+  } catch (e) {
+    closePdfTab(previewTab);
+    rethrow;
   }
-
-  final bytes = await buildSeatingLayoutPdfBytes(
-    context: context,
-    plan: plan,
-    eventTitle: eventTitle,
-    transactionNo: transactionNo,
-    eventDateTime: eventDateTime,
-    venueAddress: venueAddress,
-  );
-  await printPdfBytes(bytes, name: 'seating-layout.pdf');
 }
 
 Future<Uint8List> _captureSeatingLayoutPng({

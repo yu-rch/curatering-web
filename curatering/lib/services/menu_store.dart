@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
 import '../models/menu_dish.dart';
+import '../utils/api_cache.dart';
 import 'api_client.dart';
 
 /// Used by both `Menu` and `Manage Events` pages.
@@ -125,7 +126,8 @@ class MenuStore extends ChangeNotifier {
     }
   }
 
-  MenuDish _dishFromJson(Map<String, dynamic> json) {
+  MenuDish _dishFromJson(dynamic raw) {
+    final json = Map<String, dynamic>.from(raw as Map);
     final rawPrice = json['price'];
     final normalizedPrice =
         rawPrice == null
@@ -139,11 +141,12 @@ class MenuStore extends ChangeNotifier {
       return null;
     }
 
-    bool parseBoolField(Object? value) {
+    bool parseBoolField(Object? value, {bool fallback = false}) {
       if (value is bool) return value;
       if (value is num) return value != 0;
       final text = value?.toString().trim().toLowerCase();
-      return text == 'true' || text == '1' || text == 'yes';
+      if (text == null || text.isEmpty) return fallback;
+      return text == 'true' || text == '1' || text == 'yes' || text == 't';
     }
 
     List<String> parseStringList(Object? value) {
@@ -173,6 +176,11 @@ class MenuStore extends ChangeNotifier {
     }
 
     final sauces = parseStringList(json['sauces']);
+    final archivedAtRaw = json['archived_at'];
+    DateTime? archivedAt;
+    if (archivedAtRaw != null) {
+      archivedAt = DateTime.tryParse(archivedAtRaw.toString());
+    }
 
     return MenuDish(
       id: (json['id'] ?? '').toString(),
@@ -184,27 +192,68 @@ class MenuStore extends ChangeNotifier {
           parseDoubleField(json['additional_charge_amount']) ??
           0,
       category: (json['category'] ?? 'catering').toString(),
-      paxOptions: parseStringList(json['pax_options']),
+      paxOptions: parseStringList(
+        json['pax_options'] ?? json['paxOptions'],
+      ),
       sauces: sauces,
       supportsAddOns:
           parseBoolField(json['supportsAddOns'] ?? json['supports_addons']) ||
           sauces.isNotEmpty,
       ingredients: parseStringList(json['ingredients']),
-      imageBase64: json['image_base64']?.toString(),
-      archived: json['archived'] as bool? ?? false,
-      available: json['available'] as bool? ?? true,
-      archivedAt:
-          json['archived_at'] != null
-              ? DateTime.tryParse(json['archived_at'] as String)
-              : null,
+      imageBase64: () {
+        final v = json['image_base64'] ?? json['imageBase64'];
+        if (v == null) return null;
+        final s = v.toString();
+        return s.isEmpty ? null : s;
+      }(),
+      archived: parseBoolField(json['archived']),
+      available: parseBoolField(json['available'], fallback: true),
+      archivedAt: archivedAt,
       type: (json['type'] ?? '').toString(),
       mealType:
           (json['meal_type'] ?? json['mealType'] ?? json['type'] ?? '')
               .toString(),
-      setMenus: parseStringList(json['set_menus']),
-      publicDescription: (json['public_description'] ?? '').toString(),
+      setMenus: parseStringList(json['set_menus'] ?? json['setMenus']),
+      publicDescription:
+          (json['public_description'] ?? json['publicDescription'] ?? '')
+              .toString(),
       allergens: (json['allergens'] ?? '').toString(),
     );
+  }
+
+  void _invalidateMenuCaches() {
+    ApiCache().invalidate('/api/menu/dishes');
+  }
+
+  /// Admin/archive: active + archived dishes (includes images).
+  Future<void> loadAllDishes({bool silent = false}) async {
+    try {
+      if (!silent) {
+        _isLoading = true;
+        _error = null;
+        notifyListeners();
+      }
+      _invalidateMenuCaches();
+      final decoded = await ApiClient.instance.getJson(
+        '/api/menu/dishes/all',
+        useCache: false,
+      );
+      final raw = decoded['dishes'];
+      if (raw is! List) {
+        _items = [];
+      } else {
+        _items = raw.map(_dishFromJson).toList();
+      }
+      _imagesLoaded = true;
+      _isLoading = false;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error loading all menu dishes: $e');
+      _error = e.toString();
+      _isLoading = false;
+      notifyListeners();
+      rethrow;
+    }
   }
 
   /// Find a dish by ID from the local cache (returns null if not found).
@@ -261,8 +310,13 @@ class MenuStore extends ChangeNotifier {
         },
       );
 
-      final newDish = _dishFromJson(decoded['dish'] as Map<String, dynamic>);
-      _items = [..._items, newDish];
+      _invalidateMenuCaches();
+      final dishRaw = decoded['dish'];
+      if (dishRaw is! Map) {
+        throw StateError('Server did not return the created dish');
+      }
+      final newDish = _dishFromJson(dishRaw);
+      _items = [..._items.where((d) => d.id != newDish.id), newDish];
       notifyListeners();
     } catch (e) {
       debugPrint('Error adding dish: $e');
@@ -308,7 +362,8 @@ class MenuStore extends ChangeNotifier {
           'supportsAddOns':
               supportsAddOns ?? existingDish?.supportsAddOns ?? false,
           'ingredients': ingredients ?? existingDish?.ingredients ?? [],
-          'imageBase64': imageBase64,
+          // Omit null so the API keeps the existing photo (list loads omit images).
+          if (imageBase64 != null) 'imageBase64': imageBase64,
           'type': type ?? '',
           'mealType': mealType ?? '',
           'available': available ?? true,
@@ -318,9 +373,12 @@ class MenuStore extends ChangeNotifier {
         },
       );
 
-      final updatedDish = _dishFromJson(
-        decoded['dish'] as Map<String, dynamic>,
-      );
+      _invalidateMenuCaches();
+      final dishRaw = decoded['dish'];
+      if (dishRaw is! Map) {
+        throw StateError('Server did not return the updated dish');
+      }
+      final updatedDish = _dishFromJson(dishRaw);
       _items = _items.map((d) => d.id == id ? updatedDish : d).toList();
       notifyListeners();
     } catch (e) {
@@ -360,13 +418,29 @@ class MenuStore extends ChangeNotifier {
         body: {'archived': archived},
       );
 
-      final updatedDish = _dishFromJson(
-        decoded['dish'] as Map<String, dynamic>,
-      );
+      _invalidateMenuCaches();
+      final dishRaw = decoded['dish'];
+      if (dishRaw is! Map) {
+        throw StateError('Server did not return the archived dish');
+      }
+      final updatedDish = _dishFromJson(dishRaw);
       _items = _items.map((d) => d.id == id ? updatedDish : d).toList();
       notifyListeners();
     } catch (e) {
       debugPrint('Error archiving dish: $e');
+      rethrow;
+    }
+  }
+
+  /// Permanently delete an archived dish.
+  Future<void> deleteDishForever(String id) async {
+    try {
+      await ApiClient.instance.delete('/api/menu/dishes/$id');
+      _invalidateMenuCaches();
+      _items = _items.where((d) => d.id != id).toList();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error deleting dish: $e');
       rethrow;
     }
   }

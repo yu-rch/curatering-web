@@ -10,8 +10,7 @@ import 'package:pdf/widgets.dart' as pw;
 import '../../services/runpod_service.dart';
 import '../../utils/image_download.dart';
 import '../../utils/pdf_print.dart';
-import '../../utils/printable_html_report.dart';
-import '../../utils/web_html_print.dart';
+import '../../utils/web_pdf_download.dart';
 
 Future<Uint8List?> themeDesignImageBytes(
   Map<String, dynamic> themeDesign,
@@ -159,32 +158,21 @@ Future<void> previewThemeDesignPdf({
   if (imageBytes == null || imageBytes.isEmpty) {
     throw StateError('No theme design image for PDF.');
   }
-  final header = [
-    if (transactionNo.trim().isNotEmpty) transactionNo.trim(),
-    if (eventTitle.trim().isNotEmpty) eventTitle.trim(),
-  ].join(' - ');
-  final subtitle =
-      header.isEmpty
-          ? "Macrina's Kitchen and Catering"
-          : header;
 
-  if (kIsWeb) {
-    openHtmlDocument(
-      buildPrintableHtmlImageReport(
-        title: 'Theme Design',
-        subtitle: subtitle,
-        imageMime: 'image/png',
-        imageBase64: base64Encode(imageBytes),
-      ),
-      filename: 'theme-design.html',
+  final previewTab = kIsWeb ? openBlankPdfTab() : null;
+  try {
+    final bytes = await buildThemeDesignPdfBytes(
+      themeDesign: themeDesign,
+      eventTitle: eventTitle,
+      transactionNo: transactionNo,
     );
-    return;
+    await printPdfBytes(
+      bytes,
+      name: 'theme-design.pdf',
+      previewTab: previewTab,
+    );
+  } catch (e) {
+    closePdfTab(previewTab);
+    rethrow;
   }
-
-  final bytes = await buildThemeDesignPdfBytes(
-    themeDesign: themeDesign,
-    eventTitle: eventTitle,
-    transactionNo: transactionNo,
-  );
-  await printPdfBytes(bytes, name: 'theme-design.pdf');
 }
