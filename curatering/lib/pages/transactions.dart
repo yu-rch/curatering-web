@@ -478,27 +478,6 @@ class _TransactionsState extends State<Transactions> {
                     onChanged: (v) => setState(() => _completionDayFilter = v),
                   ),
                 ),
-                if (_serviceTypeFilter.isNotEmpty ||
-                    _eventTypeFilter.isNotEmpty ||
-                    _completionYearFilter != null ||
-                    _completionMonthFilter != null ||
-                    _completionDayFilter != null ||
-                    _searchQuery.isNotEmpty)
-                  TextButton.icon(
-                    onPressed: () {
-                      setState(() {
-                        _serviceTypeFilter = '';
-                        _eventTypeFilter = '';
-                        _completionYearFilter = null;
-                        _completionMonthFilter = null;
-                        _completionDayFilter = null;
-                        _searchQuery = '';
-                        _searchController.clear();
-                      });
-                    },
-                    icon: const Icon(Icons.filter_alt_off, size: 18),
-                    label: const Text('Clear filters'),
-                  ),
               ],
             ),
             const SizedBox(height: 16),

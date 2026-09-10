@@ -78,8 +78,8 @@ Widget staffPageFor(String path) {
       );
     case '/customer-feedback':
       return RoleGuard(
-        requiredRole: Role.superAdmin,
-        allowedRoles: {Role.manager},
+        requiredRole: Role.manager,
+        allowedRoles: {Role.manager, Role.superAdmin},
         child: CustomerFeedbackPage(),
       );
     case '/action-logs':

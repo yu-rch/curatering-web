@@ -430,7 +430,7 @@ class _DashboardState extends State<Dashboard> {
         child: InkWell(
           onTap:
               routeName != null
-                  ? () => Navigator.of(context).pushNamed(routeName)
+                  ? () => _navigateFromDashboardMetric(routeName)
                   : hasDetails
                   ? () => _showDashboardDetails(
                     title: title,
@@ -2400,9 +2400,9 @@ class _DashboardState extends State<Dashboard> {
                         alignment: Alignment.centerRight,
                         child: TextButton.icon(
                           onPressed:
-                              () => Navigator.of(
-                                context,
-                              ).pushNamed('/restaurant-orders'),
+                              () => _navigateFromDashboardMetric(
+                                '/restaurant-orders',
+                              ),
                           icon: const Icon(Icons.receipt_long),
                           label: const Text('Restaurant orders'),
                         ),
@@ -2410,6 +2410,21 @@ class _DashboardState extends State<Dashboard> {
                     ],
       ],
     );
+  }
+
+  /// Close section modal first so DialogOpenGuard releases, then navigate.
+  void _navigateFromDashboardMetric(String routeName) {
+    DialogOpenGuard.clearAll();
+    final nav = Navigator.of(context, rootNavigator: true);
+    if (nav.canPop()) {
+      nav.pop();
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final current = ModalRoute.of(context)?.settings.name;
+      if (current == routeName) return;
+      Navigator.of(context).pushNamed(routeName);
+    });
   }
 
   Future<void> _openDashboardSectionPopup(_DashboardSection section) async {

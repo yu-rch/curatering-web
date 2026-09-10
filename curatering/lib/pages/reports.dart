@@ -29,8 +29,6 @@ class Reports extends StatefulWidget {
 }
 
 class _ReportsState extends State<Reports> {
-  final TextEditingController _searchController = TextEditingController();
-  String _searchQuery = '';
   _ReportScope _scope = _ReportScope.combined;
   bool _annualMode = false;
 
@@ -50,12 +48,6 @@ class _ReportsState extends State<Reports> {
   void initState() {
     super.initState();
     _load();
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
   }
 
   Future<void> _load() async {
@@ -81,13 +73,6 @@ class _ReportsState extends State<Reports> {
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
-  }
-
-  List<ReportRankItem> _filteredRank(List<ReportRankItem> items) {
-    if (_searchQuery.isEmpty) return items;
-    return items
-        .where((e) => e.name.toLowerCase().contains(_searchQuery))
-        .toList();
   }
 
   Future<void> _previewPdf() async {
@@ -128,8 +113,7 @@ class _ReportsState extends State<Reports> {
   }
 
   Widget _rankTable(String title, List<ReportRankItem> items) {
-    final filtered = _filteredRank(items);
-    if (filtered.isEmpty) {
+    if (items.isEmpty) {
       return Padding(
         padding: const EdgeInsets.only(bottom: 16),
         child: Text(
@@ -160,7 +144,7 @@ class _ReportsState extends State<Reports> {
                 DataColumn(label: Text('Count')),
               ],
               rows: [
-                for (final e in filtered)
+                for (final e in items)
                   DataRow(
                     cells: [
                       DataCell(Text(e.name)),
@@ -255,7 +239,7 @@ class _ReportsState extends State<Reports> {
   }
 
   Widget _rankChart(String title, List<ReportRankItem> items) {
-    final filtered = _filteredRank(items).take(8).toList();
+    final filtered = items.take(8).toList();
     final max = filtered.fold<int>(1, (m, e) => e.count > m ? e.count : m);
     return Card(
       elevation: 0,
@@ -363,9 +347,6 @@ class _ReportsState extends State<Reports> {
           builder: (context, constraints) {
             final narrow = constraints.maxWidth < 720;
             final selectWidth = narrow ? 140.0 : 180.0;
-            final searchWidth = narrow
-                ? constraints.maxWidth.clamp(180.0, 320.0)
-                : 280.0;
 
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -471,19 +452,6 @@ class _ReportsState extends State<Reports> {
                       onChanged: (v) {
                         if (v == null) return;
                         setState(() => _scope = v);
-                      },
-                    ),
-                    AntdSearchInput(
-                      controller: _searchController,
-                      width: searchWidth,
-                      hintText: 'Search report tables',
-                      onChanged:
-                          (v) => setState(
-                            () => _searchQuery = v.trim().toLowerCase(),
-                          ),
-                      onClear: () {
-                        _searchController.clear();
-                        setState(() => _searchQuery = '');
                       },
                     ),
                     AntdStatusTag(label: periodLabel, color: AntdTokens.blue),

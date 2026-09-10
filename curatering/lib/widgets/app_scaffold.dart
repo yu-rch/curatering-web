@@ -73,6 +73,11 @@ class AppScaffold extends StatefulWidget {
       label: 'Order History',
       route: '/order-history',
     ),
+    _SidebarItemData(
+      icon: Icons.reviews_outlined,
+      label: 'Customer Feedback',
+      route: '/customer-feedback',
+    ),
     _SidebarItemData(icon: Icons.archive, label: 'Archive', route: '/archive'),
   ];
 
@@ -86,11 +91,6 @@ class AppScaffold extends StatefulWidget {
       icon: Icons.help_outline,
       label: 'Help Requests Management',
       route: '/help-requests',
-    ),
-    _SidebarItemData(
-      icon: Icons.reviews_outlined,
-      label: 'Customer Feedback',
-      route: '/customer-feedback',
     ),
     _SidebarItemData(
       icon: Icons.web_asset,
@@ -467,18 +467,18 @@ class _AppScaffoldState extends State<AppScaffold> {
                         fit: BoxFit.contain,
                       ),
                       const Spacer(),
+                      // Keep clock + profile pinned to the far right. Search (if
+                      // any) sits just left of that group and must not expand.
                       if (showSearch && searchController != null) ...[
-                        Flexible(
-                          child: AntdSearchInput(
-                            controller: searchController,
-                            hintText: searchHint,
-                            width: isNarrow ? 180 : 320,
-                            onChanged: onSearchChanged,
-                            onClear: () {
-                              searchController.clear();
-                              onSearchChanged?.call('');
-                            },
-                          ),
+                        AntdSearchInput(
+                          controller: searchController,
+                          hintText: searchHint,
+                          width: isNarrow ? 160 : 260,
+                          onChanged: onSearchChanged,
+                          onClear: () {
+                            searchController.clear();
+                            onSearchChanged?.call('');
+                          },
                         ),
                         const SizedBox(width: 12),
                       ],

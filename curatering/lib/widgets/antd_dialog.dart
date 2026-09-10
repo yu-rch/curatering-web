@@ -18,6 +18,11 @@ class DialogOpenGuard {
     _openKeys.remove(key);
   }
 
+  /// Clears all dialog locks (e.g. after abandoning a modal via navigation).
+  static void clearAll() {
+    _openKeys.clear();
+  }
+
   /// Runs [open] only if [key] is free; releases when the future completes.
   static Future<T?> runOnce<T>(
     Future<T?> Function() open, {
