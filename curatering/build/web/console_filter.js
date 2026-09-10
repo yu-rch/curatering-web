@@ -1,11 +1,9 @@
-/* Kept for backwards-compatible cached builds that still request this URL.
-   Primary copy is inlined in index.html to avoid a render-blocking request. */
+/* Suppress noisy Flutter web console warnings; block deprecated Intl.v8BreakIterator. */
 (function () {
   var suppressPatterns = [
     /v8BreakIterator/i,
-    /deprecated/i,
-    /service worker/i,
     /Exception while loading service worker/i,
+    /Loading the service worker using Flutter bootstrap is deprecated/i,
   ];
 
   function shouldSuppress(args) {

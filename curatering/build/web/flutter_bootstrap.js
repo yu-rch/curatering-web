@@ -35,4 +35,4 @@ if (!window._flutter) {
 }
 _flutter.buildConfig = {"engineRevision":"4c525dac5ebe5971c5708ef73558ed8edcf4a362","builds":[{"compileTarget":"dart2js","renderer":"canvaskit","mainJsPath":"main.dart.js"},{}]};
 
-_flutter.loader.load({config:{canvasKitBaseUrl:"/canvaskit/",canvasKitVariant:"chromium"}});
+_flutter.loader.load({config:{canvasKitBaseUrl:"/canvaskit/"}});

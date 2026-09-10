@@ -2,9 +2,8 @@
 (function () {
   var suppressPatterns = [
     /v8BreakIterator/i,
-    /deprecated/i,
-    /service worker/i,
     /Exception while loading service worker/i,
+    /Loading the service worker using Flutter bootstrap is deprecated/i,
   ];
 
   function shouldSuppress(args) {

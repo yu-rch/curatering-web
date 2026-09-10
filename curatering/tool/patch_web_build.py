@@ -42,9 +42,10 @@ def patch_v8_break_iterator(text: str) -> str:
 
 def patch_flutter_bootstrap(text: str) -> str:
     # Prefer local CanvasKit so cold load does not pull ~1.6MB from gstatic.
+    # Do not force canvasKitVariant — let Flutter pick auto/chromium/full.
     text = re.sub(
         r"_flutter\.loader\.load\(\{[\s\S]*?\}\);",
-        '_flutter.loader.load({config:{canvasKitBaseUrl:"/canvaskit/",canvasKitVariant:"chromium"}});',
+        '_flutter.loader.load({config:{canvasKitBaseUrl:"/canvaskit/"}});',
         text,
         count=1,
     )
@@ -54,7 +55,7 @@ def patch_flutter_bootstrap(text: str) -> str:
 def strip_broken_source_mapping_urls() -> None:
     """Remove sourceMappingURL comments that point at missing / SPA-rewritten maps."""
     for js_path in ROOT.rglob("*.js"):
-        if js_path.name in {"boot.js", "console_filter.js", "splash_preload.js"}:
+        if path_should_skip_patch(js_path):
             continue
         text = js_path.read_text(encoding="utf-8")
         matches = list(
@@ -77,12 +78,23 @@ def strip_broken_source_mapping_urls() -> None:
             js_path.write_text(text, encoding="utf-8")
 
 
+def path_should_skip_patch(path: Path) -> bool:
+    name = path.name
+    if name in {"boot.js", "console_filter.js", "splash_preload.js"}:
+        return True
+    # Never rewrite CanvasKit/skwasm engine files.
+    parts = {p.lower() for p in path.parts}
+    if "canvaskit" in parts:
+        return True
+    return False
+
+
 def main() -> None:
     if not ROOT.is_dir():
         raise SystemExit(f"Build output not found: {ROOT}")
 
     for path in ROOT.rglob("*.js"):
-        if path.name in {"boot.js", "console_filter.js", "splash_preload.js"}:
+        if path_should_skip_patch(path):
             continue
         original = path.read_text(encoding="utf-8")
         patched = patch_v8_break_iterator(original)

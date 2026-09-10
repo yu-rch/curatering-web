@@ -3,9 +3,13 @@
     'width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=5, user-scalable=yes';
   var SPLASH_TIMEOUT_MS = 14000;
   var UI_READY_FALLBACK_MS = 8000;
+  var FIRST_FRAME_GRACE_MS = 1200;
   var staffHost = false;
   var pageBgApplied = false;
   var uiReadyTimer = null;
+  var flutterFirstFrame = false;
+  var uiReady = false;
+  var firstFrameGraceTimer = null;
 
   function applyViewport() {
     var meta = document.querySelector('meta[name="viewport"]');
@@ -100,6 +104,12 @@
   applyViewport();
   setupSplashLogo();
 
+  // Activate non-blocking font stylesheet without an inline onload handler (CSP).
+  var fontLink = document.getElementById('app-fonts');
+  if (fontLink && fontLink.media === 'print') {
+    fontLink.media = 'all';
+  }
+
   // Flutter often rewrites viewport to user-scalable=no — keep locking it.
   if (typeof MutationObserver !== 'undefined') {
     var headObserver = new MutationObserver(function () {
@@ -133,6 +143,10 @@
       clearTimeout(splashTimer);
       splashTimer = null;
     }
+    if (firstFrameGraceTimer) {
+      clearTimeout(firstFrameGraceTimer);
+      firstFrameGraceTimer = null;
+    }
     applyViewport();
     var el = document.getElementById('app-splash');
     if (!el) {
@@ -143,9 +157,29 @@
     el.setAttribute('aria-busy', 'false');
     setTimeout(function () {
       if (el.parentNode) el.parentNode.removeChild(el);
-      // Deferred customer extras may still be warming; light bg after first frame.
-      applyLightPageBackground();
+      // Keep page black until Flutter UI signals ready — avoids a blank white flash
+      // when first-frame fires before CanvasKit has painted real content.
+      if (uiReady) {
+        applyLightPageBackground();
+      } else {
+        holdBlackUntilUiReady();
+      }
     }, 280);
+  }
+
+  function maybeHideSplash() {
+    if (splashHidden) return;
+    if (flutterFirstFrame && uiReady) {
+      hideSplash();
+      return;
+    }
+    if (flutterFirstFrame && !firstFrameGraceTimer) {
+      // Give the first real paint a short window after engine first-frame.
+      firstFrameGraceTimer = setTimeout(function () {
+        firstFrameGraceTimer = null;
+        if (!splashHidden) hideSplash();
+      }, FIRST_FRAME_GRACE_MS);
+    }
   }
 
   function showLoadError(message) {
@@ -172,10 +206,13 @@
 
   window.addEventListener('flutter-first-frame', function () {
     applyViewport();
-    hideSplash();
+    flutterFirstFrame = true;
+    maybeHideSplash();
   });
 
   window.addEventListener('curatering-ui-ready', function () {
+    uiReady = true;
+    maybeHideSplash();
     applyLightPageBackground();
   });
 

@@ -33,6 +33,7 @@ jobs:
         run: |
           python tool/optimize_splash.py
           python tool/optimize_home_assets.py
+          python tool/apply_csp_inline_scripts.py
           flutter build web --release \
             --tree-shake-icons \
             --optimization-level=4 \
@@ -41,7 +42,9 @@ jobs:
 
       - name: Patch Flutter web build
         working-directory: curatering
-        run: python tool/patch_web_build.py
+        run: |
+          python tool/patch_web_build.py
+          python tool/apply_csp_inline_scripts.py
 
       - name: Install Vercel CLI
         run: npm i -g vercel
