@@ -57,13 +57,15 @@ class DataStore {
   /// archived items with a timestamp
   static final List<ArchivedItem> archivedItems = [];
 
-  /// simple theme control
+  /// simple theme control — light is the staff default
   static final ValueNotifier<bool> isDarkMode = ValueNotifier(false);
-  static const _darkModeKey = 'curatering_is_dark_mode';
+  static const _darkModeKey = 'curatering_theme_is_dark';
 
   static Future<void> loadTheme() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      // New key so a leftover "dark" value from before light-as-default
+      // is not restored. Dark mode is opt-in from Settings.
       isDarkMode.value = prefs.getBool(_darkModeKey) ?? false;
     } catch (_) {}
   }

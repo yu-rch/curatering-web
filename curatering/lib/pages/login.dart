@@ -160,7 +160,7 @@ class _LoginState extends State<Login> {
 
   Widget _buildRightPanel() {
     return Container(
-      color: const Color(0xFF1E1E1E),
+      color: const Color(0xFFF4F4F6),
       child: Stack(
         children: [
           Center(
@@ -168,7 +168,7 @@ class _LoginState extends State<Login> {
               constraints: const BoxConstraints(maxWidth: 420),
               child: Card(
                 elevation: 3,
-                color: const Color(0xFF2A2A2A),
+                color: Colors.white,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
                 ),
@@ -183,7 +183,7 @@ class _LoginState extends State<Login> {
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.w500,
-                          color: Colors.white70,
+                          color: Colors.black87,
                         ),
                         textAlign: TextAlign.center,
                       ),
@@ -199,15 +199,17 @@ class _LoginState extends State<Login> {
                       TextField(
                         controller: _emailController,
                         enableInteractiveSelection: true,
-                        style: const TextStyle(color: Colors.white),
+                        style: const TextStyle(color: Color(0xFF1E1E1E)),
                         textInputAction: TextInputAction.next,
                         onSubmitted: (_) => FocusScope.of(context).nextFocus(),
                         decoration: InputDecoration(
                           labelText: 'Email address',
-                          labelStyle: const TextStyle(color: Colors.white70),
+                          labelStyle: const TextStyle(color: Colors.black54),
+                          filled: true,
+                          fillColor: Colors.white,
                           enabledBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(10),
-                            borderSide: const BorderSide(color: Colors.white38),
+                            borderSide: const BorderSide(color: Color(0xFFD9D9D9)),
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(10),
@@ -222,13 +224,15 @@ class _LoginState extends State<Login> {
                       TextField(
                         controller: _passwordController,
                         enableInteractiveSelection: true,
-                        style: const TextStyle(color: Colors.white),
+                        style: const TextStyle(color: Color(0xFF1E1E1E)),
                         decoration: InputDecoration(
                           labelText: 'Password',
-                          labelStyle: const TextStyle(color: Colors.white70),
+                          labelStyle: const TextStyle(color: Colors.black54),
+                          filled: true,
+                          fillColor: Colors.white,
                           enabledBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(10),
-                            borderSide: const BorderSide(color: Colors.white38),
+                            borderSide: const BorderSide(color: Color(0xFFD9D9D9)),
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(10),
@@ -248,7 +252,7 @@ class _LoginState extends State<Login> {
                               _obscurePassword
                                   ? Icons.visibility_outlined
                                   : Icons.visibility_off_outlined,
-                              color: Colors.white70,
+                              color: Colors.black54,
                             ),
                           ),
                         ),
@@ -336,9 +340,19 @@ class _LoginState extends State<Login> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF4F4F6),
-      body: SafeArea(
+    // Login stays light even when staff dark mode is on.
+    return Theme(
+      data: Theme.of(context).copyWith(
+        brightness: Brightness.light,
+        scaffoldBackgroundColor: const Color(0xFFF4F4F6),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFFFFC024),
+          brightness: Brightness.light,
+        ),
+      ),
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF4F4F6),
+        body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
             final isNarrow = constraints.maxWidth < 800;
@@ -360,6 +374,7 @@ class _LoginState extends State<Login> {
             );
           },
         ),
+      ),
       ),
     );
   }
