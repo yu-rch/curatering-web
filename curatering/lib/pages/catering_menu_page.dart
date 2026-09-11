@@ -79,14 +79,12 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
     }());
     // Metadata first (lean /api/menu/dishes). Photos are ~25MB and dominate
     // main-thread JSON/base64 work — load them after first paint.
-    unawaited(MenuStore.instance.loadDishes());
+    unawaited(() async {
+      await MenuStore.instance.loadDishes();
+      if (!mounted) return;
+      await MenuStore.instance.ensureImagesLoaded(category: 'catering');
+    }());
     SetMenuStore.instance.loadSetMenus();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      Future<void>.delayed(const Duration(milliseconds: 1800), () {
-        if (!mounted) return;
-        unawaited(MenuStore.instance.ensureImagesLoaded(category: 'catering'));
-      });
-    });
   }
 
   @override

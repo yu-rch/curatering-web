@@ -308,6 +308,7 @@ class _MenuState extends State<Menu> {
     if (MenuStore.instance.activeDishes.isEmpty) {
       unawaited(MenuStore.instance.loadDishes());
     }
+    unawaited(MenuStore.instance.ensureImagesLoaded());
     unawaited(SetMenuStore.instance.loadSetMenus());
   }
 

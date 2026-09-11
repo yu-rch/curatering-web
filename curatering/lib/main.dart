@@ -16,6 +16,7 @@ import 'widgets/app_root_route.dart';
 import 'widgets/brand_splash_placeholder.dart';
 import 'widgets/external_host_redirect.dart';
 import 'widgets/legacy_path_redirect.dart';
+import 'widgets/prevent_stacked_dialogs.dart';
 import 'auth/auth_session.dart';
 import 'auth/roles.dart';
 import 'auth/staff_permission_refresh.dart';
@@ -444,7 +445,10 @@ class _MyAppState extends State<MyApp> {
         return MaterialApp(
           title: 'Curatering',
           navigatorKey: _navigatorKey,
-          navigatorObservers: [StaffPermissionRefreshObserver.instance],
+          navigatorObservers: [
+            StaffPermissionRefreshObserver.instance,
+            PreventStackedDialogsObserver.instance,
+          ],
           builder:
               (context, child) => Listener(
                 behavior: HitTestBehavior.translucent,

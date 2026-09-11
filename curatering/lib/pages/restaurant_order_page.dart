@@ -85,10 +85,9 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
     }
     await CartStore.instance.init();
     if (mounted) setState(() {});
-    await Future<void>.delayed(const Duration(milliseconds: 1800));
-    if (!mounted) return;
-    await MenuStore.instance.ensureImagesLoaded(category: 'restaurant');
-    if (mounted) setState(() {});
+    unawaited(
+      MenuStore.instance.ensureImagesLoaded(category: 'restaurant'),
+    );
   }
 
   @override

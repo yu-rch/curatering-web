@@ -37,11 +37,24 @@ class MenuStore extends ChangeNotifier {
 
       if (raw is! List) {
         _items = [];
+        _imagesLoaded = false;
       } else {
-        _items = raw.map((json) => _dishFromJson(json)).toList();
+        final previousById = {for (final d in _items) d.id: d};
+        _items = raw.map((json) {
+          final dish = _dishFromJson(json);
+          final prev = previousById[dish.id];
+          final incomingPhoto = dish.imageBase64?.trim() ?? '';
+          final keptPhoto = prev?.imageBase64?.trim() ?? '';
+          if (incomingPhoto.isEmpty && keptPhoto.isNotEmpty) {
+            return dish.copyWith(imageBase64: prev!.imageBase64);
+          }
+          return dish;
+        }).toList();
+        _imagesLoaded = _items.isNotEmpty &&
+            _items.every(
+              (d) => (d.imageBase64 ?? '').trim().isNotEmpty,
+            );
       }
-
-      _imagesLoaded = false;
       _isLoading = false;
       notifyListeners();
     } catch (e) {

@@ -23,11 +23,18 @@ class DialogOpenGuard {
     _openKeys.clear();
   }
 
+  static bool _burstLocked = false;
+
   /// Runs [open] only if [key] is free; releases when the future completes.
   static Future<T?> runOnce<T>(
     Future<T?> Function() open, {
     String key = 'global',
   }) async {
+    if (_burstLocked) return null;
+    _burstLocked = true;
+    Future<void>.delayed(const Duration(milliseconds: 400), () {
+      _burstLocked = false;
+    });
     if (!tryAcquire(key)) return null;
     try {
       return await open();
