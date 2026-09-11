@@ -116,7 +116,7 @@ class AntdProfileMenu extends StatelessWidget {
           shadowColor: Colors.black54,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(8),
-            side: const BorderSide(color: AntdTokens.borderSubtle),
+            side: BorderSide(color: AntdTokens.borderSubtle),
           ),
         ),
       ),

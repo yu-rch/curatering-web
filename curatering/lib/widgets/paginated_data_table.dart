@@ -67,7 +67,7 @@ class TablePaginationBar extends StatelessWidget {
           compact
               ? '$start–$end of $totalItems'
               : 'Showing $start–$end of $totalItems · Page ${safePage + 1} of $pages',
-          style: const TextStyle(color: AntdTokens.textSecondary, fontSize: 13),
+          style: TextStyle(color: AntdTokens.textSecondary, fontSize: 13),
         ),
         if (!compact) const Spacer() else const SizedBox(width: 8),
         AntdIconActionButton(
@@ -201,18 +201,18 @@ class _PagedDataTableState extends State<PagedDataTable> {
     final table = Theme(
       data: Theme.of(context).copyWith(
         dataTableTheme: DataTableThemeData(
-          headingTextStyle: const TextStyle(
+          headingTextStyle: TextStyle(
             color: AntdTokens.valueDark,
             fontWeight: FontWeight.w700,
             fontSize: 13,
           ),
-          dataTextStyle: const TextStyle(
+          dataTextStyle: TextStyle(
             color: AntdTokens.valueDark,
             fontSize: 13,
           ),
           dividerThickness: 0.7,
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: AntdTokens.cardBg,
             border: Border.all(color: AntdTokens.borderSubtle),
             borderRadius: BorderRadius.circular(AntdTokens.radiusMd),
           ),
@@ -223,11 +223,11 @@ class _PagedDataTableState extends State<PagedDataTable> {
         columns: widget.columns,
         rows: pageRows,
         border: TableBorder(
-          horizontalInside: const BorderSide(color: AntdTokens.borderSubtle),
-          top: const BorderSide(color: AntdTokens.borderSubtle),
-          bottom: const BorderSide(color: AntdTokens.borderSubtle),
-          left: const BorderSide(color: AntdTokens.borderSubtle),
-          right: const BorderSide(color: AntdTokens.borderSubtle),
+          horizontalInside: BorderSide(color: AntdTokens.borderSubtle),
+          top: BorderSide(color: AntdTokens.borderSubtle),
+          bottom: BorderSide(color: AntdTokens.borderSubtle),
+          left: BorderSide(color: AntdTokens.borderSubtle),
+          right: BorderSide(color: AntdTokens.borderSubtle),
           borderRadius: BorderRadius.circular(AntdTokens.radiusMd),
         ),
         headingRowColor:
@@ -240,7 +240,7 @@ class _PagedDataTableState extends State<PagedDataTable> {
           if (states.contains(WidgetState.hovered)) {
             return AntdTokens.fillTertiary;
           }
-          return Colors.white;
+          return AntdTokens.cardBg;
         }),
         columnSpacing: columnSpacing,
         dataRowMinHeight: widget.dataRowMinHeight ?? 44,
@@ -586,7 +586,7 @@ class _TableTitleBar extends StatelessWidget {
           Expanded(
             child: Text(
               title,
-              style: const TextStyle(
+              style: TextStyle(
                 color: AntdTokens.valueDark,
                 fontSize: 15,
                 fontWeight: FontWeight.w700,

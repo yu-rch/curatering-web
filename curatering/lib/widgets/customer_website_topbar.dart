@@ -55,7 +55,11 @@ class _CustomerWebsiteTopBarState extends State<CustomerWebsiteTopBar> {
     WebsiteContentStore.instance.addListener(_onCartChanged);
     // Don't pull home hero/collage media when the top bar is on gallery/menu.
     final path = Uri.base.path.replaceAll(RegExp(r'/+$'), '');
-    final skipHomeMedia = path == '/gallery' || path == '/catering-menu';
+    final skipHomeMedia =
+        path == '/gallery' ||
+        path == '/catering-menu' ||
+        path == '/restaurant' ||
+        path == '/contact-us';
     unawaited(
       WebsiteContentStore.instance.ensureLoaded(
         resolveHomeMedia: !skipHomeMedia,

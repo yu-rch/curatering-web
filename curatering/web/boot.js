@@ -289,6 +289,8 @@
     '/': true,
     '/gallery': true,
     '/catering-menu': true,
+    '/restaurant': true,
+    '/contact-us': true,
   };
   var customerShell = !staffHost && !!customerShellRoutes[path];
 
@@ -303,6 +305,14 @@
       if (titleEl) titleEl.textContent = 'Catering Menu';
       if (subEl) subEl.textContent = 'Browse dishes for your next event.';
       document.title = "Catering Menu - Macrina's Kitchen and Catering";
+    } else if (path === '/restaurant') {
+      if (titleEl) titleEl.textContent = 'Restaurant';
+      if (subEl) subEl.textContent = 'Order from Macrina\'s Kitchen.';
+      document.title = "Restaurant - Macrina's Kitchen and Catering";
+    } else if (path === '/contact-us') {
+      if (titleEl) titleEl.textContent = 'Contact Us';
+      if (subEl) subEl.textContent = 'Get in touch with Macrina\'s Kitchen.';
+      document.title = "Contact Us - Macrina's Kitchen and Catering";
     }
   }
 

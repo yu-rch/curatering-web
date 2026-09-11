@@ -96,7 +96,7 @@ class _WebsiteAdminPageState extends State<WebsiteAdminPage> {
     final ok = await showAntdModal<bool>(
       context: context,
       title: 'Save draft?',
-      body: const Text(
+      body: Text(
         'Save your current changes to the draft? Customers will still see the last published version until you publish.',
       ),
       actions: [
@@ -143,17 +143,17 @@ class _WebsiteAdminPageState extends State<WebsiteAdminPage> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
+          Text(
             'This replaces the public customer website with your current draft.',
           ),
           const SizedBox(height: 12),
-          const Text(
+          Text(
             'Changes to be published:',
             style: TextStyle(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
           if (changes.isEmpty)
-            const Text('No detectable changes from the live site.')
+            Text('No detectable changes from the live site.')
           else
             ...changes.map(
               (item) => Padding(
@@ -161,7 +161,7 @@ class _WebsiteAdminPageState extends State<WebsiteAdminPage> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('• '),
+                    Text('• '),
                     Expanded(child: Text(item)),
                   ],
                 ),
@@ -320,7 +320,7 @@ class _WebsiteAdminPageState extends State<WebsiteAdminPage> {
                       const SizedBox(height: 4),
                       Text(
                         '$publishedLabel · Editing draft',
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: AntdTokens.labelMuted,
                           fontSize: 13,
                         ),
@@ -338,12 +338,12 @@ class _WebsiteAdminPageState extends State<WebsiteAdminPage> {
                       OutlinedButton.icon(
                         onPressed: _openLiveSite,
                         icon: const Icon(Icons.public, size: 18),
-                        label: const Text('Live site'),
+                        label: Text('Live site'),
                       ),
                       OutlinedButton.icon(
                         onPressed: _previewDraft,
                         icon: const Icon(Icons.visibility_outlined, size: 18),
-                        label: const Text('Preview draft'),
+                        label: Text('Preview draft'),
                       ),
                       AntdSecondaryButton(
                         label: _dirty ? 'Save draft *' : 'Save draft',
@@ -495,15 +495,15 @@ class _CmsSideNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.white,
+      color: AntdTokens.cardBg,
       elevation: 1,
       child: SizedBox(
         width: 220,
         child: ListView(
           padding: const EdgeInsets.symmetric(vertical: 12),
           children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 8, 16, 12),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
               child: Text(
                 'Content',
                 style: TextStyle(
@@ -1021,7 +1021,7 @@ class _GalleryEditor extends StatelessWidget {
                   onChanged();
                 },
                 icon: const Icon(Icons.add),
-                label: const Text('Add category'),
+                label: Text('Add category'),
               ),
             ],
           ),
@@ -1070,7 +1070,7 @@ class _GalleryEditor extends StatelessWidget {
                                 context: context,
                                 builder:
                                     (ctx) => AlertDialog(
-                                      title: const Text('Remove category?'),
+                                      title: Text('Remove category?'),
                                       content: Text(
                                         'Remove "${cat.label.trim().isEmpty ? 'this category' : cat.label}" and its images from the draft?',
                                       ),
@@ -1078,12 +1078,12 @@ class _GalleryEditor extends StatelessWidget {
                                         TextButton(
                                           onPressed:
                                               () => Navigator.pop(ctx, false),
-                                          child: const Text('Cancel'),
+                                          child: Text('Cancel'),
                                         ),
                                         FilledButton(
                                           onPressed:
                                               () => Navigator.pop(ctx, true),
-                                          child: const Text('Remove'),
+                                          child: Text('Remove'),
                                         ),
                                       ],
                                     ),
@@ -1098,7 +1098,7 @@ class _GalleryEditor extends StatelessWidget {
                       const SizedBox(height: 8),
                       Text(
                         '${cat.images.length} image(s)',
-                        style: const TextStyle(color: AntdTokens.labelMuted),
+                        style: TextStyle(color: AntdTokens.labelMuted),
                       ),
                       if (cat.images.isNotEmpty) ...[
                         const SizedBox(height: 8),
@@ -1230,7 +1230,7 @@ class _GalleryEditor extends StatelessWidget {
           ),
           Text(
             galleryTagsHint(),
-            style: const TextStyle(fontSize: 12, color: AntdTokens.labelMuted),
+            style: TextStyle(fontSize: 12, color: AntdTokens.labelMuted),
           ),
         ],
       ),
@@ -1298,7 +1298,7 @@ class _GallerySelectedImageTile extends StatelessWidget {
             image.tags.isEmpty ? 'Tap to view' : image.tags.take(2).join(', '),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 11, color: AntdTokens.labelMuted),
+            style: TextStyle(fontSize: 11, color: AntdTokens.labelMuted),
           ),
         ],
       ),
@@ -1382,7 +1382,7 @@ class _BrandEditor extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Text(
+                    Text(
                       'Header logo',
                       style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                     ),
@@ -1407,7 +1407,7 @@ class _BrandEditor extends StatelessWidget {
                               w.touch();
                               onChanged();
                             },
-                            child: const Text('Clear'),
+                            child: Text('Clear'),
                           ),
                       ],
                     ),
@@ -1419,7 +1419,7 @@ class _BrandEditor extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Text(
+                    Text(
                       'Login logo',
                       style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                     ),
@@ -1444,7 +1444,7 @@ class _BrandEditor extends StatelessWidget {
                               w.touch();
                               onChanged();
                             },
-                            child: const Text('Clear'),
+                            child: Text('Clear'),
                           ),
                       ],
                     ),
@@ -1540,13 +1540,13 @@ class _FaqEditor extends StatelessWidget {
                 onChanged();
               },
               icon: const Icon(Icons.add),
-              label: const Text('Add FAQ'),
+              label: Text('Add FAQ'),
             ),
           ],
         ),
         if (w.faqItems.isEmpty)
-          const Padding(
-            padding: EdgeInsets.only(bottom: 8),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
             child: Text(
               'No FAQ items yet.',
               style: TextStyle(color: AntdTokens.labelMuted),
@@ -1807,7 +1807,7 @@ class _NavigationEditor extends StatelessWidget {
                   onChanged();
                 },
                 icon: const Icon(Icons.add),
-                label: const Text('Add tab'),
+                label: Text('Add tab'),
               ),
             ],
           ),
@@ -1911,7 +1911,7 @@ class _NavigationEditor extends StatelessWidget {
                       ),
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
-                        title: const Text('Visible'),
+                        title: Text('Visible'),
                         value: item.visible,
                         onChanged: (v) {
                           item.visible = v;
@@ -1958,7 +1958,7 @@ class _CustomPagesEditor extends StatelessWidget {
                   onChanged();
                 },
                 icon: const Icon(Icons.add),
-                label: const Text('Add page'),
+                label: Text('Add page'),
               ),
             ],
           ),
@@ -2116,7 +2116,7 @@ class _MediaLibraryPanelState extends State<_MediaLibraryPanel> {
           ),
           if (preview.isNotEmpty) ...[
             const SizedBox(height: 12),
-            const Text(
+            Text(
               'Preview',
               style: TextStyle(
                 fontSize: 11,
@@ -2343,7 +2343,7 @@ class _RevisionsPanelState extends State<_RevisionsPanel> {
             ),
           ] else ...[
             const SizedBox(height: 12),
-            const Text(
+            Text(
               'Content snapshot',
               style: TextStyle(
                 fontSize: 11,
@@ -2356,9 +2356,9 @@ class _RevisionsPanelState extends State<_RevisionsPanel> {
               width: double.infinity,
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.grey.shade100,
+                color: AntdTokens.fillTertiary,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.grey.shade300),
+                border: Border.all(color: AntdTokens.borderSubtle),
               ),
               child: SelectableText(
                 _summarizeRevisionContent(full?['content']),
@@ -2413,7 +2413,7 @@ class _RevisionsPanelState extends State<_RevisionsPanel> {
                       final ok = await showAntdModal<bool>(
                         context: context,
                         title: 'Restore revision',
-                        body: const Text(
+                        body: Text(
                           'Load this snapshot into the draft? You still need to Publish to go live.',
                         ),
                         actions: [
@@ -2447,7 +2447,7 @@ class _RevisionsPanelState extends State<_RevisionsPanel> {
                         );
                       }
                     },
-                    child: const Text('Restore'),
+                    child: Text('Restore'),
                   ),
                 ),
               ],
@@ -2473,7 +2473,7 @@ class _CmsDetailRow extends StatelessWidget {
         children: [
           Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w600,
               color: AntdTokens.labelMuted,

@@ -297,12 +297,9 @@ class _HelpRequestsPageState extends State<HelpRequestsPage> {
 
             label,
 
-            style: const TextStyle(
-
+            style: TextStyle(
               fontSize: 11,
-
               fontWeight: FontWeight.w600,
-
               color: AntdTokens.labelMuted,
 
             ),
@@ -397,7 +394,7 @@ class _HelpRequestsPageState extends State<HelpRequestsPage> {
 
         children: [
 
-          const Text(
+          Text(
 
             'Confirm that this software issue has been resolved. Describe how it was fixed — the requester will be notified.',
 
@@ -817,7 +814,7 @@ class _HelpRequestsPageState extends State<HelpRequestsPage> {
 
                                         )
 
-                                        : const Text(
+                                        : Text(
 
                                           '-',
 

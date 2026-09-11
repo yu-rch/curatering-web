@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import 'config/site_routes.dart';
 import 'pages/checkout_page.dart';
-import 'pages/contact_us_page.dart';
 import 'pages/custom_cms_page.dart';
 import 'pages/guest_order_tracking_page.dart';
 import 'pages/inquire_page.dart';
@@ -11,10 +10,10 @@ import 'pages/my_order_tracking_page.dart';
 import 'pages/my_orders_page.dart';
 import 'pages/my_profile_page.dart';
 import 'pages/restaurant_feedback_public_page.dart';
-import 'pages/restaurant_order_page.dart';
 
-/// Secondary customer routes (gallery / catering-menu load via their own
-/// deferred libraries in [customer_page_loader.dart]).
+/// Secondary customer routes (gallery / catering-menu / restaurant /
+/// contact-us load via their own deferred libraries in
+/// [customer_page_loader.dart]).
 Widget customerExtraPageFor(
   String path, {
   bool contentEditable = false,
@@ -25,11 +24,6 @@ Widget customerExtraPageFor(
     return CustomCmsPage(slug: route.substring(3));
   }
   switch (route) {
-    case '/contact-us':
-      return ContactUsPage(
-        contentEditable: contentEditable,
-        showStaffChrome: showStaffChrome,
-      );
     case '/inquire':
       return InquirePage(
         contentEditable: contentEditable,
@@ -47,11 +41,6 @@ Widget customerExtraPageFor(
       return const GuestOrderTrackingPage();
     case '/checkout':
       return const CheckoutPage();
-    case '/restaurant':
-      return RestaurantOrderPage(
-        contentEditable: contentEditable,
-        showStaffChrome: showStaffChrome,
-      );
     case '/restaurant-feedback':
       return RestaurantFeedbackPublicPage(
         token: Uri.base.queryParameters['token'] ?? '',

@@ -175,7 +175,7 @@ class _CompletedEventGalleryPickerBodyState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
+          Text(
             'Select images from completed events, or upload from your device.',
             style: TextStyle(color: AntdTokens.labelMuted, fontSize: 13),
           ),

@@ -88,11 +88,11 @@ class _ContactUsPageState extends State<ContactUsPage> {
     WebsiteContentStore.instance.addListener(_onContent);
     final load = widget.contentEditable
         ? WebsiteContentStore.instance.loadDraft()
-        : WebsiteContentStore.instance.ensureLoaded();
+        : WebsiteContentStore.instance.ensureLoaded(resolveHomeMedia: false);
     load.then((_) {
       if (mounted) setState(() {});
     }).catchError((_) async {
-      await WebsiteContentStore.instance.ensureLoaded();
+      await WebsiteContentStore.instance.ensureLoaded(resolveHomeMedia: false);
       if (mounted) setState(() {});
     });
   }

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'antd_tokens.dart';
+
 /// Ant Design–style label (bold) + optional red asterisk + outlined control + inline helper/error.
 class AntdFieldShell extends StatelessWidget {
   const AntdFieldShell({
@@ -18,7 +20,6 @@ class AntdFieldShell extends StatelessWidget {
   final String? helperText;
   final Widget child;
 
-  static const Color _border = Color(0xFFD9D9D9);
   static const Color _error = Color(0xFFFF4D4F);
 
   @override
@@ -31,10 +32,10 @@ class AntdFieldShell extends StatelessWidget {
           children: [
             Text(
               label,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
-                color: Color(0xFF262626),
+                color: AntdTokens.valueDark,
               ),
             ),
             if (required) ...[
@@ -48,15 +49,15 @@ class AntdFieldShell extends StatelessWidget {
           data: Theme.of(context).copyWith(
             inputDecorationTheme: InputDecorationTheme(
               filled: true,
-              fillColor: Colors.white,
+              fillColor: AntdTokens.cardBg,
               contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(6),
-                borderSide: BorderSide(color: hasErr ? _error : _border),
+                borderSide: BorderSide(color: hasErr ? _error : AntdTokens.border),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(6),
-                borderSide: BorderSide(color: hasErr ? _error : _border),
+                borderSide: BorderSide(color: hasErr ? _error : AntdTokens.border),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(6),
@@ -71,7 +72,7 @@ class AntdFieldShell extends StatelessWidget {
           Text(errorText!.trim(), style: const TextStyle(color: _error, fontSize: 12)),
         ] else if (helperText != null && helperText!.trim().isNotEmpty) ...[
           const SizedBox(height: 4),
-          Text(helperText!.trim(), style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+          Text(helperText!.trim(), style: TextStyle(color: AntdTokens.labelMuted, fontSize: 12)),
         ],
       ],
     );
@@ -113,10 +114,10 @@ class AntdOutlineInput extends StatelessWidget {
       inputFormatters: inputFormatters,
       readOnly: readOnly,
       onChanged: onChanged,
-      style: const TextStyle(fontSize: 14, color: Color(0xFF262626)),
+      style: TextStyle(fontSize: 14, color: AntdTokens.valueDark),
       decoration: decoration.copyWith(
         hintText: hintText,
-        hintStyle: TextStyle(color: Colors.grey.shade500, fontSize: 14),
+        hintStyle: TextStyle(color: AntdTokens.labelMuted, fontSize: 14),
         counterText: '',
       ),
     );
@@ -153,13 +154,13 @@ class AntdPickerInput extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 14,
                   color:
-                      empty ? Colors.grey.shade500 : const Color(0xFF262626),
+                      empty ? AntdTokens.labelMuted : AntdTokens.valueDark,
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            Icon(icon, size: 18, color: Colors.grey.shade600),
+            Icon(icon, size: 18, color: AntdTokens.labelMuted),
           ],
         ),
       ),

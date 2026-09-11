@@ -239,7 +239,7 @@ class _SuperAdminDashboardPageState extends State<SuperAdminDashboardPage> {
               children: [
                 Text(
                   label,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: AntdTokens.textSecondary,
                     fontSize: 12,
                   ),
@@ -247,7 +247,7 @@ class _SuperAdminDashboardPageState extends State<SuperAdminDashboardPage> {
                 const SizedBox(height: 4),
                 Text(
                   value,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: AntdTokens.valueDark,
                     fontSize: 20,
                     fontWeight: FontWeight.w800,
@@ -348,7 +348,7 @@ class _SuperAdminDashboardPageState extends State<SuperAdminDashboardPage> {
           Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
           const SizedBox(height: 12),
           if (items.isEmpty)
-            const Text(
+            Text(
               'No data yet.',
               style: TextStyle(color: AntdTokens.labelMuted),
             )
@@ -514,7 +514,7 @@ class _SuperAdminDashboardPageState extends State<SuperAdminDashboardPage> {
           Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
           const SizedBox(height: 12),
           if (items.isEmpty)
-            const Text('No recent activity.')
+            Text('No recent activity.')
           else
             for (final item in items.take(6))
               ListTile(
@@ -532,7 +532,7 @@ class _SuperAdminDashboardPageState extends State<SuperAdminDashboardPage> {
                 ),
                 trailing: Text(
                   _fmtDate(item.createdAt),
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: AntdTokens.labelMuted,
                     fontSize: 11,
                   ),

@@ -59,7 +59,7 @@ Future<T?> showAntdModal<T>({
         final paddedBody = Padding(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
           child: DefaultTextStyle(
-            style: const TextStyle(
+            style: TextStyle(
               color: AntdTokens.valueDark,
               fontSize: 14,
               height: 1.45,
@@ -90,7 +90,7 @@ Future<T?> showAntdModal<T>({
                         Expanded(
                           child: Text(
                             title,
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: AntdTokens.valueDark,
                               fontSize: 18,
                               fontWeight: FontWeight.w700,
@@ -99,7 +99,7 @@ Future<T?> showAntdModal<T>({
                         ),
                         IconButton(
                           visualDensity: VisualDensity.compact,
-                          icon: Icon(Icons.close, color: Colors.grey.shade600),
+                          icon: Icon(Icons.close, color: AntdTokens.labelMuted),
                           onPressed: () => Navigator.of(ctx).pop(),
                         ),
                       ],
@@ -116,7 +116,7 @@ Future<T?> showAntdModal<T>({
                       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
                       decoration: BoxDecoration(
                         border: Border(
-                          top: BorderSide(color: Colors.grey.shade200),
+                          top: BorderSide(color: AntdTokens.borderSubtle),
                         ),
                       ),
                       child: Wrap(

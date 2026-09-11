@@ -14,8 +14,8 @@ class AntdCancelButton extends StatelessWidget {
     return OutlinedButton(
       onPressed: onPressed,
       style: OutlinedButton.styleFrom(
-        foregroundColor: AntdTokens.brandOnPrimary,
-        side: const BorderSide(color: AntdTokens.borderSubtle),
+        foregroundColor: AntdTokens.valueDark,
+        side: BorderSide(color: AntdTokens.borderSubtle),
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
       ),
@@ -49,8 +49,8 @@ class AntdSecondaryButton extends StatelessWidget {
       onPressed: onPressed,
       style: OutlinedButton.styleFrom(
         foregroundColor: AntdTokens.valueDark,
-        side: const BorderSide(color: AntdTokens.border),
-        backgroundColor: Colors.white,
+        side: BorderSide(color: AntdTokens.border),
+        backgroundColor: AntdTokens.cardBg,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AntdTokens.radiusSm),
@@ -181,7 +181,7 @@ class AntdIconActionButton extends StatelessWidget {
           width: 34,
           height: 34,
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: AntdTokens.cardBg,
             border: Border.all(color: AntdTokens.border),
             borderRadius: BorderRadius.circular(AntdTokens.radiusSm),
           ),

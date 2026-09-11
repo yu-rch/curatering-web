@@ -128,7 +128,7 @@ class _ReportsState extends State<Reports> {
       margin: const EdgeInsets.only(bottom: 16),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
-        side: const BorderSide(color: AntdTokens.borderSubtle),
+        side: BorderSide(color: AntdTokens.borderSubtle),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -165,7 +165,7 @@ class _ReportsState extends State<Reports> {
       margin: const EdgeInsets.only(bottom: 16),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
-        side: const BorderSide(color: AntdTokens.borderSubtle),
+        side: BorderSide(color: AntdTokens.borderSubtle),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -246,7 +246,7 @@ class _ReportsState extends State<Reports> {
       margin: const EdgeInsets.only(bottom: 16),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
-        side: const BorderSide(color: AntdTokens.borderSubtle),
+        side: BorderSide(color: AntdTokens.borderSubtle),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),

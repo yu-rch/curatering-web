@@ -921,7 +921,7 @@ class _InventoryState extends State<Inventory> {
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
-          side: const BorderSide(color: AntdTokens.borderSubtle),
+          side: BorderSide(color: AntdTokens.borderSubtle),
         ),
         child: Padding(
           padding: const EdgeInsets.all(16),

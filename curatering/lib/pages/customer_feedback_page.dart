@@ -142,7 +142,7 @@ class _CustomerFeedbackPageState extends State<CustomerFeedbackPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Rating',
                   style: TextStyle(
                     fontSize: 11,
@@ -176,7 +176,7 @@ class _CustomerFeedbackPageState extends State<CustomerFeedbackPage> {
         children: [
           Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w600,
               color: AntdTokens.labelMuted,

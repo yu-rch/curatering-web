@@ -148,7 +148,7 @@ class _WebsiteMediaPickerBodyState extends State<_WebsiteMediaPickerBody> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _items.isEmpty
-                ? const Center(
+                ? Center(
                   child: Text(
                     'No media yet. Upload an image.',
                     style: TextStyle(color: AntdTokens.labelMuted),

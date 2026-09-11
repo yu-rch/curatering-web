@@ -474,6 +474,8 @@ class _AppScaffoldState extends State<AppScaffold> {
                           controller: searchController,
                           hintText: searchHint,
                           width: isNarrow ? 160 : 260,
+                          fillColor: Colors.white,
+                          textColor: const Color(0xFF262626),
                           onChanged: onSearchChanged,
                           onClear: () {
                             searchController.clear();

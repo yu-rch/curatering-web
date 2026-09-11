@@ -27,7 +27,7 @@ class AntdPage extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Material(
-            color: Colors.white,
+            color: AntdTokens.cardBg,
             elevation: 0,
             child: SizedBox(
               width: double.infinity,
@@ -78,7 +78,7 @@ class AntdPageHeader extends StatelessWidget {
               children: [
                 Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: AntdTokens.valueDark,
                     fontSize: 22,
                     fontWeight: FontWeight.w700,
@@ -88,7 +88,7 @@ class AntdPageHeader extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     subtitle!,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: AntdTokens.textSecondary,
                       fontSize: 13,
                     ),
@@ -180,6 +180,8 @@ class AntdSearchInput extends StatelessWidget {
     this.width = 280,
     this.onChanged,
     this.onClear,
+    this.fillColor,
+    this.textColor,
   });
 
   final TextEditingController controller;
@@ -187,6 +189,8 @@ class AntdSearchInput extends StatelessWidget {
   final double width;
   final ValueChanged<String>? onChanged;
   final VoidCallback? onClear;
+  final Color? fillColor;
+  final Color? textColor;
 
   @override
   Widget build(BuildContext context) {
@@ -195,12 +199,15 @@ class AntdSearchInput extends StatelessWidget {
       child: TextField(
         controller: controller,
         onChanged: onChanged,
-        style: const TextStyle(fontSize: 14, color: AntdTokens.valueDark),
+        style: TextStyle(
+          fontSize: 14,
+          color: textColor ?? AntdTokens.valueDark,
+        ),
         decoration: InputDecoration(
           isDense: true,
           filled: true,
-          fillColor: Colors.white,
-          prefixIcon: const Icon(
+          fillColor: fillColor ?? AntdTokens.cardBg,
+          prefixIcon: Icon(
             Icons.search,
             size: 18,
             color: AntdTokens.labelMuted,
@@ -214,7 +221,7 @@ class AntdSearchInput extends StatelessWidget {
                     onPressed: onClear,
                   ),
           hintText: hintText,
-          hintStyle: const TextStyle(
+          hintStyle: TextStyle(
             color: AntdTokens.labelMuted,
             fontSize: 14,
           ),
@@ -224,11 +231,11 @@ class AntdSearchInput extends StatelessWidget {
           ),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(AntdTokens.radiusSm),
-            borderSide: const BorderSide(color: AntdTokens.border),
+            borderSide: BorderSide(color: AntdTokens.border),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(AntdTokens.radiusSm),
-            borderSide: const BorderSide(color: AntdTokens.border),
+            borderSide: BorderSide(color: AntdTokens.border),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(AntdTokens.radiusSm),
@@ -267,18 +274,18 @@ class AntdSelect<T> extends StatelessWidget {
           labelText: label,
           isDense: true,
           filled: true,
-          fillColor: Colors.white,
+          fillColor: AntdTokens.cardBg,
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 12,
             vertical: 11,
           ),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(AntdTokens.radiusSm),
-            borderSide: const BorderSide(color: AntdTokens.border),
+            borderSide: BorderSide(color: AntdTokens.border),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(AntdTokens.radiusSm),
-            borderSide: const BorderSide(color: AntdTokens.border),
+            borderSide: BorderSide(color: AntdTokens.border),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(AntdTokens.radiusSm),
@@ -343,7 +350,7 @@ class AntdEmptyState extends StatelessWidget {
           const SizedBox(height: 10),
           Text(
             message,
-            style: const TextStyle(
+            style: TextStyle(
               color: AntdTokens.textSecondary,
               fontSize: 14,
             ),
@@ -370,7 +377,7 @@ class AntdLoadingState extends StatelessWidget {
             color: AntdTokens.brandPrimary,
           ),
           const SizedBox(height: 12),
-          Text(message, style: const TextStyle(color: AntdTokens.labelMuted)),
+          Text(message, style: TextStyle(color: AntdTokens.labelMuted)),
         ],
       ),
     );

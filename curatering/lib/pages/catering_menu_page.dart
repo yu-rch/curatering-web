@@ -84,7 +84,7 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Future<void>.delayed(const Duration(milliseconds: 1800), () {
         if (!mounted) return;
-        unawaited(MenuStore.instance.ensureImagesLoaded());
+        unawaited(MenuStore.instance.ensureImagesLoaded(category: 'catering'));
       });
     });
   }

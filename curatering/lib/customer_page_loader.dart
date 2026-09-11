@@ -3,17 +3,22 @@ import 'package:flutter/material.dart';
 import 'config/site_routes.dart';
 import 'customer_extra_pages.dart' deferred as customer_pages;
 import 'pages/catering_menu_page.dart' deferred as catering_menu_page;
+import 'pages/contact_us_page.dart' deferred as contact_us_page;
 import 'pages/customer_website.dart' deferred as customer_home;
 import 'pages/gallery_page.dart' deferred as gallery_page;
+import 'pages/restaurant_order_page.dart' deferred as restaurant_page;
 import 'services/cms_draft_flag.dart';
 import 'utils/web_boot_bridge.dart';
 
 /// Ensures secondary customer routes (/checkout, /inquire, …) are loaded.
-/// Homepage / gallery / catering-menu use their own deferred chunks.
+/// Homepage / gallery / catering-menu / restaurant / contact-us use their
+/// own deferred chunks.
 Future<void>? _customerExtrasLoading;
 Future<void>? _customerHomeLoading;
 Future<void>? _galleryLoading;
 Future<void>? _cateringMenuLoading;
+Future<void>? _restaurantLoading;
+Future<void>? _contactUsLoading;
 
 Future<void> ensureCustomerPagesLoaded() {
   return _customerExtrasLoading ??= customer_pages.loadLibrary();
@@ -32,6 +37,10 @@ Future<void> ensureCustomerRouteLoaded(String path) {
       return _galleryLoading ??= gallery_page.loadLibrary();
     case '/catering-menu':
       return _cateringMenuLoading ??= catering_menu_page.loadLibrary();
+    case '/restaurant':
+      return _restaurantLoading ??= restaurant_page.loadLibrary();
+    case '/contact-us':
+      return _contactUsLoading ??= contact_us_page.loadLibrary();
     default:
       return ensureCustomerPagesLoaded();
   }
@@ -122,6 +131,16 @@ Widget buildCustomerExtraPage(String path) {
       );
     case '/catering-menu':
       return catering_menu_page.CateringMenuPage(
+        contentEditable: editable,
+        showStaffChrome: editable,
+      );
+    case '/restaurant':
+      return restaurant_page.RestaurantOrderPage(
+        contentEditable: editable,
+        showStaffChrome: editable,
+      );
+    case '/contact-us':
+      return contact_us_page.ContactUsPage(
         contentEditable: editable,
         showStaffChrome: editable,
       );

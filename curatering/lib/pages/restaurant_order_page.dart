@@ -71,16 +71,23 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
       if (widget.contentEditable) {
         await WebsiteContentStore.instance.loadDraft();
       } else {
-        await WebsiteContentStore.instance.ensureLoaded();
+        await WebsiteContentStore.instance.ensureLoaded(
+          resolveHomeMedia: false,
+        );
       }
     } catch (_) {
-      await WebsiteContentStore.instance.ensureLoaded();
+      await WebsiteContentStore.instance.ensureLoaded(resolveHomeMedia: false);
     }
+    // Metadata first — restaurant photos are a multi-MB JSON blob and
+    // dominate TTI / main-thread / transfer if fetched on first paint.
     if (MenuStore.instance.activeDishes.isEmpty) {
       await MenuStore.instance.loadDishes();
     }
-    await MenuStore.instance.ensureImagesLoaded();
     await CartStore.instance.init();
+    if (mounted) setState(() {});
+    await Future<void>.delayed(const Duration(milliseconds: 1800));
+    if (!mounted) return;
+    await MenuStore.instance.ensureImagesLoaded(category: 'restaurant');
     if (mounted) setState(() {});
   }
 

@@ -235,6 +235,97 @@ class _CustomerExtraPageState extends State<_CustomerExtraPage> {
   }
 }
 
+const _staffPageTransitions = PageTransitionsTheme(
+  builders: {
+    TargetPlatform.android: _SmoothPageTransitionsBuilder(),
+    TargetPlatform.iOS: _SmoothPageTransitionsBuilder(),
+    TargetPlatform.linux: _SmoothPageTransitionsBuilder(),
+    TargetPlatform.macOS: _SmoothPageTransitionsBuilder(),
+    TargetPlatform.windows: _SmoothPageTransitionsBuilder(),
+    TargetPlatform.fuchsia: _SmoothPageTransitionsBuilder(),
+  },
+);
+
+ThemeData _staffAppTheme({required bool dark}) {
+  final brightness = dark ? Brightness.dark : Brightness.light;
+  final colorScheme = ColorScheme.fromSeed(
+    seedColor: const Color(0xFFFFC024),
+    brightness: brightness,
+  ).copyWith(
+    primary: const Color(0xFFFFC024),
+    onPrimary: const Color(0xFF1E1E1E),
+    secondary: const Color(0xFFFFC024),
+    onSecondary: const Color(0xFF1E1E1E),
+    surface: dark ? const Color(0xFF141414) : const Color(0xFFF5F7FA),
+    onSurface: dark ? const Color(0xFFF5F5F5) : const Color(0xFF262626),
+  );
+
+  return ThemeData(
+    useMaterial3: true,
+    brightness: brightness,
+    colorScheme: colorScheme,
+    scaffoldBackgroundColor:
+        dark ? const Color(0xFF141414) : const Color(0xFFF5F7FA),
+    canvasColor: dark ? const Color(0xFF141414) : const Color(0xFFF5F7FA),
+    cardColor: dark ? const Color(0xFF1F1F1F) : Colors.white,
+    dividerColor: dark ? const Color(0xFF434343) : const Color(0xFFE8E8E8),
+    pageTransitionsTheme: _staffPageTransitions,
+    elevatedButtonTheme: ElevatedButtonThemeData(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: const Color(0xFFFFC024),
+        foregroundColor: const Color(0xFF1E1E1E),
+      ),
+    ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: FilledButton.styleFrom(
+        backgroundColor: const Color(0xFFFFC024),
+        foregroundColor: const Color(0xFF1E1E1E),
+      ),
+    ),
+    radioTheme: RadioThemeData(
+      fillColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.selected)) {
+          return const Color(0xFFFFC024);
+        }
+        return dark ? const Color(0xFF5C5C5C) : const Color(0xFFBFBFBF);
+      }),
+    ),
+    switchTheme: SwitchThemeData(
+      thumbColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.selected)) {
+          return const Color(0xFFFFC024);
+        }
+        return dark ? const Color(0xFFD9D9D9) : Colors.white;
+      }),
+      trackColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.selected)) {
+          return const Color(0xFFFFC024).withValues(alpha: 0.45);
+        }
+        return dark ? const Color(0xFF434343) : const Color(0xFFBFBFBF);
+      }),
+    ),
+    cardTheme: CardThemeData(
+      color: dark ? const Color(0xFF1F1F1F) : Colors.white,
+      elevation: 0,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: dark ? const Color(0xFF434343) : const Color(0xFFE8E8E8),
+        ),
+      ),
+    ),
+    dialogTheme: DialogThemeData(
+      backgroundColor: dark ? const Color(0xFF1F1F1F) : Colors.white,
+      surfaceTintColor: Colors.transparent,
+    ),
+    inputDecorationTheme: InputDecorationTheme(
+      filled: true,
+      fillColor: dark ? const Color(0xFF1F1F1F) : Colors.white,
+    ),
+  );
+}
+
 class MyApp extends StatefulWidget {
   const MyApp({super.key});
 
@@ -350,41 +441,9 @@ class _MyAppState extends State<MyApp> {
                 onPointerSignal: (_) => _recordStaffActivity(),
                 child: child ?? const SizedBox.shrink(),
               ),
-          theme: ThemeData(
-            colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-            useMaterial3: true,
-            brightness: dark ? Brightness.dark : Brightness.light,
-            pageTransitionsTheme: const PageTransitionsTheme(
-              builders: {
-                TargetPlatform.android: _SmoothPageTransitionsBuilder(),
-                TargetPlatform.iOS: _SmoothPageTransitionsBuilder(),
-                TargetPlatform.linux: _SmoothPageTransitionsBuilder(),
-                TargetPlatform.macOS: _SmoothPageTransitionsBuilder(),
-                TargetPlatform.windows: _SmoothPageTransitionsBuilder(),
-                TargetPlatform.fuchsia: _SmoothPageTransitionsBuilder(),
-              },
-            ),
-            elevatedButtonTheme: ElevatedButtonThemeData(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFFFC024),
-                foregroundColor: const Color(0xFF1E1E1E),
-              ),
-            ),
-            filledButtonTheme: FilledButtonThemeData(
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFFFFC024),
-                foregroundColor: const Color(0xFF1E1E1E),
-              ),
-            ),
-            radioTheme: RadioThemeData(
-              fillColor: WidgetStateProperty.resolveWith((states) {
-                if (states.contains(WidgetState.selected)) {
-                  return const Color(0xFFFFC024);
-                }
-                return dark ? const Color(0xFF5C5C5C) : const Color(0xFFBFBFBF);
-              }),
-            ),
-          ),
+          theme: _staffAppTheme(dark: false),
+          darkTheme: _staffAppTheme(dark: true),
+          themeMode: dark ? ThemeMode.dark : ThemeMode.light,
           onGenerateInitialRoutes: (_) {
             final path = _startupRoutePath();
             final built = _buildRouteForPath(path);

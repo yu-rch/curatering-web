@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/antd_message.dart';
+import '../widgets/antd_tokens.dart';
 import '../services/user_api.dart';
 import '../data_store.dart';
 
@@ -41,7 +42,7 @@ class _SettingsState extends State<Settings> {
             const SizedBox(height: 6),
             Text(
               'Support and account tools. Sign out from the profile menu (top right).',
-              style: TextStyle(color: Colors.grey.shade700),
+              style: TextStyle(color: AntdTokens.textSecondary),
             ),
             const SizedBox(height: 16),
             Expanded(
@@ -49,30 +50,32 @@ class _SettingsState extends State<Settings> {
                 children: [
                   Card(
                     elevation: 0,
+                    color: AntdTokens.cardBg,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
-                      side: BorderSide(
-                        color: Colors.black.withValues(alpha: 0.08),
-                      ),
+                      side: BorderSide(color: AntdTokens.borderSubtle),
                     ),
-                    child: SwitchListTile(
-                      title: const Text('Dark mode'),
-                      subtitle: const Text('Switch between light and dark theme'),
-                      value: DataStore.isDarkMode.value,
-                      onChanged: (v) {
-                        DataStore.setDarkMode(v);
-                        setState(() {});
+                    child: ValueListenableBuilder<bool>(
+                      valueListenable: DataStore.isDarkMode,
+                      builder: (context, dark, _) {
+                        return SwitchListTile(
+                          title: const Text('Dark mode'),
+                          subtitle: const Text(
+                            'Switch between light and dark theme',
+                          ),
+                          value: dark,
+                          onChanged: DataStore.setDarkMode,
+                        );
                       },
                     ),
                   ),
                   const SizedBox(height: 16),
                   Card(
                     elevation: 0,
+                    color: AntdTokens.cardBg,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
-                      side: BorderSide(
-                        color: Colors.black.withValues(alpha: 0.08),
-                      ),
+                      side: BorderSide(color: AntdTokens.borderSubtle),
                     ),
                     child: Padding(
                       padding: const EdgeInsets.all(16.0),

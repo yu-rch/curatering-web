@@ -53,7 +53,10 @@ class MenuStore extends ChangeNotifier {
   }
 
   // Load dishes with images (slower, use when menu grids need photos).
-  Future<void> loadDishesWithImages({bool silent = false}) async {
+  Future<void> loadDishesWithImages({
+    bool silent = false,
+    String? category,
+  }) async {
     try {
       if (!silent || _items.isEmpty) {
         _isLoading = true;
@@ -61,19 +64,30 @@ class MenuStore extends ChangeNotifier {
         notifyListeners();
       }
 
+      final cat = category?.trim().toLowerCase() ?? '';
       final decoded = await ApiClient.instance.getJson(
         '/api/menu/dishes/with-images',
+        queryParameters: cat.isEmpty ? null : {'category': cat},
         cacheExpiry: const Duration(minutes: 5),
       );
       final raw = decoded['dishes'];
+      final incoming =
+          raw is List
+              ? raw.map((json) => _dishFromJson(json)).toList()
+              : <MenuDish>[];
 
-      if (raw is! List) {
-        _items = [];
+      if (cat.isNotEmpty && _items.isNotEmpty) {
+        final byId = {for (final d in incoming) d.id: d};
+        _items = _items.map((d) {
+          final next = byId[d.id];
+          if (next == null) return d;
+          return d.copyWith(imageBase64: next.imageBase64);
+        }).toList();
       } else {
-        _items = raw.map((json) => _dishFromJson(json)).toList();
+        _items = incoming;
+        _imagesLoaded = true;
       }
 
-      _imagesLoaded = true;
       _isLoading = false;
       notifyListeners();
     } catch (e) {
@@ -85,17 +99,26 @@ class MenuStore extends ChangeNotifier {
   }
 
   /// Ensures dish photos are present (for restaurant/catering grids).
-  Future<void> ensureImagesLoaded() async {
-    final missingPhotos = _items.any(
+  /// Pass [category] to fetch only that menu's photos instead of the full
+  /// multi-MB payload.
+  Future<void> ensureImagesLoaded({String? category}) async {
+    final cat = category?.trim().toLowerCase() ?? '';
+    final target =
+        cat.isEmpty
+            ? _items
+            : _items
+                .where((d) => d.category.trim().toLowerCase() == cat)
+                .toList();
+    final missingPhotos = target.any(
       (d) => d.imageBase64 == null || d.imageBase64!.trim().isEmpty,
     );
+    if (target.isNotEmpty && !missingPhotos) return;
     if (_imagesLoaded && _items.isNotEmpty && !missingPhotos) return;
-    if (_items.isEmpty) {
+    if (_items.isEmpty && cat.isEmpty) {
       await loadDishesWithImages();
       return;
     }
-    // Already have names/prices — refresh photos without a full-page spinner.
-    await loadDishesWithImages(silent: true);
+    await loadDishesWithImages(silent: _items.isNotEmpty, category: cat);
   }
 
   // Load single dish with image

@@ -236,11 +236,11 @@ class _AllergenSelectorFieldState extends State<AllergenSelectorField> {
               isDense: true,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(6),
-                borderSide: const BorderSide(color: AntdTokens.borderSubtle),
+                borderSide: BorderSide(color: AntdTokens.borderSubtle),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(6),
-                borderSide: const BorderSide(color: AntdTokens.borderSubtle),
+                borderSide: BorderSide(color: AntdTokens.borderSubtle),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(6),

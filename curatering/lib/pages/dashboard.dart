@@ -421,10 +421,10 @@ class _DashboardState extends State<Dashboard> {
       width: 236,
       child: Card(
         elevation: 0,
-        color: Colors.white,
+        color: AntdTokens.cardBg,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: AntdTokens.borderSubtle),
+          side: BorderSide(color: AntdTokens.borderSubtle),
         ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -493,7 +493,7 @@ class _DashboardState extends State<Dashboard> {
                       subtitle,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: AntdTokens.labelMuted,
                         fontSize: 11,
                       ),
@@ -512,7 +512,7 @@ class _DashboardState extends State<Dashboard> {
       padding: const EdgeInsets.only(top: 8, bottom: 12),
       child: Text(
         text,
-        style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
       ),
     );
   }
@@ -526,10 +526,10 @@ class _DashboardState extends State<Dashboard> {
   }) {
     return Card(
       elevation: 0,
-      color: Colors.white,
+              color: AntdTokens.cardBg,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(18),
-        side: const BorderSide(color: AntdTokens.borderSubtle),
+        side: BorderSide(color: AntdTokens.borderSubtle),
       ),
       child: Padding(
         padding: const EdgeInsets.all(18),
@@ -554,7 +554,7 @@ class _DashboardState extends State<Dashboard> {
                     children: [
                       Text(
                         title,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w800,
                           color: AntdTokens.valueDark,
@@ -563,7 +563,7 @@ class _DashboardState extends State<Dashboard> {
                       const SizedBox(height: 2),
                       Text(
                         subtitle,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: AntdTokens.labelMuted,
                           fontSize: 12,
                         ),
@@ -605,7 +605,7 @@ class _DashboardState extends State<Dashboard> {
                 child: const Icon(Icons.query_stats, color: AntdTokens.blue),
               ),
               const SizedBox(width: 12),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -617,7 +617,7 @@ class _DashboardState extends State<Dashboard> {
                         color: AntdTokens.valueDark,
                       ),
                     ),
-                    SizedBox(height: 2),
+                    const SizedBox(height: 2),
                     Text(
                       'Visits and page views are collected by Vercel after deployment.',
                       style: TextStyle(
@@ -718,7 +718,7 @@ class _DashboardState extends State<Dashboard> {
                     if (subtitle != null && subtitle.trim().isNotEmpty) ...[
                       Text(
                         subtitle,
-                        style: const TextStyle(color: AntdTokens.labelMuted),
+                        style: TextStyle(color: AntdTokens.labelMuted),
                       ),
                       const SizedBox(height: 16),
                     ],
@@ -734,7 +734,7 @@ class _DashboardState extends State<Dashboard> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Close'),
+                child: Text('Close'),
               ),
             ],
           ),
@@ -830,7 +830,7 @@ class _DashboardState extends State<Dashboard> {
           Expanded(
             child: Text(
               row.label,
-              style: const TextStyle(color: AntdTokens.labelMuted),
+              style: TextStyle(color: AntdTokens.labelMuted),
             ),
           ),
           const SizedBox(width: 16),
@@ -838,7 +838,7 @@ class _DashboardState extends State<Dashboard> {
             child: Text(
               row.value,
               textAlign: TextAlign.right,
-              style: const TextStyle(
+              style: TextStyle(
                 color: AntdTokens.valueDark,
                 fontWeight: FontWeight.w700,
               ),
@@ -858,9 +858,9 @@ class _DashboardState extends State<Dashboard> {
     final hasDetails = details.isNotEmpty;
     return Card(
       elevation: 0,
-      color: Colors.white,
+              color: AntdTokens.cardBg,
       shape: RoundedRectangleBorder(
-        side: const BorderSide(color: AntdTokens.borderSubtle),
+        side: BorderSide(color: AntdTokens.borderSubtle),
         borderRadius: BorderRadius.circular(18),
       ),
       clipBehavior: Clip.antiAlias,
@@ -884,7 +884,7 @@ class _DashboardState extends State<Dashboard> {
                   Expanded(
                     child: Text(
                       title,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w800,
                         color: AntdTokens.valueDark,
@@ -892,7 +892,7 @@ class _DashboardState extends State<Dashboard> {
                     ),
                   ),
                   if (hasDetails)
-                    const Icon(
+                    Icon(
                       Icons.open_in_full,
                       color: AntdTokens.labelMuted,
                       size: 16,
@@ -903,7 +903,7 @@ class _DashboardState extends State<Dashboard> {
                 const SizedBox(height: 4),
                 Text(
                   subtitle,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: AntdTokens.labelMuted,
                     fontSize: 12,
                   ),
@@ -994,9 +994,9 @@ class _DashboardState extends State<Dashboard> {
     final busy = _isAiBusy(_insightState);
     return Card(
       elevation: 0,
-      color: Colors.white,
+              color: AntdTokens.cardBg,
       shape: RoundedRectangleBorder(
-        side: const BorderSide(color: AntdTokens.borderSubtle),
+        side: BorderSide(color: AntdTokens.borderSubtle),
         borderRadius: BorderRadius.circular(18),
       ),
       child: Padding(
@@ -1008,7 +1008,7 @@ class _DashboardState extends State<Dashboard> {
               children: [
                 const Icon(Icons.auto_awesome, color: AntdTokens.blue),
                 const SizedBox(width: 8),
-                const Expanded(
+                Expanded(
                   child: Text(
                     'AI Dashboard Analyst',
                     style: TextStyle(
@@ -1040,7 +1040,7 @@ class _DashboardState extends State<Dashboard> {
             Text(
               'Range: $_insightRange'
               '${insight?.createdAt != null ? ' · Generated ${_formatInsightDate(insight!.createdAt!)}' : ''}',
-              style: const TextStyle(
+              style: TextStyle(
                 color: AntdTokens.labelMuted,
                 fontSize: 12,
               ),
@@ -1081,7 +1081,7 @@ class _DashboardState extends State<Dashboard> {
             ],
             const SizedBox(height: 14),
             if (insight == null)
-              const Text(
+              Text(
                 'No stored AI analysis yet. Generate one to summarize recent feedback, alerts, and recommended actions.',
                 style: TextStyle(color: AntdTokens.labelMuted),
               )
@@ -1099,14 +1099,14 @@ class _DashboardState extends State<Dashboard> {
                         insight.summary.isEmpty
                             ? 'No summary returned.'
                             : insight.summary,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: AntdTokens.valueDark,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
                       if (insight.explainability.isNotEmpty) ...[
                         const SizedBox(height: 12),
-                        const Text(
+                        Text(
                           'AI detected:',
                           style: TextStyle(
                             color: AntdTokens.valueDark,
@@ -1186,7 +1186,7 @@ class _DashboardState extends State<Dashboard> {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AntdTokens.cardBg,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: AntdTokens.borderSubtle),
       ),
@@ -1211,14 +1211,14 @@ class _DashboardState extends State<Dashboard> {
                   children: [
                     Text(
                       title,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontWeight: FontWeight.w800,
                         color: AntdTokens.valueDark,
                       ),
                     ),
                     Text(
                       subtitle,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: AntdTokens.labelMuted,
                         fontSize: 12,
                       ),
@@ -1237,7 +1237,7 @@ class _DashboardState extends State<Dashboard> {
 
   Widget _insightList(List<String> items) {
     if (items.isEmpty) {
-      return const Text(
+      return Text(
         'No items.',
         style: TextStyle(color: AntdTokens.labelMuted),
       );
@@ -1250,7 +1250,7 @@ class _DashboardState extends State<Dashboard> {
             padding: const EdgeInsets.only(bottom: 6),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [const Text('• '), Expanded(child: Text(item))],
+              children: [Text('• '), Expanded(child: Text(item))],
             ),
           ),
       ],
@@ -1295,7 +1295,7 @@ class _DashboardState extends State<Dashboard> {
             const SizedBox(height: 6),
             Text(
               alert.explanation,
-              style: const TextStyle(color: AntdTokens.textSecondary),
+              style: TextStyle(color: AntdTokens.textSecondary),
             ),
           ],
         ],
@@ -1333,7 +1333,7 @@ class _DashboardState extends State<Dashboard> {
             TextButton.icon(
               onPressed: onRetry,
               icon: const Icon(Icons.refresh, size: 16),
-              label: const Text('Retry'),
+              label: Text('Retry'),
             ),
         ],
       ),
@@ -1395,7 +1395,7 @@ class _DashboardState extends State<Dashboard> {
             const SizedBox(height: 10),
             Text(
               health!.message,
-              style: const TextStyle(color: AntdTokens.labelMuted),
+              style: TextStyle(color: AntdTokens.labelMuted),
             ),
           ],
         ],
@@ -1423,13 +1423,14 @@ class _DashboardState extends State<Dashboard> {
     String label,
     String value, {
     String? detail,
-    Color color = AntdTokens.valueDark,
+    Color? color,
   }) {
+    final resolved = color ?? AntdTokens.valueDark;
     return Container(
       width: 170,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: AntdTokens.fillTertiary,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AntdTokens.borderSubtle),
       ),
@@ -1438,7 +1439,7 @@ class _DashboardState extends State<Dashboard> {
         children: [
           Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               color: AntdTokens.labelMuted,
               fontSize: 12,
               fontWeight: FontWeight.w600,
@@ -1447,7 +1448,7 @@ class _DashboardState extends State<Dashboard> {
           const SizedBox(height: 4),
           Text(
             value,
-            style: TextStyle(color: color, fontWeight: FontWeight.w800),
+            style: TextStyle(color: resolved, fontWeight: FontWeight.w800),
           ),
           if (detail != null && detail.trim().isNotEmpty) ...[
             const SizedBox(height: 3),
@@ -1455,7 +1456,7 @@ class _DashboardState extends State<Dashboard> {
               detail,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
+              style: TextStyle(
                 color: AntdTokens.labelMuted,
                 fontSize: 11,
               ),
@@ -1511,7 +1512,7 @@ class _DashboardState extends State<Dashboard> {
             const SizedBox(height: 10),
             Text(
               trends!.summary,
-              style: const TextStyle(
+              style: TextStyle(
                 color: AntdTokens.valueDark,
                 fontWeight: FontWeight.w600,
               ),
@@ -1519,7 +1520,7 @@ class _DashboardState extends State<Dashboard> {
           ],
           const SizedBox(height: 12),
           if (trends == null || trends.isEmpty)
-            const Text(
+            Text(
               'No dish trend data returned yet.',
               style: TextStyle(color: AntdTokens.labelMuted),
             )
@@ -1589,7 +1590,7 @@ class _DashboardState extends State<Dashboard> {
       color: color,
       child:
           items.isEmpty
-              ? const Text(
+              ? Text(
                 'No dishes returned.',
                 style: TextStyle(color: AntdTokens.labelMuted),
               )
@@ -1626,7 +1627,7 @@ class _DashboardState extends State<Dashboard> {
             children: [
               Text(
                 '#$rank',
-                style: const TextStyle(
+                style: TextStyle(
                   color: AntdTokens.labelMuted,
                   fontWeight: FontWeight.w700,
                 ),
@@ -1637,7 +1638,7 @@ class _DashboardState extends State<Dashboard> {
                   trend.dish,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
+                  style: TextStyle(fontWeight: FontWeight.w700),
                 ),
               ),
               const SizedBox(width: 8),
@@ -2404,7 +2405,7 @@ class _DashboardState extends State<Dashboard> {
                                 '/restaurant-orders',
                               ),
                           icon: const Icon(Icons.receipt_long),
-                          label: const Text('Restaurant orders'),
+                          label: Text('Restaurant orders'),
                         ),
                       ),
                     ],
@@ -2470,9 +2471,9 @@ class _DashboardState extends State<Dashboard> {
             width: colWidth,
             child: Card(
               elevation: 0,
-              color: Colors.white,
+              color: AntdTokens.cardBg,
               shape: RoundedRectangleBorder(
-                side: const BorderSide(color: AntdTokens.borderSubtle),
+                side: BorderSide(color: AntdTokens.borderSubtle),
                 borderRadius: BorderRadius.circular(18),
               ),
               child: Padding(
@@ -2486,7 +2487,7 @@ class _DashboardState extends State<Dashboard> {
                         const SizedBox(width: 8),
                         Text(
                           title,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w800,
                             color: AntdTokens.valueDark,
@@ -2513,7 +2514,7 @@ class _DashboardState extends State<Dashboard> {
               icon: Icons.notifications_active_outlined,
               iconColor: AntdTokens.error,
               body: alerts.isEmpty
-                  ? const Text(
+                  ? Text(
                       'No alerts.',
                       style: TextStyle(color: AntdTokens.labelMuted),
                     )
@@ -2528,14 +2529,14 @@ class _DashboardState extends State<Dashboard> {
                 children: [
                   Text(
                     formatPhp(s?.catering.salesToday ?? 0),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.w800,
                       color: AntdTokens.valueDark,
                     ),
                   ),
                   const SizedBox(height: 4),
-                  const Text(
+                  Text(
                     'Sales today',
                     style: TextStyle(color: AntdTokens.labelMuted, fontSize: 12),
                   ),
@@ -2543,7 +2544,7 @@ class _DashboardState extends State<Dashboard> {
                     const SizedBox(height: 8),
                     Text(
                       '${s.catering.ongoing} ongoing · ${s.catering.inquiriesThisMonth} inquiries this month',
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: AntdTokens.textSecondary,
                         fontSize: 12,
                       ),
@@ -2561,14 +2562,14 @@ class _DashboardState extends State<Dashboard> {
                 children: [
                   Text(
                     formatPhp(s?.restaurant.salesToday ?? 0),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.w800,
                       color: AntdTokens.valueDark,
                     ),
                   ),
                   const SizedBox(height: 4),
-                  const Text(
+                  Text(
                     'Sales today',
                     style: TextStyle(color: AntdTokens.labelMuted, fontSize: 12),
                   ),
@@ -2576,7 +2577,7 @@ class _DashboardState extends State<Dashboard> {
                     const SizedBox(height: 8),
                     Text(
                       '${s.restaurant.pendingConfirmations} pending · ${s.restaurant.delivered} delivered',
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: AntdTokens.textSecondary,
                         fontSize: 12,
                       ),
@@ -2614,7 +2615,7 @@ class _DashboardState extends State<Dashboard> {
             return Material(
               color: isSelected
                   ? AntdTokens.blue.withValues(alpha: 0.10)
-                  : Colors.white,
+                  : AntdTokens.cardBg,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
                 side: BorderSide(
@@ -2680,7 +2681,7 @@ class _DashboardState extends State<Dashboard> {
         children: [
           Material(
             elevation: 1,
-            color: Colors.white,
+            color: AntdTokens.cardBg,
             child: SizedBox(
               width: double.infinity,
               child: Padding(
@@ -2715,7 +2716,7 @@ class _DashboardState extends State<Dashboard> {
                                   icon: const Icon(
                                     Icons.admin_panel_settings_outlined,
                                   ),
-                                  label: const Text('Super Admin Dashboard'),
+                                  label: Text('Super Admin Dashboard'),
                                 ),
                               OutlinedButton.icon(
                                 onPressed:
@@ -2781,7 +2782,7 @@ class _DashboardState extends State<Dashboard> {
                             OutlinedButton.icon(
                               onPressed: () => _refreshDashboard(force: true),
                               icon: const Icon(Icons.refresh),
-                              label: const Text('Reload'),
+                              label: Text('Reload'),
                             ),
                           ],
                         ),
@@ -2883,7 +2884,7 @@ class _AnalyticsPill extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: const TextStyle(
+                style: TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.w600,
           color: AntdTokens.valueDark,
@@ -3182,7 +3183,7 @@ void _drawText(
   String text,
   Offset offset, {
   double fontSize = 12,
-  Color color = AntdTokens.valueDark,
+  Color? color,
   FontWeight fontWeight = FontWeight.w500,
   TextAlign align = TextAlign.left,
 }) {
@@ -3190,7 +3191,7 @@ void _drawText(
     text: TextSpan(
       text: text,
       style: TextStyle(
-        color: color,
+        color: color ?? AntdTokens.valueDark,
         fontSize: fontSize,
         fontWeight: fontWeight,
       ),

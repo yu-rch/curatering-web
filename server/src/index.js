@@ -10474,13 +10474,21 @@ async function registerRoutesAfterDbInit() {
       
       while (retryCount < maxRetries) {
         try {
+          const category = String(req.query.category || '').trim().toLowerCase();
+          const params = [];
+          let where = 'WHERE archived = false';
+          if (category === 'restaurant' || category === 'catering') {
+            params.push(category);
+            where += ` AND lower(trim(category)) = $${params.length}`;
+          }
           const result = await pool.query(
             `SELECT id, name, price, menu_dishes_additional_charge_amount, category, pax_options, sauces, supports_addons, ingredients,
                     image_base64, archived, available, archived_at, created_at, updated_at, type, set_menus,
                     public_description, allergens, meal_type
              FROM menu_dishes
-             WHERE archived = false
-             ORDER BY category, name`
+             ${where}
+             ORDER BY category, name`,
+            params,
           );
           res.json({ dishes: result.rows });
           return;
