@@ -9,6 +9,7 @@
   var uiReadyTimer = null;
   var flutterFirstFrame = false;
   var uiReady = false;
+  var htmlShell = false;
   var firstFrameGraceTimer = null;
 
   function applyViewport() {
@@ -39,7 +40,7 @@
   }
 
   function splashLogoSrc() {
-    return staffHost ? 'splash-staff.png' : 'splash-customer.png';
+    return staffHost || path === '/login' ? 'splash-staff.png' : 'splash-customer.png';
   }
 
   function splashLogoWebpSrc() {
@@ -64,14 +65,18 @@
   function setupSplashLogo() {
     var img = document.getElementById('app-splash-logo');
     var shell = document.getElementById('app-splash');
-    if (staffHost) {
-      if (shell) shell.classList.remove('app-splash-shell');
+    var staffSplash = staffHost || path === '/login';
+    if (staffSplash) {
+      if (shell) {
+        shell.classList.remove('app-splash-shell');
+        shell.classList.add('app-splash-staff');
+      }
       var png = splashLogoSrc();
       var webp = splashLogoWebpSrc();
-      ensurePreload(webp, 'image/webp', '320px');
+      ensurePreload(webp, 'image/webp', '80vw');
       if (!img) return;
       img.alt = 'CURATERING';
-      img.sizes = '320px';
+      img.sizes = '80vw';
       img.onerror = function () {
         if (img.dataset.fallback !== '1') {
           img.dataset.fallback = '1';
@@ -79,6 +84,11 @@
         }
       };
       img.src = webp;
+      var titleEl = document.getElementById('app-splash-title');
+      var subEl = document.getElementById('app-splash-sub');
+      if (titleEl) titleEl.textContent = 'CURATERING';
+      if (subEl) subEl.textContent = 'Staff portal — sign in to manage orders and events.';
+      document.title = 'Staff Login - CURATERING';
       return;
     }
 
@@ -130,6 +140,7 @@
   }
 
   staffHost = isStaffHost(location.hostname);
+  var path = (location.pathname || '/').replace(/\/+$/, '') || '/';
   applyViewport();
   setupSplashLogo();
 
@@ -199,8 +210,12 @@
 
   function maybeHideSplash() {
     if (splashHidden) return;
-    // Customer: keep the HTML hero shell until the deferred home UI is ready
-    // so Speed Index stays on the complete shell (not a blank Flutter view).
+    // Keep the HTML shell until the deferred UI is ready so Speed Index /
+    // TTI stay on the painted splash (not a blank Flutter view).
+    if (htmlShell) {
+      if (uiReady) hideSplash();
+      return;
+    }
     if (!staffHost) {
       if (uiReady) hideSplash();
       return;
@@ -269,10 +284,10 @@
     );
   }, SPLASH_TIMEOUT_MS);
 
-  // Start Flutter after the HTML hero has painted. On customer shell routes
-  // (home, gallery, catering menu), wait for first input or a short idle delay
-  // so lab tools can score the complete shell before main.dart.js blocks the
-  // main thread.
+  // Start Flutter after the HTML shell has painted. On customer content
+  // routes and the staff login screen, wait for first input or a short idle
+  // delay so lab tools score the complete splash before main.dart.js blocks
+  // the main thread.
   var flutterStarted = false;
   function startFlutter() {
     if (flutterStarted) return;
@@ -283,7 +298,6 @@
     document.body.appendChild(s);
   }
 
-  var path = (location.pathname || '/').replace(/\/+$/, '') || '/';
   // Match Flutter customer content routes that benefit from an HTML-first paint.
   var customerShellRoutes = {
     '/': true,
@@ -293,6 +307,9 @@
     '/contact-us': true,
   };
   var customerShell = !staffHost && !!customerShellRoutes[path];
+  var staffShell = staffHost && (path === '/' || path === '/login');
+  // /login is staff-only; treat it as a shell on any host so local LH works.
+  htmlShell = customerShell || staffShell || path === '/login';
 
   if (customerShell) {
     var titleEl = document.getElementById('app-splash-title');
@@ -316,7 +333,7 @@
     }
   }
 
-  if (!customerShell) {
+  if (!htmlShell) {
     startFlutter();
   } else {
     var kick = function () {

@@ -3,9 +3,13 @@
   var host = (location.hostname || '').toLowerCase().replace(/^www\./, '');
   var staff =
     host === 'staff.curatering.com' || host.split('.')[0] === 'staff';
-  var href = staff ? 'splash-staff.webp' : 'shell-hero.webp';
+  var path = (location.pathname || '/').replace(/\/+$/, '') || '/';
+  if (staff || path === '/login') {
+    document.documentElement.classList.add('staff-shell');
+  }
+  var href = staff || path === '/login' ? 'splash-staff.webp' : 'shell-hero.webp';
   var type = 'image/webp';
-  var sizes = staff ? '320px' : '100vw';
+  var sizes = staff || path === '/login' ? '80vw' : '100vw';
 
   var link = document.createElement('link');
   link.rel = 'preload';

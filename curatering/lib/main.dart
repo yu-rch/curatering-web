@@ -11,6 +11,7 @@ import 'config.dart';
 import 'config/site_routes.dart';
 import 'customer_page_loader.dart';
 import 'staff_app.dart' deferred as staff_app show staffPageFor;
+import 'pages/login.dart' deferred as staff_login show Login;
 import 'widgets/app_root_route.dart';
 import 'widgets/brand_splash_placeholder.dart';
 import 'widgets/external_host_redirect.dart';
@@ -159,15 +160,24 @@ class _DeferredStaffPage extends StatefulWidget {
 }
 
 class _DeferredStaffPageState extends State<_DeferredStaffPage> {
-  static Future<void>? _loading;
+  static Future<void>? _staffAppLoading;
+  static Future<void>? _staffLoginLoading;
   bool _ready = false;
   Object? _error;
+
+  bool get _isLogin => widget.path == '/login';
+
+  Future<void> _loadForPath() {
+    if (_isLogin) {
+      return _staffLoginLoading ??= staff_login.loadLibrary();
+    }
+    return _staffAppLoading ??= staff_app.loadLibrary();
+  }
 
   @override
   void initState() {
     super.initState();
-    _loading ??= staff_app.loadLibrary();
-    _loading!
+    _loadForPath()
         .then((_) {
           if (!mounted) return;
           setState(() => _ready = true);
@@ -188,6 +198,9 @@ class _DeferredStaffPageState extends State<_DeferredStaffPage> {
     }
     if (!_ready) {
       return const BrandSplashPlaceholder();
+    }
+    if (_isLogin) {
+      return staff_login.Login();
     }
     return staff_app.staffPageFor(widget.path);
   }

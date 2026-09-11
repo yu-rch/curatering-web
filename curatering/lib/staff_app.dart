@@ -12,7 +12,6 @@ import 'customer_page_loader.dart';
 import 'pages/dashboard.dart';
 import 'pages/help_requests.dart';
 import 'pages/inventory.dart';
-import 'pages/login.dart';
 import 'pages/manage_accounts.dart';
 import 'pages/manage_loyalty_rewards.dart';
 import 'pages/menu.dart';
@@ -41,8 +40,6 @@ class _RoleAwareDashboard extends StatelessWidget {
 /// storefront does not parse this code on first paint.
 Widget staffPageFor(String path) {
   switch (path) {
-    case '/login':
-      return const Login();
     case '/dashboard':
       return RoleGuard(
         requiredRole: Role.manager,
@@ -188,6 +185,6 @@ Widget staffPageFor(String path) {
         ),
       );
     default:
-      return const Login();
+      return const SizedBox.shrink();
   }
 }

@@ -151,9 +151,13 @@
   var host = (location.hostname || '').toLowerCase().replace(/^www\./, '');
   var staff =
     host === 'staff.curatering.com' || host.split('.')[0] === 'staff';
-  var href = staff ? 'splash-staff.webp' : 'shell-hero.webp';
+  var path = (location.pathname || '/').replace(/\/+$/, '') || '/';
+  if (staff || path === '/login') {
+    document.documentElement.classList.add('staff-shell');
+  }
+  var href = staff || path === '/login' ? 'splash-staff.webp' : 'shell-hero.webp';
   var type = 'image/webp';
-  var sizes = staff ? '320px' : '100vw';
+  var sizes = staff || path === '/login' ? '80vw' : '100vw';
 
   var link = document.createElement('link');
   link.rel = 'preload';
@@ -237,6 +241,71 @@
       max-height: none;
       margin-bottom: 8px;
     }
+    #app-splash.app-splash-staff {
+      justify-content: center;
+      align-items: center;
+      padding: clamp(16px, 5vw, 40px);
+      background: #000000;
+    }
+    #app-splash.app-splash-staff #app-splash-hero,
+    #app-splash.app-splash-staff #app-splash-scrim {
+      display: none;
+    }
+    #app-splash.app-splash-staff #app-splash-copy {
+      display: flex;
+      align-items: center;
+      text-align: center;
+      max-width: 560px;
+      padding: 0;
+    }
+    #app-splash.app-splash-staff #app-splash-logo {
+      width: min(84vw, 420px);
+      height: auto;
+      aspect-ratio: 2 / 1;
+      max-height: none;
+      margin-bottom: 12px;
+    }
+    #app-splash.app-splash-staff #app-splash-title {
+      font-size: clamp(26px, 6vw, 40px);
+    }
+    #app-splash.app-splash-staff #app-splash-sub {
+      max-width: 36ch;
+    }
+    html.staff-shell #app-splash-sub {
+      max-width: 36ch;
+    }
+    html.staff-shell #app-splash,
+    html.staff-shell #app-splash.app-splash-shell {
+      justify-content: center;
+      align-items: center;
+      padding: clamp(16px, 5vw, 40px);
+      background: #000000;
+    }
+    html.staff-shell #app-splash-hero,
+    html.staff-shell #app-splash.app-splash-shell #app-splash-hero,
+    html.staff-shell #app-splash-scrim,
+    html.staff-shell #app-splash.app-splash-shell #app-splash-scrim {
+      display: none;
+    }
+    html.staff-shell #app-splash-copy,
+    html.staff-shell #app-splash.app-splash-shell #app-splash-copy {
+      display: flex;
+      align-items: center;
+      text-align: center;
+      max-width: 560px;
+      padding: 0;
+    }
+    html.staff-shell #app-splash-logo,
+    html.staff-shell #app-splash.app-splash-shell #app-splash-logo {
+      width: min(84vw, 420px);
+      height: auto;
+      aspect-ratio: 2 / 1;
+      max-height: none;
+      margin-bottom: 12px;
+    }
+    html.staff-shell #app-splash-title {
+      font-size: clamp(26px, 6vw, 40px);
+    }
     #app-splash-title {
       margin: 0;
       color: #fff8f0;
@@ -291,5 +360,15 @@
     </div>
     <p id="app-splash-error"></p>
   </div>
+  <script>
+    (function () {
+      if (!document.documentElement.classList.contains('staff-shell')) return;
+      var t = document.getElementById('app-splash-title');
+      var s = document.getElementById('app-splash-sub');
+      if (t) t.textContent = 'CURATERING';
+      if (s) s.textContent = 'Staff portal — sign in to manage orders and events.';
+      document.title = 'Staff Login - CURATERING';
+    })();
+  </script>
 </body>
 </html>

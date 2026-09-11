@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <base href="/">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=5, user-scalable=yes">
+  <meta name="description" content="Macrina's Kitchen and Catering - restaurant orders, catering menus, and event inquiries.">
+
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="Macrina's Kitchen">
+  <link rel="apple-touch-icon" href="favicon.png">
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <title>Home - Macrina's Kitchen and Catering</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="dns-prefetch" href="https://curatering.up.railway.app">
+  <link rel="preconnect" href="https://curatering.up.railway.app" crossorigin>
+  <script>/* Early boot helpers for Flutter web.
+   - Suppress noisy console messages
+   - Polyfill Intl.v8BreakIterator on top of Intl.Segmenter so Flutter text
+     layout keeps working without calling the deprecated native API
+*/
+(function () {
+  var suppressPatterns = [
+    /v8BreakIterator/i,
+    /Exception while loading service worker/i,
+    /Loading the service worker using Flutter bootstrap is deprecated/i,
+    /assets\/\.env/i,
+  ];
+
+  function shouldSuppress(args) {
+    try {
+      var msg = Array.prototype.join.call(args, ' ');
+      for (var i = 0; i < suppressPatterns.length; i++) {
+        if (suppressPatterns[i].test(msg)) return true;
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  ['warn', 'error', 'info', 'debug'].forEach(function (level) {
+    var original = console[level];
+    if (typeof original !== 'function') return;
+    console[level] = function () {
+      if (shouldSuppress(arguments)) return;
+      return original.apply(console, arguments);
+    };
+  });
+
+  if (typeof Intl === 'undefined' || typeof Intl.Segmenter !== 'function') {
+    return;
+  }
+
+  function granularityForType(type) {
+    var t = String(type || 'grapheme').toLowerCase();
+    if (t === 'word') return 'word';
+    if (t === 'sentence') return 'sentence';
+    // "line" / "character" / unknown → grapheme boundaries (safe for layout)
+    return 'grapheme';
+  }
+
+  function V8BreakIteratorPolyfill(locales, options) {
+    this._granularity = granularityForType(options && options.type);
+    this._text = '';
+    this._breaks = [0];
+    this._index = 0;
+    this._current = 0;
+  }
+
+  V8BreakIteratorPolyfill.prototype.adoptText = function (text) {
+    this._text = text == null ? '' : String(text);
+    var breaks = [0];
+    try {
+      var segmenter = new Intl.Segmenter(undefined, {
+        granularity: this._granularity,
+      });
+      var iter = segmenter.segment(this._text);
+      // for..of over segments
+      if (typeof iter[Symbol.iterator] === 'function') {
+        var it = iter[Symbol.iterator]();
+        var step;
+        while (!(step = it.next()).done) {
+          var part = step.value;
+          if (!part) continue;
+          var end = (part.index || 0) + String(part.segment || '').length;
+          if (end > breaks[breaks.length - 1]) breaks.push(end);
+        }
+      }
+    } catch (_) {
+      // Fallback: break on whitespace / string end.
+      breaks = [0];
+      for (var i = 0; i < this._text.length; i++) {
+        var ch = this._text.charCodeAt(i);
+        if (ch === 32 || ch === 9 || ch === 10 || ch === 13) {
+          if (i + 1 > breaks[breaks.length - 1]) breaks.push(i + 1);
+        }
+      }
+    }
+    if (breaks[breaks.length - 1] !== this._text.length) {
+      breaks.push(this._text.length);
+    }
+    this._breaks = breaks;
+    this._index = 0;
+    this._current = 0;
+  };
+
+  V8BreakIteratorPolyfill.prototype.first = function () {
+    this._index = 0;
+    this._current = this._breaks.length ? this._breaks[0] : 0;
+    return this._current;
+  };
+
+  V8BreakIteratorPolyfill.prototype.next = function () {
+    if (this._index >= this._breaks.length - 1) {
+      this._current = -1;
+      return -1;
+    }
+    this._index += 1;
+    this._current = this._breaks[this._index];
+    return this._current;
+  };
+
+  V8BreakIteratorPolyfill.prototype.current = function () {
+    return this._current;
+  };
+
+  V8BreakIteratorPolyfill.prototype.breakType = function () {
+    return 'letter';
+  };
+
+  try {
+    Object.defineProperty(Intl, 'v8BreakIterator', {
+      configurable: true,
+      enumerable: false,
+      writable: true,
+      value: V8BreakIteratorPolyfill,
+    });
+  } catch (_) {
+    try {
+      Intl.v8BreakIterator = V8BreakIteratorPolyfill;
+    } catch (__) {}
+  }
+})();</script>
+  <link id="app-fonts" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pacifico&family=Playfair+Display:wght@400;700&family=Poppins:wght@400;500;600;700;800&family=Scheherazade+New:wght@400;700&display=swap" media="print">
+  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pacifico&family=Playfair+Display:wght@400;700&family=Poppins:wght@400;500;600;700;800&family=Scheherazade+New:wght@400;700&display=swap"></noscript>
+  <script>/* Early splash image preload (CSP-safe external script). */
+(function () {
+  var host = (location.hostname || '').toLowerCase().replace(/^www\./, '');
+  var staff =
+    host === 'staff.curatering.com' || host.split('.')[0] === 'staff';
+  var path = (location.pathname || '/').replace(/\/+$/, '') || '/';
+  if (staff || path === '/login') {
+    document.documentElement.classList.add('staff-shell');
+  }
+  var href = staff || path === '/login' ? 'splash-staff.webp' : 'shell-hero.webp';
+  var type = 'image/webp';
+  var sizes = staff || path === '/login' ? '80vw' : '100vw';
+
+  var link = document.createElement('link');
+  link.rel = 'preload';
+  link.as = 'image';
+  link.href = href;
+  link.type = type;
+  link.fetchPriority = 'high';
+  link.imageSizes = sizes;
+  document.head.appendChild(link);
+})();</script>
+
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #000000;
+      overscroll-behavior-x: none;
+      overscroll-behavior-y: auto;
+    }
+    flt-glass-pane, flutter-view {
+      overscroll-behavior-x: none;
+    }
+    #app-splash {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #000000;
+      color: #ffffff;
+      font-family: Georgia, 'Times New Roman', serif;
+      text-align: center;
+      padding: clamp(12px, 4vw, 24px);
+      transition: opacity 120ms ease;
+      overflow: hidden;
+    }
+    #app-splash.app-splash-shell {
+      justify-content: flex-end;
+      align-items: stretch;
+      padding: 0;
+      background: #1a120c;
+    }
+    #app-splash-hero {
+      display: none;
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    #app-splash.app-splash-shell #app-splash-hero {
+      display: block;
+    }
+    #app-splash-scrim {
+      display: none;
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(0,0,0,.25) 0%, rgba(20,12,8,.72) 55%, rgba(20,12,8,.92) 100%);
+    }
+    #app-splash.app-splash-shell #app-splash-scrim {
+      display: block;
+    }
+    #app-splash-copy {
+      position: relative;
+      z-index: 1;
+      display: none;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 10px;
+      padding: clamp(24px, 6vw, 56px);
+      max-width: 720px;
+      text-align: left;
+    }
+    #app-splash.app-splash-shell #app-splash-copy {
+      display: flex;
+    }
+    #app-splash.app-splash-shell #app-splash-logo {
+      width: min(70vw, 280px);
+      max-height: none;
+      margin-bottom: 8px;
+    }
+    #app-splash.app-splash-staff {
+      justify-content: center;
+      align-items: center;
+      padding: clamp(16px, 5vw, 40px);
+      background: #000000;
+    }
+    #app-splash.app-splash-staff #app-splash-hero,
+    #app-splash.app-splash-staff #app-splash-scrim {
+      display: none;
+    }
+    #app-splash.app-splash-staff #app-splash-copy {
+      display: flex;
+      align-items: center;
+      text-align: center;
+      max-width: 560px;
+      padding: 0;
+    }
+    #app-splash.app-splash-staff #app-splash-logo {
+      width: min(84vw, 420px);
+      height: auto;
+      aspect-ratio: 2 / 1;
+      max-height: none;
+      margin-bottom: 12px;
+    }
+    #app-splash.app-splash-staff #app-splash-title {
+      font-size: clamp(26px, 6vw, 40px);
+    }
+    #app-splash.app-splash-staff #app-splash-sub {
+      max-width: 36ch;
+    }
+    html.staff-shell #app-splash-sub {
+      max-width: 36ch;
+    }
+    html.staff-shell #app-splash,
+    html.staff-shell #app-splash.app-splash-shell {
+      justify-content: center;
+      align-items: center;
+      padding: clamp(16px, 5vw, 40px);
+      background: #000000;
+    }
+    html.staff-shell #app-splash-hero,
+    html.staff-shell #app-splash.app-splash-shell #app-splash-hero,
+    html.staff-shell #app-splash-scrim,
+    html.staff-shell #app-splash.app-splash-shell #app-splash-scrim {
+      display: none;
+    }
+    html.staff-shell #app-splash-copy,
+    html.staff-shell #app-splash.app-splash-shell #app-splash-copy {
+      display: flex;
+      align-items: center;
+      text-align: center;
+      max-width: 560px;
+      padding: 0;
+    }
+    html.staff-shell #app-splash-logo,
+    html.staff-shell #app-splash.app-splash-shell #app-splash-logo {
+      width: min(84vw, 420px);
+      height: auto;
+      aspect-ratio: 2 / 1;
+      max-height: none;
+      margin-bottom: 12px;
+    }
+    html.staff-shell #app-splash-title {
+      font-size: clamp(26px, 6vw, 40px);
+    }
+    #app-splash-title {
+      margin: 0;
+      color: #fff8f0;
+      font-size: clamp(28px, 6vw, 48px);
+      line-height: 1.15;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    #app-splash-sub {
+      margin: 0;
+      color: rgba(255,248,240,.88);
+      font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+      font-size: clamp(14px, 2.6vw, 18px);
+      line-height: 1.45;
+      max-width: 34ch;
+    }
+    #app-splash.app-splash-hide {
+      opacity: 0;
+      pointer-events: none;
+    }
+    #app-splash-logo {
+      display: block;
+      width: min(90vw, 320px);
+      height: auto;
+      max-height: min(45vw, 160px);
+      object-fit: contain;
+    }
+    #app-splash-error {
+      display: none;
+      margin-top: 20px;
+      max-width: 420px;
+      color: #d0d0d0;
+      font-size: 15px;
+      line-height: 1.4;
+      position: relative;
+      z-index: 2;
+    }
+    #app-splash.has-error #app-splash-error {
+      display: block;
+    }
+  </style>
+  <script src="boot.js" defer></script>
+</head>
+<body>
+  <div id="app-splash" class="app-splash-shell" aria-busy="true" aria-live="polite">
+    <img id="app-splash-hero" alt="" width="1280" height="720" sizes="100vw" decoding="async" fetchpriority="high" />
+    <div id="app-splash-scrim" aria-hidden="true"></div>
+    <div id="app-splash-copy">
+      <img id="app-splash-logo" alt="Loading" width="320" height="160" sizes="280px" decoding="async" fetchpriority="high" />
+      <p id="app-splash-title">Macrina's Kitchen and Catering</p>
+      <p id="app-splash-sub">Restaurant orders, catering menus, and event inquiries.</p>
+    </div>
+    <p id="app-splash-error"></p>
+  </div>
+  <script>
+    (function () {
+      if (!document.documentElement.classList.contains('staff-shell')) return;
+      var t = document.getElementById('app-splash-title');
+      var s = document.getElementById('app-splash-sub');
+      if (t) t.textContent = 'CURATERING';
+      if (s) s.textContent = 'Staff portal — sign in to manage orders and events.';
+      document.title = 'Staff Login - CURATERING';
+    })();
+  </script>
+</body>
+</html>
