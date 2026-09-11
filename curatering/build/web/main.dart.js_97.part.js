@@ -3171,7 +3171,7 @@ return F.aE(w,B.O,!1,w,!0,B.w,w,F.aF(),d,w,w,w,w,w,2,F.cl(w,E.a3K,w,w,w,w,w,w,!0
 aHI(){var w,v=this,u=null,t="Describe event type",s=B.f.q(D.PF,v.fy)?v.fy:"Other",r=x.aQ
 r=A.v(new A.x(D.PF,new C.bot(),r),r.i("ab.E"))
 w=x.p
-s=A.a([new K.fG("Event type",!0,u,u,Ad.e7(D.ani,u,u,!0,!1,r,u,new C.bou(v),u,s,x.N),u)],w)
+s=A.a([new K.fG("Event type",!0,u,u,Ad.e7(D.ani,u,!0,!1,r,u,new C.bou(v),u,s,x.N),u)],w)
 if(v.fy==="Other"){if(v.Q)r=B.e.m(v.fx.a.a).length===0
 else r=!1
 r=r?"Required":u
@@ -3215,7 +3215,7 @@ aH7(d){var w,v=this,u=null,t=v.aL,s=!t,r=s?1:0.55,q=A.c("Event Type",u,u,u,u,D.k
 o=A.v(new A.x(o,new C.bns(),n),n.i("ab.E"))
 n=F.cl(u,H.ag,u,E.ch,u,u,u,u,!0,u,u,u,u,u,u,B.b_,!0,u,u,u,u,u,u,u,u,A.E(u,u,B.d4,u,u,u,u,u,u,u,u,11,At.hT,u,u,u,u,!0,u,u,u,u,u,u,u,u),"Set in Event Information tab",u,u,u,u,u,u,u,u,u,u,u,u,u,u,!0,!0,!1,u,u,u,u,u,u,u,u,u,u,u,u,u,u)
 w=x.p
-p=A.y(A.a([new A.K(Aa.bP,q,u),Ad.e7(n,A.c(v.pC().length!==0?v.pC():"Set in Event Information",u,u,u,u,u,u,u,u),u,!0,!1,o,u,u,u,p,x.N)],w),B.X,B.l,B.q,0,B.t)
+p=A.y(A.a([new A.K(Aa.bP,q,u),Ad.e7(n,A.c(v.pC().length!==0?v.pC():"Set in Event Information",u,u,u,u,u,u,u,u),!0,!1,o,u,u,u,p,x.N)],w),B.X,B.l,B.q,0,B.t)
 o=A.c("Style",u,u,u,u,D.kW,u,u,u)
 n=v.W
 q=s?new C.bnt(v):u
@@ -3265,7 +3265,7 @@ return A.y(t,B.X,B.l,B.q,0,B.t)},
 ahd(d,e,f){var w,v=null,u=e!=null&&B.f.q(d,e)?e:v,t=A.F(d).i("x<1,at<e>>")
 t=A.v(new A.x(d,new C.bnx(),t),t.i("ab.E"))
 w=f==null
-return Ad.e7(F.cl(v,H.ag,v,E.ch,v,v,v,v,!0,v,v,v,v,v,v,w?B.b_:v,w,v,v,v,v,v,v,v,v,v,v,v,v,v,v,v,v,v,v,v,v,v,v,v,v,!0,!0,!1,v,v,v,v,v,v,v,v,v,v,v,v,v,v),D.bCX,v,!0,!1,t,v,f,v,u,x.N)},
+return Ad.e7(F.cl(v,H.ag,v,E.ch,v,v,v,v,!0,v,v,v,v,v,v,w?B.b_:v,w,v,v,v,v,v,v,v,v,v,v,v,v,v,v,v,v,v,v,v,v,v,v,v,v,!0,!0,!1,v,v,v,v,v,v,v,v,v,v,v,v,v,v),D.bCX,!0,!1,t,v,f,v,u,x.N)},
 abR(d,e,f){var w=A.F(d).i("x<1,jg>")
 w=A.v(new A.x(d,new C.boR(this,e,f),w),w.i("ab.E"))
 return A5.cd(P.aL,w,P.aU,8,8)},
@@ -7729,7 +7729,7 @@ w=A.a([o,E.K,m,E.K,h,M.eP,D.bIX,I.D,A5.cd(P.aL,A.a([Ag.ky(q,D.bEq,q,q,new C.bHb(
 if(i.a==="preset"){o=i.b
 m=A.F(v).i("x<1,at<e>>")
 m=A.v(new A.x(v,new C.bHd(),m),m.i("ab.E"))
-B.f.t(w,A.a([An.be,Ad.e7(D.amh,q,q,!0,!1,m,q,new C.bHe(i,e,v,u),q,o,x.N)],f))}w.push(I.D)
+B.f.t(w,A.a([An.be,Ad.e7(D.amh,q,!0,!1,m,q,new C.bHe(i,e,v,u),q,o,x.N)],f))}w.push(I.D)
 if(i.a==="custom"){o=A.c("Tap dishes from your catering menu to include them.",q,q,q,q,A.E(q,q,B.a9,q,q,q,q,q,q,q,q,12,q,q,q,q,q,!0,q,q,q,q,q,q,q,q),q,q,q)
 m=r.Q
 h=A.F(m).i("x<1,jg>")
@@ -9599,4 +9599,4 @@ D.n1=new C.p9(1,"menu")
 D.n2=new C.p9(2,"themeDesign")})();(function staticFields(){$.bpt=function(){var w="CATERING WITH EVENT STYLING",v=x.N,u=x.z
 return A.a([A.Q(["title","Within Taguig City (below 50 pax) \u2014 Catering Only","description","Food catering service within Taguig City for smaller events. Minimum 20 pax.","type","CATERING","service","catering","icon",V.d9],v,u),A.Q(["title","Within Taguig City (50+ pax) \u2014 Catering with Event Styling","description","Full food catering plus event design & d\xe9cor within Taguig City. Minimum 50 pax.","type",w,"service","catering+event","icon",L.nU],v,u),A.Q(["title","Outside Taguig City (below 50 pax) \u2014 Catering Only","description","Food catering service for events outside Taguig City. Minimum 20 pax.","type","CATERING","service","catering","icon",V.d9],v,u),A.Q(["title","Outside Taguig City (50+ pax) \u2014 Catering with Event Styling","description","Full food catering plus event design & d\xe9cor for events outside Taguig City. Minimum 50 pax.","type",w,"service","catering+event","icon",L.nU],v,u)],x.t)}()})();(function lazyInitializers(){var w=a.lazyFinal
 w($,"cGC","tU",()=>new C.av0())})()};
-(a=>{a["0bzZQcpmzhP83fMkr7w97plF6Ww="]=a.current})($__dart_deferred_initializers__);
+(a=>{a["6+7ynw5lGL5S5a7zFHHmu10Wp+k="]=a.current})($__dart_deferred_initializers__);

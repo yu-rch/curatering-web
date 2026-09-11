@@ -597,7 +597,7 @@ class _MenuState extends State<Menu> {
                         const SizedBox(height: 16),
                         DropdownButtonFormField<String>(
                           key: ValueKey('restaurant_meal_$_editingType'),
-                          initialValue:
+                          value:
                               _restaurantMealTypes.contains(_editingType)
                                   ? _editingType
                                   : 'others',
@@ -720,7 +720,7 @@ class _MenuState extends State<Menu> {
                           key: ValueKey(
                             'catering_meal_${_editingMealType.isEmpty ? 'unset' : _editingMealType}',
                           ),
-                          initialValue:
+                          value:
                               kCateringMealTypes.contains(_editingMealType)
                                   ? _editingMealType
                                   : null,
