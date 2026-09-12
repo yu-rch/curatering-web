@@ -593,8 +593,8 @@ class EventsApi {
       picksBase64:
           _toList(themeRaw['picksBase64']).map((e) => e.toString()).toList(),
       tintEnabled: _toBool(themeRaw['tintEnabled']),
-      tintColorHex: themeRaw['tintColorHex'] as String?,
-      colorPrompt: themeRaw['colorPrompt'] as String?,
+      tintColorHex: themeRaw['tintColorHex']?.toString(),
+      colorPrompt: themeRaw['colorPrompt']?.toString(),
       wantsCustomDesign: _toBool(
         themeRaw['wantsCustomDesign'] ?? themeRaw['wants_custom_design'],
       ),

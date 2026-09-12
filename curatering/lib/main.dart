@@ -165,36 +165,99 @@ class _DeferredStaffPageState extends State<_DeferredStaffPage> {
   static Future<void>? _staffLoginLoading;
   bool _ready = false;
   Object? _error;
+  bool _retrying = false;
 
   bool get _isLogin => widget.path == '/login';
 
-  Future<void> _loadForPath() {
+  Future<void> _loadForPath({bool force = false}) {
     if (_isLogin) {
+      if (force) _staffLoginLoading = null;
       return _staffLoginLoading ??= staff_login.loadLibrary();
     }
+    if (force) _staffAppLoading = null;
     return _staffAppLoading ??= staff_app.loadLibrary();
+  }
+
+  Future<void> _startLoad({bool force = false}) {
+    if (force && mounted) {
+      setState(() {
+        _error = null;
+        _ready = false;
+        _retrying = true;
+      });
+    }
+    return _loadForPath(force: force)
+        .then((_) {
+          if (!mounted) return;
+          setState(() {
+            _ready = true;
+            _retrying = false;
+            _error = null;
+          });
+          signalCurateringUiReady();
+        })
+        .catchError((Object e, StackTrace st) {
+          // Allow a later retry; do not keep a permanently failed Future.
+          if (_isLogin) {
+            _staffLoginLoading = null;
+          } else {
+            _staffAppLoading = null;
+          }
+          // ignore: avoid_print
+          print('[DeferredStaffPage] load failed for ${widget.path}: $e\n$st');
+          if (mounted) {
+            setState(() {
+              _error = e;
+              _retrying = false;
+            });
+          }
+        });
   }
 
   @override
   void initState() {
     super.initState();
-    _loadForPath()
-        .then((_) {
-          if (!mounted) return;
-          setState(() => _ready = true);
-          signalCurateringUiReady();
-        })
-        .catchError((Object e) {
-          if (mounted) setState(() => _error = e);
-        });
+    _startLoad();
   }
 
   @override
   Widget build(BuildContext context) {
     if (_error != null) {
-      return const BrandSplashPlaceholder(
-        error: true,
-        message: 'Failed to load staff page. Please refresh.',
+      return Scaffold(
+        backgroundColor: BrandSplashPlaceholder.bg,
+        body: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Failed to load staff page.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.white, fontSize: 16),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    '$_error',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    onPressed: _retrying ? null : () => _startLoad(force: true),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: BrandSplashPlaceholder.accent,
+                      foregroundColor: const Color(0xFF1E1E1E),
+                    ),
+                    child: Text(_retrying ? 'Retrying…' : 'Retry'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       );
     }
     if (!_ready) {

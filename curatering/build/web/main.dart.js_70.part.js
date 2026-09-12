@@ -1,12 +1,11 @@
 ((a,b)=>{a[b]=a[b]||{}})(self,"$__dart_deferred_initializers__")
-$__dart_deferred_initializers__.current=function(a,b,c,$){var A,B={
-apK(d){var x=A.aj(d,null,y.d).w.a.a
-if(x>=1800)return 1680
-if(x>=1400)return 1440
-if(x>=1100)return 1280
-return 1/0}}
-A=c[0]
-B=a.updateHolder(c[25],B)
-var z=a.updateTypes([])
-var y={d:A.W("eH")}};
-(a=>{a["UYgkRS8xO4vL3mJ262p1ycY9iRY="]=a.current})($__dart_deferred_initializers__);
+$__dart_deferred_initializers__.current=function(a,b,c,$){var B,C,D={
+tW(d,e,f){return C.hl.aqm(d,"Scheherazade New",A.PG,e,null,f,null,null)}},A
+B=c[0]
+C=c[2]
+D=a.updateHolder(c[63],D)
+A=c[190]
+var z=a.updateTypes([]);(function constants(){var y=a.makeConstList
+A.hM=new B.an(57882,"MaterialIcons",!1)
+A.PG=y(["Georgia","serif"],B.W("y<e>"))})()};
+(a=>{a["oxyyatrVvCECgHi+tF40PxpjBJs="]=a.current})($__dart_deferred_initializers__);

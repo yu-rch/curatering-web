@@ -1,10 +1,10 @@
 ((a,b)=>{a[b]=a[b]||{}})(self,"$__dart_deferred_initializers__")
 $__dart_deferred_initializers__.current=function(a,b,c,$){var J,A,C,F,B={
-L9(d){return new B.L8(d)},
+L8(d){return new B.L7(d)},
 yg(){var x=C.e.l("https://curatering.up.railway.app"),w=x.length
 if(w===0)return""
 return C.e.iI(x,"/")?C.e.ai(x,0,w-1):x},
-cem(d){var x,w,v=C.e.l(d)
+ceq(d){var x,w,v=C.e.l(d)
 if(C.e.b8(v,"data:")){x=C.e.dY(v,",")
 if(x>=0)v=C.e.bY(v,x+1)}w=A.ba("\\s+",!0,!1,!1)
 return A.bQ(v,w,"")},
@@ -14,10 +14,10 @@ aOi(d){var x,w=A.qD(d)
 if(w==null||w.gq9()!=="image.runpod.ai"||w.gt2().length<3)return d
 if(C.f.ga9(w.gt2())!=="google-nano-banana-2-edit"||C.f.gaU(w.gt2())!=="result.png")return d
 x=w.gt2()[1]
-return B.yg()+"/api/public/runpod/image/result/"+A.fc(2,x,C.bf,!1)},
-cuC(d){var x=A.qD(d)
+return B.yg()+"/api/public/runpod/image/result/"+A.fc(2,x,C.bg,!1)},
+cuE(d){var x=A.qD(d)
 return x!=null&&C.e.q(x.ghn(),"/api/public/runpod/image/result/")},
-cej(d){var x,w,v,u=null,t=d.h(0,"id"),s=t==null?u:J.w(t)
+cen(d){var x,w,v,u=null,t=d.h(0,"id"),s=t==null?u:J.w(t)
 if(s!=null&&s.length!==0)return s
 t=d.h(0,"jobId")
 x=t==null?u:J.w(t)
@@ -26,7 +26,7 @@ w=d.h(0,"job")
 if(y.f.b(w)){t=w.h(0,"id")
 v=t==null?u:J.w(t)
 if(v!=null&&v.length!==0)return v}return u},
-c5L(d){var x,w,v,u,t,s=d.c,r=s==null?"Request failed":s
+c5P(d){var x,w,v,u,t,s=d.c,r=s==null?"Request failed":s
 try{x=C.a7.bu(A.cI(A.cH(d.e)).bb(d.w),null)
 if(y.f.b(x)){if(J.i(x.h(0,"code"),"runpod_not_configured")){v=A.bD("AI generation is not configured on the server. Set RUNPOD_API_KEY and RUNPOD_ENDPOINT_ID on Railway.")
 throw A.p(v)}if(x.h(0,"message")!=null)r=A.h(x.h(0,"message"))}}catch(u){w=A.a9(u)
@@ -34,28 +34,28 @@ if(y.L.b(w))throw A.p(w)
 v=d.e
 t=d.w
 if(A.cI(A.cH(v)).bb(t).length!==0)r=A.cI(A.cH(v)).bb(t).length>500?C.e.ai(A.cI(A.cH(v)).bb(t),0,500)+"\u2026":A.cI(A.cH(v)).bb(t)}throw A.p(A.bD("HTTP "+d.b+": "+A.h(r)))},
-c5K(d,e){var x,w,v=null,u=d==null?v:C.e.l(J.w(d))
+c5O(d,e){var x,w,v=null,u=d==null?v:C.e.l(J.w(d))
 if(u==null||u.length===0)return v
 if(C.e.b8(u,"http://")||C.e.b8(u,"https://"))return B.aOi(u)
 if(C.e.b8(u,"data:image/"))return u
 if(!e)return v
-x=B.cem(u)
+x=B.ceq(u)
 if(x.length<100)return v
 w=A.ba("^[A-Za-z0-9+/]+={0,2}$",!0,!1,!1)
 if(!w.b.test(x))return v
 return"data:image/png;base64,"+x},
 CH(d){var x,w,v,u,t,s,r,q=null
 if(d==null)return q
-if(typeof d=="string")return B.c5K(d,!1)
+if(typeof d=="string")return B.c5O(d,!1)
 if(y.j.b(d)){for(x=J.bf(d);x.A();){w=B.CH(x.gS())
 if(w!=null)return w}return q}x=y.f
 if(!x.b(d))return q
 v=A.aB(d,y.N,y.z)
-for(u=0;u<14;++u){t=D.b5J[u]
-s=B.c5K(v.h(0,t),t==="image")
-if(s!=null)return s}for(u=0;u<6;++u){s=B.c5K(v.h(0,D.bd0[u]),!0)
-if(s!=null)return s}for(u=0;u<6;++u){w=B.CH(v.h(0,D.b7_[u]))
-if(w!=null)return w}for(u=0;u<4;++u){w=B.CH(v.h(0,D.bca[u]))
+for(u=0;u<14;++u){t=D.b5I[u]
+s=B.c5O(v.h(0,t),t==="image")
+if(s!=null)return s}for(u=0;u<6;++u){s=B.c5O(v.h(0,D.bd_[u]),!0)
+if(s!=null)return s}for(u=0;u<6;++u){w=B.CH(v.h(0,D.b6Z[u]))
+if(w!=null)return w}for(u=0;u<4;++u){w=B.CH(v.h(0,D.bc9[u]))
 if(w!=null)return w}r=v.h(0,"diagnostics")
 if(x.b(r)){w=B.CH(r)
 if(w!=null)return w}return q},
@@ -75,13 +75,13 @@ if(u==="error"||u==="failed"||u==="cancelled"||u==="canceled")return w.length===
 if(w.length!==0){x=A.ba("error|failed",!1,!1,!1)
 x=x.b.test(w)}else x=!1
 if(x)return w
-for(t=0;t<5;++t){s=B.SS(v.h(0,D.b81[t]))
+for(t=0;t<5;++t){s=B.SS(v.h(0,D.b80[t]))
 if(s!=null)return s}return r},
-cel(d){var x=B.aam(d.h(0,"status"))
+cep(d){var x=B.aam(d.h(0,"status"))
 if(x==null)x="UNKNOWN"
 return"AI job completed but returned no image URL. status="+x+", output="+new B.aOf().$1(d.h(0,"output"))},
-yh(d,e,f,g,h,i,j){return B.cuH(d,e,f,g,h,i,j)},
-cuH(a4,a5,a6,a7,a8,a9,b0){var x=0,w=A.m(y.T),v,u=2,t=[],s,r,q,p,o,n,m,l,k,j,i,h,g,f,e,d,a0,a1,a2,a3
+yh(d,e,f,g,h,i,j){return B.cuJ(d,e,f,g,h,i,j)},
+cuJ(a4,a5,a6,a7,a8,a9,b0){var x=0,w=A.m(y.T),v,u=2,t=[],s,r,q,p,o,n,m,l,k,j,i,h,g,f,e,d,a0,a1,a2,a3
 var $async$yh=A.n(function(b1,b2){if(b1===1){t.push(b2)
 x=u}for(;;)switch(x){case 0:u=4
 if(B.yg().length===0)A.aq(A.bD("API_BASE_URL is empty; set --dart-define=API_BASE_URL=... so the RunPod proxy can be reached."))
@@ -96,7 +96,7 @@ q=b0==null?null:C.e.l(b0)
 if(q!=null&&q.length!==0)J.ax(r,"user_id",q)
 f=C.e.l(a7)
 p=f
-if(p!=null&&p.length!==0){J.ax(r,"init_image_base64",B.cem(p))
+if(p!=null&&p.length!==0){J.ax(r,"init_image_base64",B.ceq(p))
 J.ax(r,"strength",a9)}s=r
 e=s.h(0,"task_type")
 s=e==null?s.h(0,"task"):e
@@ -112,37 +112,37 @@ break
 case 8:s=n
 m=d.a(C.a7.bu(A.cI(A.cH(s.e)).bb(s.w),null))
 l=B.aam(J.t(m,"status"))
-k=B.cej(m)
+k=B.cen(m)
 x=l==="COMPLETED"?11:12
 break
 case 11:a0=B.CH(J.t(m,"output"))
 j=a0==null?B.CH(m):a0
 x=j!=null?13:14
 break
-case 13:x=B.cuC(j)?15:16
+case 13:x=B.cuE(j)?15:16
 break
 case 15:x=17
-return A.d(B.I9(j),$async$yh)
+return A.d(B.I8(j),$async$yh)
 case 17:case 16:v=j
 x=1
 break
 case 14:a1=B.SS(J.t(m,"output"))
 i=a1==null?B.SS(m):a1
-if(i!=null){s=B.L9(i)
+if(i!=null){s=B.L8(i)
 throw A.p(s)}x=k!=null&&k.length!==0?18:19
 break
-case 18:s=o?B.yg()+"/api/public/runpod/image/result/"+A.fc(2,k,C.bf,!1):null
+case 18:s=o?B.yg()+"/api/public/runpod/image/result/"+A.fc(2,k,C.bg,!1):null
 x=20
 return A.d(B.CI(k,s),$async$yh)
 case 20:s=b2
 v=s
 x=1
 break
-case 19:s=B.L9(B.cel(m))
+case 19:s=B.L8(B.cep(m))
 throw A.p(s)
 case 12:x=k!=null&&k.length!==0?21:22
 break
-case 21:s=o?B.yg()+"/api/public/runpod/image/result/"+A.fc(2,k,C.bf,!1):null
+case 21:s=o?B.yg()+"/api/public/runpod/image/result/"+A.fc(2,k,C.bg,!1):null
 x=23
 return A.d(B.CI(k,s),$async$yh)
 case 23:s=b2
@@ -157,7 +157,7 @@ s=A.bD("Generation failed: "+A.h(s==null?"No job id from RunPod":s))
 throw A.p(s)
 x=9
 break
-case 10:B.c5L(n)
+case 10:B.c5P(n)
 case 9:u=2
 x=6
 break
@@ -177,8 +177,8 @@ aOg(d){var x=d.h(0,"error"),w=x==null?null:J.w(x)
 if(w==null)w="Unknown error"
 if(C.e.q(w,"executionTimeout"))return"AI generation exceeded the server time limit (~10 min). Redeploy the RunPod worker image, then try again \u2014 the second attempt is usually faster."
 return"Job failed: "+w},
-CI(d,e){return B.cuD(d,e)},
-cuD(a5,a6){var x=0,w=A.m(y.T),v,u=2,t=[],s,r,q,p,o,n,m,l,k,j,i,h,g,f,e,d,a0,a1,a2,a3,a4
+CI(d,e){return B.cuF(d,e)},
+cuF(a5,a6){var x=0,w=A.m(y.T),v,u=2,t=[],s,r,q,p,o,n,m,l,k,j,i,h,g,f,e,d,a0,a1,a2,a3,a4
 var $async$CI=A.n(function(a7,a8){if(a7===1){t.push(a8)
 x=u}for(;;)switch(x){case 0:a2=0
 a3=null
@@ -189,7 +189,7 @@ return A.d(A.hd(D.qz,null,j),$async$CI)
 case 5:++a2
 u=7
 x=10
-return A.d(A.hk(A.bH(B.yg()+"/api/public/runpod/status/"+A.fc(2,a5,C.bf,!1),0,null),null).cN(G.fm),$async$CI)
+return A.d(A.hk(A.bH(B.yg()+"/api/public/runpod/status/"+A.fc(2,a5,C.bg,!1),0,null),null).cN(G.fm),$async$CI)
 case 10:s=a8
 if(s.b===429){g=A.bD("Too many requests \u2014 wait a moment and try again.")
 throw A.p(g)}x=s.b===200?11:12
@@ -207,22 +207,22 @@ case 15:e=A.qD(p)
 x=e!=null&&C.e.q(e.ghn(),"/api/public/runpod/image/result/")?17:18
 break
 case 17:x=19
-return A.d(B.I9(p),$async$CI)
+return A.d(B.I8(p),$async$CI)
 case 19:case 18:g=p
 v=g
 x=1
 break
 case 16:d=B.SS(J.t(r,"output"))
 o=d==null?B.SS(r):d
-if(o!=null){g=B.L9(o)
+if(o!=null){g=B.L8(o)
 throw A.p(g)}x=h?20:21
 break
 case 20:x=22
-return A.d(B.I9(a6),$async$CI)
+return A.d(B.I8(a6),$async$CI)
 case 22:v=a6
 x=1
 break
-case 21:g=B.L9(B.cel(r))
+case 21:g=B.L8(B.cep(r))
 throw A.p(g)
 case 14:g=q
 if(g==="FAILED"||g==="CANCELLED"){g=A.bD(B.aOg(r))
@@ -232,7 +232,7 @@ break
 case 7:u=6
 a4=t.pop()
 g=A.a9(a4)
-if(g instanceof B.L8)throw a4
+if(g instanceof B.L7)throw a4
 else if(k.b(g)){n=g
 m=J.w(n)
 if(J.jB(m,"Job failed")||J.jB(m,"AI generation exceeded")||J.jB(m,"Worker returned"))throw a4
@@ -252,44 +252,44 @@ throw A.p(A.bD("Job timed out after 650s waiting for the AI worker. Try again in
 case 1:return A.k(v,w)
 case 2:return A.j(t.at(-1),w)}})
 return A.l($async$CI,w)},
-I9(d){return B.cuF(d)},
-cuF(d){var x=0,w=A.m(y.H),v,u=2,t=[],s,r,q,p,o,n,m,l,k,j
-var $async$I9=A.n(function(e,f){if(e===1){t.push(f)
+I8(d){return B.cuH(d)},
+cuH(d){var x=0,w=A.m(y.H),v,u=2,t=[],s,r,q,p,o,n,m,l,k,j
+var $async$I8=A.n(function(e,f){if(e===1){t.push(f)
 x=u}for(;;)switch(x){case 0:l=null
 k=null
 q=y.z,p=y.t,o=0
 case 3:if(!(o<12)){x=5
 break}u=7
 x=10
-return A.d(A.hk(A.bH(d,0,null),null).cN(C.f2),$async$I9)
+return A.d(A.hk(A.bH(d,0,null),null).cN(C.f2),$async$I8)
 case 10:s=f
 if(s.b===200){x=1
 break}k=s.b
-if(!C.f.q(A.a([404,425,429,500,502,503,504],p),s.b)){n=B.L9("Generated image result is unavailable (HTTP "+s.b+").")
+if(!C.f.q(A.a([404,425,429,500,502,503,504],p),s.b)){n=B.L8("Generated image result is unavailable (HTTP "+s.b+").")
 throw A.p(n)}u=2
 x=9
 break
 case 7:u=6
 j=t.pop()
 n=A.a9(j)
-if(n instanceof B.L8)throw j
+if(n instanceof B.L7)throw j
 else{r=n
 l=r}x=9
 break
 case 6:x=2
 break
 case 9:x=11
-return A.d(A.hd(D.qz,null,q),$async$I9)
+return A.d(A.hd(D.qz,null,q),$async$I8)
 case 11:case 4:++o
 x=3
 break
-case 5:if(k!=null)throw A.p(B.L9("Generated image result is not ready yet (HTTP "+A.h(k)+"). Try again in a moment."))
+case 5:if(k!=null)throw A.p(B.L8("Generated image result is not ready yet (HTTP "+A.h(k)+"). Try again in a moment."))
 q=l
-throw A.p(B.L9("Generated image result is not ready yet: "+A.h(q==null?"unknown error":q)))
+throw A.p(B.L8("Generated image result is not ready yet: "+A.h(q==null?"unknown error":q)))
 case 1:return A.k(v,w)
 case 2:return A.j(t.at(-1),w)}})
-return A.l($async$I9,w)},
-L8:function L8(d){this.a=d},
+return A.l($async$I8,w)},
+L7:function L7(d){this.a=d},
 aOf:function aOf(){},
 ky(d,e,f,g,h,i,j,k,l,m,n){return new B.Aj(f,g,i,k,l,m,d,j,n,h,e,null)},
 b3u:function b3u(d,e){this.a=d
@@ -342,18 +342,18 @@ A=c[0]
 C=c[2]
 F=c[96]
 B=a.updateHolder(c[32],B)
-D=c[192]
-G=c[137]
+D=c[191]
+G=c[136]
 E=c[70]
 H=c[103]
-I=c[146]
-B.L8.prototype={
+I=c[145]
+B.L7.prototype={
 j(d){return this.a},
 $icp:1}
 B.b3u.prototype={
 O(){return"_ChipVariant."+this.b}}
 B.Aj.prototype={
-D(d){var x,w,v,u,t,s,r=this,q=null,p=E.cap(d)
+D(d){var x,w,v,u,t,s,r=this,q=null,p=E.cat(d)
 A.a7(d)
 x=r.r
 w=x!=null
@@ -364,7 +364,7 @@ t=p.y
 if(t==null){A.a7(d)
 t=!0}s=r.z
 if(s==null)s=p.f
-return E.a9n(!1,q,C.dF,q,r.cx,r.id,q,C.v,q,new B.b3w(d,w,v,D.jD,q,q,q,q,q,q,q,q,q,!0,q,q,q,q,H.kM,q,q,q,q,q,q,q,q),q,q,q,q,q,q,q,q,w,r.d,q,u,r.dx,q,q,q,x,r.cy,q,v,s,q,q,q,t,r.as,q,!0,q,r.db)}}
+return E.a9n(!1,q,C.dG,q,r.cx,r.id,q,C.v,q,new B.b3w(d,w,v,D.jD,q,q,q,q,q,q,q,q,q,!0,q,q,q,q,H.kM,q,q,q,q,q,q,q,q),q,q,q,q,q,q,q,q,w,r.d,q,u,r.dx,q,q,q,x,r.cy,q,v,s,q,q,q,t,r.as,q,!0,q,r.db)}}
 B.b3w.prototype={
 gie(){var x,w=this,v=w.id
 if(v===$){x=A.a7(w.fr)
@@ -421,7 +421,7 @@ return new A.eX(18,u,u,u,u,x,u,u,u)},
 gci(){return C.cI},
 grT(){var x=this.gfJ(),w=x==null?null:x.r
 if(w==null)w=14
-x=A.bV(this.fr,C.bR)
+x=A.bW(this.fr,C.bR)
 x=x==null?null:x.gcf()
 x=A.pL(C.eL,F.eK,A.a4((x==null?C.bt:x).bi(w)/14-1,0,1))
 x.toString
@@ -454,19 +454,19 @@ else{x=x.gie()
 w=x.p3
 x=w==null?x.k2:w}return x},
 $S:19};(function inheritance(){var x=a.inherit,w=a.inheritMany
-x(B.L8,A.X)
+x(B.L7,A.X)
 w(A.d0,[B.aOf,B.b3x])
 x(B.b3u,A.fw)
 x(B.Aj,A.am)
 x(B.b3w,A.r6)})()
-A.dd(b.typeUniverse,JSON.parse('{"L8":{"cp":[]},"Aj":{"am":[],"f":[]}}'))
+A.dd(b.typeUniverse,JSON.parse('{"L7":{"cp":[]},"Aj":{"am":[],"f":[]}}'))
 var y=(function rtii(){var x=A.W
 return{L:x("cp"),s:x("y<e>"),t:x("y<u>"),j:x("a_<@>"),P:x("R<e,@>"),f:x("R<@,@>"),N:x("e"),b:x("bb<P?>"),z:x("@"),T:x("e?"),H:x("~")}})();(function constants(){var x=a.makeConstList
 D.qz=new A.bz(5e6)
-D.b5J=x(["image_url","imageUrl","public_url","publicUrl","url","image","output_url","outputUrl","output_image_url","outputImageUrl","result_url","resultUrl","generated_image_url","generatedImageUrl"],y.s)
-D.b7_=x(["images","image_urls","imageUrls","artifacts","files","predictions"],y.s)
-D.b81=x(["output","result","data","diagnostics","errors"],y.s)
-D.bca=x(["output","result","data","prediction"],y.s)
-D.bd0=x(["image_base64","imageBase64","b64_json","base64","image_data","imageData"],y.s)
+D.b5I=x(["image_url","imageUrl","public_url","publicUrl","url","image","output_url","outputUrl","output_image_url","outputImageUrl","result_url","resultUrl","generated_image_url","generatedImageUrl"],y.s)
+D.b6Z=x(["images","image_urls","imageUrls","artifacts","files","predictions"],y.s)
+D.b80=x(["output","result","data","diagnostics","errors"],y.s)
+D.bc9=x(["output","result","data","prediction"],y.s)
+D.bd_=x(["image_base64","imageBase64","b64_json","base64","image_data","imageData"],y.s)
 D.jD=new B.b3u(0,"flat")})()};
-(a=>{a["sMsLfoifK5A7+NhGZOa/ClNJsI8="]=a.current})($__dart_deferred_initializers__);
+(a=>{a["6VHw767sheT3mlGDewEvyyD+Ejg="]=a.current})($__dart_deferred_initializers__);
