@@ -149,7 +149,7 @@ class _CashierPosShellState extends State<CashierPosShell> {
     } catch (_) {}
   }
 
-  Future<void> _refreshWalkIn() async {
+  Future<void> _refreshWalkIn({bool throwOnError = false}) async {
     try {
       final results = await Future.wait([
         CashierPosApi.instance.walkInQueue('preparing'),
@@ -163,7 +163,9 @@ class _CashierPosShellState extends State<CashierPosShell> {
           _walkInCancelled = results[2];
         });
       }
-    } catch (_) {}
+    } catch (e) {
+      if (throwOnError) rethrow;
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -267,7 +269,16 @@ class _CashierPosShellState extends State<CashierPosShell> {
   }
 
   String? _posOrderId(Map<String, dynamic> raw) {
-    for (final key in ['id', 'order_id', 'order_no']) {
+    // Prefer internal UUID so claim/cancel updates the correct restaurant_orders row.
+    for (final key in ['id', 'manager_order_id']) {
+      final v = raw[key]?.toString().trim() ?? '';
+      if (v.isNotEmpty &&
+          v.toLowerCase() != 'null' &&
+          !v.toUpperCase().startsWith('ORD-')) {
+        return v;
+      }
+    }
+    for (final key in ['order_id', 'order_no']) {
       final v = raw[key]?.toString().trim() ?? '';
       if (v.isNotEmpty && v.toLowerCase() != 'null') return v;
     }
@@ -1220,14 +1231,29 @@ class _CashierPosShellState extends State<CashierPosShell> {
     try {
       await _withStatusUpdate(() async {
         await CashierPosApi.instance.claimWalkIn(orderId);
-        await _refreshWalkIn();
+        // Keep UI consistent even if a later queue refresh fails.
+        if (mounted) {
+          setState(() {
+            _walkInPreparing = _walkInPreparing
+                .where((e) => _posOrderId(e) != orderId)
+                .toList();
+            final claimedRow = Map<String, dynamic>.from(raw)
+              ..['pos_claimed'] = true
+              ..['order_status'] = 'delivered'
+              ..['fulfillment_stage'] = 'DELIVERED'
+              ..['status'] = 'DELIVERED';
+            final already = _walkInClaimed.any((e) => _posOrderId(e) == orderId);
+            if (!already) {
+              _walkInClaimed = [claimedRow, ..._walkInClaimed];
+            }
+            _selectedWalkIn = null;
+            _selectedTab = 2;
+            _walkInSubTab = 1;
+          });
+        }
+        await _refreshWalkIn(throwOnError: false);
       });
       if (mounted) {
-        setState(() {
-          _selectedWalkIn = null;
-          _selectedTab = 2; // WALK-IN ORDERS
-          _walkInSubTab = 1; // Claimed
-        });
         await showCurateringSuccessDialog(
           context: context,
           title: 'Success',

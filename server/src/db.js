@@ -1259,6 +1259,9 @@ export async function initDb() {
     await pool.query(
       `ALTER TABLE restaurant_orders ADD COLUMN IF NOT EXISTS change_given DECIMAL(10,2)`,
     );
+    // Mobile/POS use free-form statuses (PENDING_CASHIER, WAITING FOR BALANCE…).
+    // Never recreate a narrow snake_case CHECK — it blocks payment-proof uploads
+    // and any UPDATE on rows that already store uppercase / descriptive statuses.
     await pool.query(`
       ALTER TABLE restaurant_orders DROP CONSTRAINT IF EXISTS restaurant_orders_status_check
     `);
@@ -1272,13 +1275,7 @@ export async function initDb() {
       UPDATE restaurant_orders SET order_status = 'in_preparation'
       WHERE order_status IN ('confirmed', 'preparing')
     `);
-    await pool.query(`
-      ALTER TABLE restaurant_orders ADD CONSTRAINT restaurant_orders_order_status_check
-      CHECK (order_status IN (
-        'pending_cashier', 'in_preparation', 'out_for_delivery', 'delivered', 'cancelled'
-      ))
-    `);
-    console.log('Migration: restaurant_orders workflow columns and statuses');
+    console.log('Migration: restaurant_orders workflow columns (status CHECK left dropped)');
   } catch (err) {
     console.log('Migration restaurant_orders workflow:', err.message);
   }

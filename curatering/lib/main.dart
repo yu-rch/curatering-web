@@ -10,8 +10,8 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'config.dart';
 import 'config/site_routes.dart';
 import 'customer_page_loader.dart';
-import 'staff_app.dart' deferred as staff_app show staffPageFor;
-import 'pages/login.dart' deferred as staff_login show Login;
+import 'staff_app.dart' as staff_app show staffPageFor;
+import 'pages/login.dart' as staff_login show Login;
 import 'widgets/app_root_route.dart';
 import 'widgets/brand_splash_placeholder.dart';
 import 'widgets/external_host_redirect.dart';
@@ -144,127 +144,38 @@ Route<dynamic>? _buildRouteForPath(String path) {
     return MaterialPageRoute<void>(
       settings: RouteSettings(name: path),
       builder:
-          (_) => _staffPage(_DeferredStaffPage(path: path), path),
+          (_) => _staffPage(_StaffPage(path: path), path),
     );
   }
 
   return null;
 }
 
-class _DeferredStaffPage extends StatefulWidget {
-  const _DeferredStaffPage({required this.path});
+/// Staff routes are eager (not deferred) so login/dashboard do not depend on
+/// dart2js `.part.js` chunks, which frequently fail under stale service-worker
+/// caches on www.staff.curatering.com.
+class _StaffPage extends StatefulWidget {
+  const _StaffPage({required this.path});
 
   final String path;
 
   @override
-  State<_DeferredStaffPage> createState() => _DeferredStaffPageState();
+  State<_StaffPage> createState() => _StaffPageState();
 }
 
-class _DeferredStaffPageState extends State<_DeferredStaffPage> {
-  static Future<void>? _staffAppLoading;
-  static Future<void>? _staffLoginLoading;
-  bool _ready = false;
-  Object? _error;
-  bool _retrying = false;
-
-  bool get _isLogin => widget.path == '/login';
-
-  Future<void> _loadForPath({bool force = false}) {
-    if (_isLogin) {
-      if (force) _staffLoginLoading = null;
-      return _staffLoginLoading ??= staff_login.loadLibrary();
-    }
-    if (force) _staffAppLoading = null;
-    return _staffAppLoading ??= staff_app.loadLibrary();
-  }
-
-  Future<void> _startLoad({bool force = false}) {
-    if (force && mounted) {
-      setState(() {
-        _error = null;
-        _ready = false;
-        _retrying = true;
-      });
-    }
-    return _loadForPath(force: force)
-        .then((_) {
-          if (!mounted) return;
-          setState(() {
-            _ready = true;
-            _retrying = false;
-            _error = null;
-          });
-          signalCurateringUiReady();
-        })
-        .catchError((Object e, StackTrace st) {
-          // Allow a later retry; do not keep a permanently failed Future.
-          if (_isLogin) {
-            _staffLoginLoading = null;
-          } else {
-            _staffAppLoading = null;
-          }
-          // ignore: avoid_print
-          print('[DeferredStaffPage] load failed for ${widget.path}: $e\n$st');
-          if (mounted) {
-            setState(() {
-              _error = e;
-              _retrying = false;
-            });
-          }
-        });
-  }
-
+class _StaffPageState extends State<_StaffPage> {
   @override
   void initState() {
     super.initState();
-    _startLoad();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      signalCurateringUiReady();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_error != null) {
-      return Scaffold(
-        backgroundColor: BrandSplashPlaceholder.bg,
-        body: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text(
-                    'Failed to load staff page.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.white, fontSize: 16),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    '$_error',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.white70, fontSize: 12),
-                  ),
-                  const SizedBox(height: 16),
-                  FilledButton(
-                    onPressed: _retrying ? null : () => _startLoad(force: true),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: BrandSplashPlaceholder.accent,
-                      foregroundColor: const Color(0xFF1E1E1E),
-                    ),
-                    child: Text(_retrying ? 'Retrying…' : 'Retry'),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-    if (!_ready) {
-      return const BrandSplashPlaceholder();
-    }
-    if (_isLogin) {
-      return staff_login.Login();
+    if (widget.path == '/login') {
+      return const staff_login.Login();
     }
     return staff_app.staffPageFor(widget.path);
   }
@@ -624,7 +535,7 @@ class _MyAppState extends State<MyApp> {
                   settings: settings,
                   builder:
                       (_) => _staffPage(
-                        const _DeferredStaffPage(path: '/login'),
+                        const _StaffPage(path: '/login'),
                         '/login',
                       ),
                 );
@@ -655,7 +566,7 @@ class _MyAppState extends State<MyApp> {
                 settings: settings,
                 builder:
                     (_) => _staffPage(
-                      const _DeferredStaffPage(path: '/login'),
+                      const _StaffPage(path: '/login'),
                       '/login',
                     ),
               );
@@ -667,7 +578,7 @@ class _MyAppState extends State<MyApp> {
                   settings: const RouteSettings(name: '/login'),
                   builder:
                       (_) => _staffPage(
-                        const _DeferredStaffPage(path: '/login'),
+                        const _StaffPage(path: '/login'),
                         '/login',
                       ),
                 );

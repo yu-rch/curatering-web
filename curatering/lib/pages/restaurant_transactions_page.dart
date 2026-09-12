@@ -201,14 +201,25 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
   String _managerOrderId(Map<String, dynamic> order) {
     for (final key in const [
       'id',
+      'manager_order_id',
+      'restaurant_order_id',
+      'restaurantOrderId',
+    ]) {
+      final value = order[key]?.toString().trim();
+      if (value != null &&
+          value.isNotEmpty &&
+          value.toLowerCase() != 'null' &&
+          !value.toUpperCase().startsWith('ORD-')) {
+        return value;
+      }
+    }
+    for (final key in const [
       'order_id',
       'order_no',
       'orderId',
       'orderNo',
       'order_number',
       'orderNumber',
-      'restaurant_order_id',
-      'restaurantOrderId',
       'public_order_id',
       'publicOrderId',
     ]) {

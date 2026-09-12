@@ -38,6 +38,7 @@ jobs:
             --tree-shake-icons \
             --optimization-level=4 \
             --source-maps \
+            --pwa-strategy=none \
             --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
             --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
 

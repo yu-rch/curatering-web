@@ -76,7 +76,7 @@ function fulfillmentStageFromRow(row) {
   return normalizeRestaurantOrderStatus(row.order_status);
 }
 
-/** Persist lowercase statuses to match restaurant_orders_order_status_check. */
+/** Map fulfillment stage to persisted order_status (free-form; no DB CHECK). */
 function orderStatusFromFulfillmentStage(stage) {
   const s = String(stage || "").toUpperCase();
   if (s === "PENDING_CASHIER") return "pending_cashier";
@@ -176,6 +176,8 @@ export function mapRestaurantOrderRowForPosApi(row, customerName = null) {
         : null,
     balance_proof_pending_review: row.balance_proof_pending_review === true,
     pos_customer_label: row.pos_customer_label ?? "",
+    pos_claimed: row.pos_claimed === true,
+    pos_claimed_at: row.pos_claimed_at ?? null,
     order_source: row.order_source ?? "ONLINE",
     customer_display_name: customerName ?? row.full_name ?? "",
     guest_contact_email: row.user_email ?? "",
@@ -807,12 +809,14 @@ export function registerPosRoutes(app, {
   register("post", "/api/mobile/pos/walkin-queue", async (req, res) => {
     try {
       const filter = String(req.body?.filter || "preparing").toLowerCase();
-      let where = `COALESCE(order_source, '') = 'POS'`;
-      where = `COALESCE(order_source, '') IN ('POS_MOBILE', 'POS_WEB')`;
+      let where = `COALESCE(order_source, '') IN ('POS_MOBILE', 'POS_WEB', 'POS', 'WALK_IN')`;
       if (filter === "preparing") {
-        where += ` AND lower(order_status) = 'in_preparation' AND pos_claimed = FALSE`;
+        where += ` AND lower(order_status) = 'in_preparation' AND COALESCE(pos_claimed, FALSE) = FALSE`;
       } else if (filter === "claimed") {
-        where += ` AND pos_claimed = TRUE AND lower(order_status) <> 'cancelled'`;
+        where += ` AND (
+          COALESCE(pos_claimed, FALSE) = TRUE
+          OR lower(order_status) = 'delivered'
+        ) AND lower(order_status) <> 'cancelled'`;
       } else if (filter === "cancelled") {
         where += ` AND lower(order_status) = 'cancelled'`;
       }
@@ -836,16 +840,28 @@ export function registerPosRoutes(app, {
     try {
       const order = await getOrderById(pool, req.params.orderId);
       if (!order) return res.status(404).json({ error: "Order not found" });
-      await pool.query(
+      const updated = await pool.query(
         `UPDATE restaurant_orders
          SET pos_claimed_at = COALESCE(pos_claimed_at, now()),
              pos_claimed = TRUE,
              order_status = 'delivered',
              updated_at = now()
-         WHERE id = $1`,
+         WHERE id = $1
+         RETURNING id, order_id, order_status, pos_claimed, pos_claimed_at`,
         [order.id],
       );
-      res.json({ ok: true });
+      if (updated.rowCount === 0) {
+        return res.status(404).json({ error: "Order not found" });
+      }
+      const row = updated.rows[0];
+      res.json({
+        ok: true,
+        id: row.id,
+        order_id: row.order_id,
+        order_status: row.order_status,
+        pos_claimed: row.pos_claimed === true,
+        pos_claimed_at: row.pos_claimed_at,
+      });
     } catch (e) {
       console.error("[pos] walkin claim", e);
       res.status(500).json({ error: "Failed to claim order" });
