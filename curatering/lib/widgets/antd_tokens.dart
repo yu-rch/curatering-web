@@ -28,13 +28,13 @@ abstract final class AntdTokens {
   static Color get border =>
       _dark ? const Color(0xFF595959) : const Color(0xFFD9D9D9);
   static Color get labelMuted =>
-      _dark ? const Color(0xFFA6A6A6) : const Color(0xFF8C8C8C);
+      _dark ? const Color(0xFFD9D9D9) : const Color(0xFF8C8C8C);
   static Color get valueDark =>
-      _dark ? const Color(0xFFF5F5F5) : const Color(0xFF262626);
+      _dark ? const Color(0xFFFAFAFA) : const Color(0xFF262626);
   static Color get textSecondary =>
-      _dark ? const Color(0xFFBFBFBF) : const Color(0xFF595959);
+      _dark ? const Color(0xFFE0E0E0) : const Color(0xFF595959);
   static Color get fillTertiary =>
-      _dark ? const Color(0xFF2A2A2A) : const Color(0xFFF5F5F5);
+      _dark ? const Color(0xFF2F2F2F) : const Color(0xFFF5F5F5);
 
   static const double radiusSm = 6;
   static const double radiusMd = 10;

@@ -126,7 +126,7 @@ class PagedDataTable extends StatefulWidget {
     this.filters = const [],
     this.maxTableHeight = 560,
     this.pdfExcludedColumnIndexes = const {},
-    this.fullWidth = false,
+    this.fullWidth = true,
     this.minTableWidth,
     this.dataRowMinHeight,
     this.dataRowMaxHeight,
@@ -200,6 +200,8 @@ class _PagedDataTableState extends State<PagedDataTable> {
 
     final table = Theme(
       data: Theme.of(context).copyWith(
+        canvasColor: AntdTokens.cardBg,
+        cardColor: AntdTokens.cardBg,
         dataTableTheme: DataTableThemeData(
           headingTextStyle: TextStyle(
             color: AntdTokens.valueDark,
@@ -262,13 +264,16 @@ class _PagedDataTableState extends State<PagedDataTable> {
         final minTableWidth = widget.fullWidth
             ? math.max(available, preferredMin)
             : preferredMin;
-        return SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              minWidth: minTableWidth,
+        return ColoredBox(
+          color: AntdTokens.cardBg,
+          child: ClipRect(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minWidth: minTableWidth),
+                child: table,
+              ),
             ),
-            child: table,
           ),
         );
       },

@@ -8,6 +8,7 @@ import '../utils/debouncer.dart';
 import '../utils/print_tabular_report.dart';
 import '../widgets/antd_buttons.dart';
 import '../widgets/antd_form_field.dart';
+import '../widgets/antd_staff.dart';
 import '../widgets/antd_tokens.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/paginated_data_table.dart';
@@ -915,17 +916,16 @@ class _InventoryState extends State<Inventory> {
   }
 
   Widget _buildTabularView(List<InventoryItem> items) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      child: Card(
-        elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: AntdTokens.borderSubtle),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: PagedDataTable(
+    return Card(
+      elevation: 0,
+      color: AntdTokens.cardBg,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: AntdTokens.borderSubtle),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: PagedDataTable(
             title: 'Inventory Items',
             enableSearch: false,
             enablePrint: false,
@@ -936,7 +936,7 @@ class _InventoryState extends State<Inventory> {
             dataRowMinHeight: 44,
             dataRowMaxHeight: 56,
             horizontalMargin: 12,
-            headingRowColor: const WidgetStatePropertyAll(Color(0xFFF5F7F9)),
+            headingRowColor: WidgetStatePropertyAll(AntdTokens.tableHeaderBg),
             columnSpacing: 18,
             columns: const [
               DataColumn(label: Text('Item No.')),
@@ -1013,7 +1013,6 @@ class _InventoryState extends State<Inventory> {
                 }).toList(),
           ),
         ),
-      ),
     );
   }
 
@@ -1197,23 +1196,12 @@ class _InventoryState extends State<Inventory> {
     required ValueChanged<T?> onChanged,
     double width = 180,
   }) {
-    return SizedBox(
+    return AntdSelect<T>(
+      label: label,
       width: width,
-      child: DropdownButtonFormField<T>(
-        value: value,
-        isExpanded: true,
-        decoration: InputDecoration(
-          labelText: label,
-          isDense: true,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 12,
-            vertical: 10,
-          ),
-        ),
-        items: items,
-        onChanged: onChanged,
-      ),
+      value: value,
+      items: items,
+      onChanged: onChanged,
     );
   }
 
@@ -1263,176 +1251,130 @@ class _InventoryState extends State<Inventory> {
             if (_updatedDayFilter != null) _updatedDayFilter!,
           }.toList()
           ..sort();
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-      child: Wrap(
-        spacing: 10,
-        runSpacing: 10,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          SizedBox(
-            width: 300,
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Search by first letter / prefix…',
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon:
-                    _searchController.text.isEmpty
-                        ? null
-                        : IconButton(
-                          tooltip: 'Clear search',
-                          onPressed: () {
-                            _searchController.clear();
-                            setState(_applyActiveFilter);
-                          },
-                          icon: const Icon(Icons.close),
-                        ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                filled: true,
-                fillColor: Colors.grey.shade100,
-              ),
+    return AntdToolbar(
+      elevated: false,
+      padding: EdgeInsets.zero,
+      children: [
+        AntdSearchInput(
+          controller: _searchController,
+          hintText: 'Search by first letter / prefix…',
+          width: 280,
+          onChanged: (_) => setState(_applyActiveFilter),
+          onClear: () {
+            _searchController.clear();
+            setState(_applyActiveFilter);
+          },
+        ),
+        _filterDropdown<String>(
+          label: 'Stock level',
+          value: _stockFilter,
+          width: 160,
+          items: const [
+            DropdownMenuItem(value: 'all', child: Text('All stock')),
+            DropdownMenuItem(value: 'ok', child: Text('OK')),
+            DropdownMenuItem(value: 'low', child: Text('Low stock')),
+            DropdownMenuItem(
+              value: 'unavailable',
+              child: Text('Unavailable'),
             ),
-          ),
-          _filterDropdown<String>(
-            label: 'Stock level',
-            value: _stockFilter,
-            width: 170,
-            items: const [
-              DropdownMenuItem(value: 'all', child: Text('All stock')),
-              DropdownMenuItem(value: 'ok', child: Text('OK')),
-              DropdownMenuItem(value: 'low', child: Text('Low stock')),
+          ],
+          onChanged:
+              (v) => setState(() {
+                _stockFilter = v ?? 'all';
+                _applyActiveFilter();
+              }),
+        ),
+        _filterDropdown<String>(
+          label: 'Category',
+          value: _categoryFilter,
+          width: 200,
+          items: [
+            const DropdownMenuItem(
+              value: 'all',
+              child: Text('All categories'),
+            ),
+            for (final c in categoryOptions)
+              DropdownMenuItem(value: c, child: Text(c)),
+          ],
+          onChanged:
+              (v) => setState(() {
+                _categoryFilter = v ?? 'all';
+                _applyActiveFilter();
+              }),
+        ),
+        _filterDropdown<int?>(
+          label: 'Updated year',
+          value: _updatedYearFilter,
+          width: 150,
+          items: [
+            const DropdownMenuItem<int?>(
+              value: null,
+              child: Text('All years'),
+            ),
+            for (final y in years)
+              DropdownMenuItem(value: y, child: Text('$y')),
+          ],
+          onChanged:
+              (v) => setState(() {
+                _updatedYearFilter = v;
+                _updatedMonthFilter = null;
+                _updatedDayFilter = null;
+                _applyActiveFilter();
+              }),
+        ),
+        _filterDropdown<int?>(
+          label: 'Updated month',
+          value: _updatedMonthFilter,
+          width: 150,
+          items: [
+            const DropdownMenuItem<int?>(
+              value: null,
+              child: Text('All months'),
+            ),
+            for (final m in months)
               DropdownMenuItem(
-                value: 'unavailable',
-                child: Text('Unavailable'),
+                value: m,
+                child: Text(m.toString().padLeft(2, '0')),
               ),
-            ],
-            onChanged:
-                (v) => setState(() {
-                  _stockFilter = v ?? 'all';
-                  _applyActiveFilter();
-                }),
-          ),
-          _filterDropdown<String>(
-            label: 'Category',
-            value: _categoryFilter,
-            width: 240,
-            items: [
-              const DropdownMenuItem(
-                value: 'all',
-                child: Text('All categories'),
-              ),
-              for (final c in categoryOptions)
-                DropdownMenuItem(value: c, child: Text(c)),
-            ],
-            onChanged:
-                (v) => setState(() {
-                  _categoryFilter = v ?? 'all';
-                  _applyActiveFilter();
-                }),
-          ),
-          _filterDropdown<int?>(
-            label: 'Updated year',
-            value: _updatedYearFilter,
-            width: 150,
-            items: [
-              const DropdownMenuItem<int?>(
-                value: null,
-                child: Text('All years'),
-              ),
-              for (final y in years)
-                DropdownMenuItem(value: y, child: Text('$y')),
-            ],
-            onChanged:
-                (v) => setState(() {
-                  _updatedYearFilter = v;
-                  _updatedMonthFilter = null;
-                  _updatedDayFilter = null;
-                  _applyActiveFilter();
-                }),
-          ),
-          _filterDropdown<int?>(
-            label: 'Updated month',
-            value: _updatedMonthFilter,
-            width: 150,
-            items: [
-              const DropdownMenuItem<int?>(
-                value: null,
-                child: Text('All months'),
-              ),
-              for (final m in months)
-                DropdownMenuItem(
-                  value: m,
-                  child: Text(m.toString().padLeft(2, '0')),
-                ),
-            ],
-            onChanged:
-                (v) => setState(() {
-                  _updatedMonthFilter = v;
-                  _updatedDayFilter = null;
-                  _applyActiveFilter();
-                }),
-          ),
-          _filterDropdown<int?>(
-            label: 'Updated day',
-            value: _updatedDayFilter,
-            width: 140,
-            items: [
-              const DropdownMenuItem<int?>(
-                value: null,
-                child: Text('All days'),
-              ),
-              for (final d in days)
-                DropdownMenuItem(
-                  value: d,
-                  child: Text(d.toString().padLeft(2, '0')),
-                ),
-            ],
-            onChanged:
-                (v) => setState(() {
-                  _updatedDayFilter = v;
-                  _applyActiveFilter();
-                }),
-          ),
-          OutlinedButton.icon(
-            onPressed: _clearFilters,
-            icon: const Icon(Icons.filter_alt_off),
-            label: const Text('Clear filters'),
-          ),
-          OutlinedButton.icon(
-            onPressed:
-                _isExportingPdf || displayItems.isEmpty
-                    ? null
-                    : () => _printInventoryPdf(displayItems),
-            icon:
-                _isExportingPdf
-                    ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                    : const Icon(Icons.picture_as_pdf),
-            label: Text(_isExportingPdf ? 'Preparing PDF' : 'Print PDF'),
-          ),
-          Text(
-            '${displayItems.length} of ${_activeItems.length} rows',
-            style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
-          ),
-          if (_isManager)
-            OutlinedButton.icon(
-              onPressed: () => _showAddEditDialog(null, true),
-              icon: const Icon(Icons.add_box_outlined),
-              label: const Text('New item'),
+          ],
+          onChanged:
+              (v) => setState(() {
+                _updatedMonthFilter = v;
+                _updatedDayFilter = null;
+                _applyActiveFilter();
+              }),
+        ),
+        _filterDropdown<int?>(
+          label: 'Updated day',
+          value: _updatedDayFilter,
+          width: 140,
+          items: [
+            const DropdownMenuItem<int?>(
+              value: null,
+              child: Text('All days'),
             ),
-          if (_isManager)
-            AntdPrimaryButton(
-              label: 'Add stock',
-              onPressed: () => _showAddEditDialog(),
-            ),
-        ],
-      ),
+            for (final d in days)
+              DropdownMenuItem(
+                value: d,
+                child: Text(d.toString().padLeft(2, '0')),
+              ),
+          ],
+          onChanged:
+              (v) => setState(() {
+                _updatedDayFilter = v;
+                _applyActiveFilter();
+              }),
+        ),
+        AntdSecondaryButton(
+          onPressed: _clearFilters,
+          icon: Icons.filter_alt_off,
+          label: 'Clear filters',
+        ),
+        AntdStatusTag(
+          label: '${displayItems.length} of ${_activeItems.length} rows',
+          color: AntdTokens.textSecondary,
+        ),
+      ],
     );
   }
 
@@ -1454,30 +1396,53 @@ class _InventoryState extends State<Inventory> {
 
     return AppScaffold(
       showSearch: false,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _buildFilterBar(displayList),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: _buildStatsRow(displayList, _activeItems.length),
+      child: AntdPage(
+        title: 'Inventory',
+        subtitle: 'Track stock levels, categories, and restocks.',
+        actions: [
+          AntdSecondaryButton(
+            onPressed:
+                _isExportingPdf || displayList.isEmpty
+                    ? null
+                    : () => _printInventoryPdf(displayList),
+            icon: Icons.picture_as_pdf,
+            label: _isExportingPdf ? 'Preparing PDF' : 'Print PDF',
           ),
-          Expanded(
-            child:
-                _isLoading
-                    ? const Center(child: CircularProgressIndicator())
-                    : displayList.isEmpty
-                    ? Center(
-                      child: Text(
-                        _activeItems.isEmpty
-                            ? 'No inventory items'
-                            : 'No inventory items match the active filters',
-                        style: TextStyle(color: Colors.grey.shade600),
-                      ),
-                    )
-                    : _buildTabularView(displayList),
-          ),
+          if (_isManager)
+            AntdSecondaryButton(
+              onPressed: () => _showAddEditDialog(null, true),
+              icon: Icons.add_box_outlined,
+              label: 'New item',
+            ),
+          if (_isManager)
+            AntdPrimaryButton(
+              label: 'Add stock',
+              onPressed: () => _showAddEditDialog(),
+            ),
         ],
+        filters: _buildFilterBar(displayList),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _buildStatsRow(displayList, _activeItems.length),
+            const SizedBox(height: 12),
+            Expanded(
+              child:
+                  _isLoading
+                      ? const Center(child: CircularProgressIndicator())
+                      : displayList.isEmpty
+                      ? Center(
+                        child: Text(
+                          _activeItems.isEmpty
+                              ? 'No inventory items'
+                              : 'No inventory items match the active filters',
+                          style: TextStyle(color: AntdTokens.textSecondary),
+                        ),
+                      )
+                      : _buildTabularView(displayList),
+            ),
+          ],
+        ),
       ),
     );
   }

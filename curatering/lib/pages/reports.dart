@@ -183,21 +183,27 @@ class _ReportsState extends State<Reports> {
                   },
                   border: TableBorder.all(color: AntdTokens.borderSubtle),
                   children: [
-                    const TableRow(
-                      decoration: BoxDecoration(color: Color(0xFFF5F7F9)),
+                    TableRow(
+                      decoration: BoxDecoration(color: AntdTokens.tableHeaderBg),
                       children: [
                         Padding(
-                          padding: EdgeInsets.all(8),
+                          padding: const EdgeInsets.all(8),
                           child: Text(
                             'Metric',
-                            style: TextStyle(fontWeight: FontWeight.w700),
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: AntdTokens.valueDark,
+                            ),
                           ),
                         ),
                         Padding(
-                          padding: EdgeInsets.all(8),
+                          padding: const EdgeInsets.all(8),
                           child: Text(
                             'Value',
-                            style: TextStyle(fontWeight: FontWeight.w700),
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: AntdTokens.valueDark,
+                            ),
                           ),
                         ),
                       ],
@@ -207,29 +213,29 @@ class _ReportsState extends State<Reports> {
                         children: [
                           Padding(
                             padding: const EdgeInsets.all(8),
-                            child: Text(row.label),
+                            child: Text(
+                              row.label,
+                              style: TextStyle(color: AntdTokens.valueDark),
+                            ),
                           ),
                           Padding(
                             padding: const EdgeInsets.all(8),
                             child: Text(
                               row.value,
-                              style: const TextStyle(fontWeight: FontWeight.w600),
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: AntdTokens.valueDark,
+                              ),
                             ),
                           ),
                         ],
                       ),
                   ],
                 );
-                if (constraints.maxWidth < 360) {
-                  return SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(minWidth: 360),
-                      child: table,
-                    ),
-                  );
-                }
-                return table;
+                return ColoredBox(
+                  color: AntdTokens.cardBg,
+                  child: table,
+                );
               },
             ),
           ],
@@ -343,121 +349,115 @@ class _ReportsState extends State<Reports> {
             onPressed: _isLoading ? null : _load,
           ),
         ],
+        filters: AntdToolbar(
+          elevated: false,
+          padding: EdgeInsets.zero,
+          children: [
+            ChoiceChip(
+              label: const Text('Monthly'),
+              selected: !_annualMode,
+              onSelected: (_) {
+                setState(() => _annualMode = false);
+                _load();
+              },
+            ),
+            ChoiceChip(
+              label: const Text('Annual'),
+              selected: _annualMode,
+              onSelected: (_) {
+                setState(() => _annualMode = true);
+                _load();
+              },
+            ),
+            if (_annualMode)
+              AntdSelect<int>(
+                label: 'Year',
+                width: 160,
+                value: _selectedYear,
+                items: List.generate(6, (i) {
+                  final y = DateTime.now().year - i;
+                  return DropdownMenuItem(value: y, child: Text('$y'));
+                }),
+                onChanged: (y) {
+                  if (y == null) return;
+                  setState(() => _selectedYear = y);
+                  _load();
+                },
+              )
+            else ...[
+              AntdSelect<int>(
+                label: 'Year',
+                width: 160,
+                value: _selectedMonth.year,
+                items: List.generate(6, (i) {
+                  final y = DateTime.now().year - i;
+                  return DropdownMenuItem(value: y, child: Text('$y'));
+                }),
+                onChanged: (y) {
+                  if (y == null) return;
+                  setState(() {
+                    _selectedMonth = DateTime(y, _selectedMonth.month, 1);
+                  });
+                  _load();
+                },
+              ),
+              AntdSelect<int>(
+                label: 'Month',
+                width: 130,
+                value: _selectedMonth.month,
+                items: List.generate(12, (i) {
+                  final m = i + 1;
+                  return DropdownMenuItem(
+                    value: m,
+                    child: Text(m.toString().padLeft(2, '0')),
+                  );
+                }),
+                onChanged: (m) {
+                  if (m == null) return;
+                  setState(() {
+                    _selectedMonth = DateTime(_selectedMonth.year, m, 1);
+                  });
+                  _load();
+                },
+              ),
+            ],
+            AntdSelect<_ReportScope>(
+              label: 'Scope',
+              width: 200,
+              value: _scope,
+              items: const [
+                DropdownMenuItem(
+                  value: _ReportScope.combined,
+                  child: Text('All'),
+                ),
+                DropdownMenuItem(
+                  value: _ReportScope.catering,
+                  child: Text('Catering'),
+                ),
+                DropdownMenuItem(
+                  value: _ReportScope.cateringEvents,
+                  child: Text('Catering + Events'),
+                ),
+                DropdownMenuItem(
+                  value: _ReportScope.restaurant,
+                  child: Text('Restaurant'),
+                ),
+              ],
+              onChanged: (v) {
+                if (v == null) return;
+                setState(() => _scope = v);
+              },
+            ),
+            AntdStatusTag(label: periodLabel, color: AntdTokens.blue),
+          ],
+        ),
         child: LayoutBuilder(
           builder: (context, constraints) {
             final narrow = constraints.maxWidth < 720;
-            final selectWidth = narrow ? 140.0 : 180.0;
 
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                AntdToolbar(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: narrow ? 10 : 12,
-                    vertical: 12,
-                  ),
-                  children: [
-                    ChoiceChip(
-                      label: const Text('Monthly'),
-                      selected: !_annualMode,
-                      onSelected: (_) {
-                        setState(() => _annualMode = false);
-                        _load();
-                      },
-                    ),
-                    ChoiceChip(
-                      label: const Text('Annual'),
-                      selected: _annualMode,
-                      onSelected: (_) {
-                        setState(() => _annualMode = true);
-                        _load();
-                      },
-                    ),
-                    if (_annualMode)
-                      AntdSelect<int>(
-                        label: 'Year',
-                        width: selectWidth,
-                        value: _selectedYear,
-                        items: List.generate(6, (i) {
-                          final y = DateTime.now().year - i;
-                          return DropdownMenuItem(value: y, child: Text('$y'));
-                        }),
-                        onChanged: (y) {
-                          if (y == null) return;
-                          setState(() => _selectedYear = y);
-                          _load();
-                        },
-                      )
-                    else ...[
-                      AntdSelect<int>(
-                        label: 'Year',
-                        width: selectWidth,
-                        value: _selectedMonth.year,
-                        items: List.generate(6, (i) {
-                          final y = DateTime.now().year - i;
-                          return DropdownMenuItem(value: y, child: Text('$y'));
-                        }),
-                        onChanged: (y) {
-                          if (y == null) return;
-                          setState(() {
-                            _selectedMonth =
-                                DateTime(y, _selectedMonth.month, 1);
-                          });
-                          _load();
-                        },
-                      ),
-                      AntdSelect<int>(
-                        label: 'Month',
-                        width: narrow ? 110.0 : 140.0,
-                        value: _selectedMonth.month,
-                        items: List.generate(12, (i) {
-                          final m = i + 1;
-                          return DropdownMenuItem(
-                            value: m,
-                            child: Text(m.toString().padLeft(2, '0')),
-                          );
-                        }),
-                        onChanged: (m) {
-                          if (m == null) return;
-                          setState(() {
-                            _selectedMonth =
-                                DateTime(_selectedMonth.year, m, 1);
-                          });
-                          _load();
-                        },
-                      ),
-                    ],
-                    AntdSelect<_ReportScope>(
-                      label: 'Scope',
-                      width: narrow ? 160.0 : 200.0,
-                      value: _scope,
-                      items: const [
-                        DropdownMenuItem(
-                          value: _ReportScope.combined,
-                          child: Text('All'),
-                        ),
-                        DropdownMenuItem(
-                          value: _ReportScope.catering,
-                          child: Text('Catering'),
-                        ),
-                        DropdownMenuItem(
-                          value: _ReportScope.cateringEvents,
-                          child: Text('Catering + Events'),
-                        ),
-                        DropdownMenuItem(
-                          value: _ReportScope.restaurant,
-                          child: Text('Restaurant'),
-                        ),
-                      ],
-                      onChanged: (v) {
-                        if (v == null) return;
-                        setState(() => _scope = v);
-                      },
-                    ),
-                    AntdStatusTag(label: periodLabel, color: AntdTokens.blue),
-                  ],
-                ),
-                const SizedBox(height: 16),
                 if (_isLoading)
                   const Expanded(
                     child: Center(child: CircularProgressIndicator()),

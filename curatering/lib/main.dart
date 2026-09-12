@@ -335,7 +335,80 @@ ThemeData _staffAppTheme({required bool dark}) {
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: dark ? const Color(0xFF1F1F1F) : Colors.white,
+      fillColor: dark ? const Color(0xFF2F2F2F) : Colors.white,
+      labelStyle: TextStyle(
+        color: dark ? const Color(0xFFE0E0E0) : const Color(0xFF595959),
+      ),
+      floatingLabelStyle: TextStyle(
+        color: dark ? const Color(0xFFE0E0E0) : const Color(0xFF595959),
+      ),
+      hintStyle: TextStyle(
+        color: dark ? const Color(0xFFD9D9D9) : const Color(0xFF8C8C8C),
+      ),
+      prefixIconColor:
+          dark ? const Color(0xFFD9D9D9) : const Color(0xFF8C8C8C),
+      suffixIconColor:
+          dark ? const Color(0xFFD9D9D9) : const Color(0xFF8C8C8C),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: BorderSide(
+          color: dark ? const Color(0xFF595959) : const Color(0xFFD9D9D9),
+        ),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: Color(0xFF1677FF), width: 1.4),
+      ),
+    ),
+    dropdownMenuTheme: DropdownMenuThemeData(
+      textStyle: TextStyle(
+        color: dark ? const Color(0xFFFAFAFA) : const Color(0xFF262626),
+      ),
+      menuStyle: MenuStyle(
+        backgroundColor: WidgetStatePropertyAll(
+          dark ? const Color(0xFF1F1F1F) : Colors.white,
+        ),
+      ),
+    ),
+    chipTheme: ChipThemeData(
+      backgroundColor:
+          dark ? const Color(0xFF2F2F2F) : const Color(0xFFF5F5F5),
+      selectedColor: const Color(0xFFFFC024),
+      disabledColor: dark ? const Color(0xFF2A2A2A) : const Color(0xFFF0F0F0),
+      checkmarkColor: const Color(0xFF1E1E1E),
+      labelStyle: TextStyle(
+        color: dark ? const Color(0xFFFAFAFA) : const Color(0xFF262626),
+      ),
+      secondaryLabelStyle: const TextStyle(
+        color: Color(0xFF1E1E1E),
+        fontWeight: FontWeight.w600,
+      ),
+      side: BorderSide(
+        color: dark ? const Color(0xFF595959) : const Color(0xFFD9D9D9),
+      ),
+    ),
+    popupMenuTheme: PopupMenuThemeData(
+      color: dark ? const Color(0xFF1F1F1F) : Colors.white,
+      textStyle: TextStyle(
+        color: dark ? const Color(0xFFFAFAFA) : const Color(0xFF262626),
+      ),
+    ),
+    dataTableTheme: DataTableThemeData(
+      headingTextStyle: TextStyle(
+        color: dark ? const Color(0xFFFAFAFA) : const Color(0xFF262626),
+        fontWeight: FontWeight.w700,
+        fontSize: 13,
+      ),
+      dataTextStyle: TextStyle(
+        color: dark ? const Color(0xFFFAFAFA) : const Color(0xFF262626),
+        fontSize: 13,
+      ),
+      headingRowColor: WidgetStatePropertyAll(
+        dark ? const Color(0xFF2A2A2A) : const Color(0xFFFAFAFA),
+      ),
+      dataRowColor: WidgetStatePropertyAll(
+        dark ? const Color(0xFF1F1F1F) : Colors.white,
+      ),
     ),
   );
 }

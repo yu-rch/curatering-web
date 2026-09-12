@@ -8,6 +8,7 @@ class AntdPage extends StatelessWidget {
     required this.title,
     this.subtitle,
     this.actions = const [],
+    this.filters,
     required this.child,
     this.padding = const EdgeInsets.all(20),
   });
@@ -15,6 +16,7 @@ class AntdPage extends StatelessWidget {
   final String title;
   final String? subtitle;
   final List<Widget> actions;
+  final Widget? filters;
   final Widget child;
   final EdgeInsetsGeometry padding;
 
@@ -33,10 +35,19 @@ class AntdPage extends StatelessWidget {
               width: double.infinity,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 16, 20, 14),
-                child: AntdPageHeader(
-                  title: title,
-                  subtitle: subtitle,
-                  actions: actions,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    AntdPageHeader(
+                      title: title,
+                      subtitle: subtitle,
+                      actions: actions,
+                    ),
+                    if (filters != null) ...[
+                      const SizedBox(height: 12),
+                      filters!,
+                    ],
+                  ],
                 ),
               ),
             ),
@@ -99,13 +110,11 @@ class AntdPageHeader extends StatelessWidget {
           ),
           if (actions.isNotEmpty) ...[
             const SizedBox(width: 12),
-            Flexible(
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                alignment: WrapAlignment.end,
-                children: actions,
-              ),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              alignment: WrapAlignment.end,
+              children: actions,
             ),
           ],
         ],
@@ -152,22 +161,43 @@ class AntdToolbar extends StatelessWidget {
   const AntdToolbar({
     super.key,
     required this.children,
+    this.trailing = const [],
     this.padding = const EdgeInsets.all(12),
+    this.elevated = true,
   });
 
   final List<Widget> children;
+  final List<Widget> trailing;
   final EdgeInsetsGeometry padding;
+  final bool elevated;
 
   @override
   Widget build(BuildContext context) {
+    final row = Row(
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (var i = 0; i < children.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 10),
+                  children[i],
+                ],
+              ],
+            ),
+          ),
+        ),
+        if (trailing.isNotEmpty) ...[
+          const SizedBox(width: 10),
+          ...trailing,
+        ],
+      ],
+    );
+    if (!elevated) return row;
     return AntdCard(
       padding: padding,
-      child: Wrap(
-        spacing: 10,
-        runSpacing: 10,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: children,
-      ),
+      child: row,
     );
   }
 }
@@ -206,7 +236,7 @@ class AntdSearchInput extends StatelessWidget {
         decoration: InputDecoration(
           isDense: true,
           filled: true,
-          fillColor: fillColor ?? AntdTokens.cardBg,
+          fillColor: fillColor ?? AntdTokens.fillTertiary,
           prefixIcon: Icon(
             Icons.search,
             size: 18,
@@ -254,6 +284,7 @@ class AntdSelect<T> extends StatelessWidget {
     required this.items,
     required this.onChanged,
     this.label,
+    this.hint,
     this.width = 220,
   });
 
@@ -261,41 +292,53 @@ class AntdSelect<T> extends StatelessWidget {
   final List<DropdownMenuItem<T>> items;
   final ValueChanged<T?>? onChanged;
   final String? label;
-  final double width;
+  final String? hint;
+  final double? width;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: width,
-      child: DropdownButtonFormField<T>(
-        value: value,
-        isExpanded: true,
-        decoration: InputDecoration(
-          labelText: label,
-          isDense: true,
-          filled: true,
-          fillColor: AntdTokens.cardBg,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 12,
-            vertical: 11,
-          ),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(AntdTokens.radiusSm),
-            borderSide: BorderSide(color: AntdTokens.border),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(AntdTokens.radiusSm),
-            borderSide: BorderSide(color: AntdTokens.border),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(AntdTokens.radiusSm),
-            borderSide: const BorderSide(color: AntdTokens.blue, width: 1.4),
-          ),
+    final field = DropdownButtonFormField<T>(
+      value: value,
+      isExpanded: true,
+      dropdownColor: AntdTokens.cardBg,
+      style: TextStyle(color: AntdTokens.valueDark, fontSize: 14),
+      iconEnabledColor: AntdTokens.textSecondary,
+      hint:
+          hint == null
+              ? null
+              : Text(
+                hint!,
+                style: TextStyle(color: AntdTokens.labelMuted, fontSize: 14),
+              ),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: TextStyle(color: AntdTokens.textSecondary, fontSize: 12),
+        floatingLabelStyle: TextStyle(color: AntdTokens.textSecondary),
+        isDense: true,
+        filled: true,
+        fillColor: AntdTokens.fillTertiary,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 11,
         ),
-        items: items,
-        onChanged: onChanged,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AntdTokens.radiusSm),
+          borderSide: BorderSide(color: AntdTokens.border),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AntdTokens.radiusSm),
+          borderSide: BorderSide(color: AntdTokens.border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AntdTokens.radiusSm),
+          borderSide: const BorderSide(color: AntdTokens.blue, width: 1.4),
+        ),
       ),
+      items: items,
+      onChanged: onChanged,
     );
+    if (width == null) return field;
+    return SizedBox(width: width, child: field);
   }
 }
 

@@ -456,6 +456,8 @@ class _SuperAdminDashboardPageState extends State<SuperAdminDashboardPage> {
 
   Widget _filterToolbar() {
     return AntdToolbar(
+      elevated: false,
+      padding: EdgeInsets.zero,
       children: [
         AntdSelect<String>(
           label: 'Dashboard range',
@@ -675,6 +677,7 @@ class _SuperAdminDashboardPageState extends State<SuperAdminDashboardPage> {
                 _summary == null || _printingPdf ? null : _printDashboardPdf,
           ),
         ],
+        filters: _filterToolbar(),
         child:
             _loading
                 ? const AntdLoadingState(
@@ -691,8 +694,6 @@ class _SuperAdminDashboardPageState extends State<SuperAdminDashboardPage> {
                       final sections = Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          _filterToolbar(),
-                          const SizedBox(height: 16),
                           if (!showAnalytics &&
                               !showUsers &&
                               !showSales &&

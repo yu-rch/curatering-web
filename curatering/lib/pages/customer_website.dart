@@ -194,10 +194,11 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   void _maybeLoadHighlightImages() {
     if (_highlightsImagesRequested || !mounted) return;
     if (!_pageScrollController.hasClients) return;
-    // Wait until the popular-dishes / event-design band is near the viewport.
-    if (_pageScrollController.offset < 900) return;
+    // Popular dishes sits mid-page; load full images once the user scrolls a bit.
+    if (_pageScrollController.offset < 280) return;
     _highlightsImagesRequested = true;
     unawaited(_loadHomepageHighlights(lite: false));
+    unawaited(MenuStore.instance.ensureImagesLoaded());
   }
 
   void _recordPageView() {
@@ -247,10 +248,18 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
   Future<void> _loadDeferredBootstrap() async {
     unawaited(_bootstrapMenuAndCart());
     unawaited(_checkCustomerAuth());
-    // Metadata only on cold load — full base64 images load when the user
-    // scrolls near the highlights section (see _maybeLoadHighlightImages).
+    // Metadata first, then hydrate dish photos for the popular-dishes carousel.
     Future<void>.delayed(const Duration(seconds: 2), () {
-      if (mounted) unawaited(_loadHomepageHighlights(lite: true));
+      if (!mounted) return;
+      unawaited(_loadHomepageHighlights(lite: true));
+      unawaited(MenuStore.instance.ensureImagesLoaded());
+    });
+    // Full popular-dish images (API) shortly after first paint so cards aren't empty
+    // even if the user never scrolls past the old 900px gate.
+    Future<void>.delayed(const Duration(seconds: 4), () {
+      if (!mounted || _highlightsImagesRequested) return;
+      _highlightsImagesRequested = true;
+      unawaited(_loadHomepageHighlights(lite: false));
     });
   }
 
@@ -2586,6 +2595,16 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     return MenuStore.instance.activeDishes.take(10).toList();
   }
 
+  bool _isPseudoPopularDishName(String name) {
+    final n = name.trim().toLowerCase();
+    if (n.isEmpty) return true;
+    return n.contains('suggest me a menu') ||
+        n.contains('suggest a menu') ||
+        n.contains('customer will confirm menu') ||
+        n == 'tba' ||
+        n == 'tbd';
+  }
+
   Widget _buildPopularDishesCarousel(WebsiteContentStore w) {
     return ListenableBuilder(
       listenable: MenuStore.instance,
@@ -2594,11 +2613,12 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
         final fallbackDishes = _fallbackPopularDishes();
         final salesPopular =
             _salesPopularDishes
-                .where(
-                  (row) =>
-                      (row['imageBase64'] ?? '').toString().trim().isNotEmpty ||
-                      (row['name'] ?? '').toString().trim().isNotEmpty,
-                )
+                .where((row) {
+                  final name = (row['name'] ?? '').toString().trim();
+                  if (_isPseudoPopularDishName(name)) return false;
+                  return (row['imageBase64'] ?? '').toString().trim().isNotEmpty ||
+                      name.isNotEmpty;
+                })
                 .toList();
         final useSalesPopular =
             !widget.contentEditable && salesPopular.isNotEmpty;
@@ -2637,11 +2657,13 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                               break;
                             }
                           }
+                          final resolvedImage =
+                              image.isNotEmpty
+                                  ? image
+                                  : (menuMatch?.imageBase64 ?? '').trim();
                           return _popularDishCarouselTile(
                             imageB64:
-                                image.isNotEmpty
-                                    ? image
-                                    : menuMatch?.imageBase64,
+                                resolvedImage.isNotEmpty ? resolvedImage : null,
                             label: name.isNotEmpty ? name : 'Popular dish',
                             description:
                                 description.isNotEmpty
@@ -2664,23 +2686,38 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                           ].reduce(math.max),
                           (i) {
                           final label = _popularDishLabel(w, i);
+                          MenuDish? menuMatch;
+                          for (final d in MenuStore.instance.activeDishes) {
+                            if (d.name.trim().toLowerCase() ==
+                                label.trim().toLowerCase()) {
+                              menuMatch = d;
+                              break;
+                            }
+                          }
+                          final cmsImage =
+                              i < w.popularDishImageBase64.length
+                                  ? w.popularDishImageBase64[i].trim()
+                                  : '';
+                          final resolvedImage =
+                              cmsImage.isNotEmpty
+                                  ? cmsImage
+                                  : (menuMatch?.imageBase64 ?? '').trim();
                           final description =
-                              i < MenuStore.instance.activeDishes.length
-                                  ? MenuStore.instance
-                                      .activeDishes[i]
-                                      .publicDescription
-                                      .trim()
-                                  : null;
+                              menuMatch?.publicDescription.trim().isNotEmpty ==
+                                      true
+                                  ? menuMatch!.publicDescription.trim()
+                                  : (i < MenuStore.instance.activeDishes.length
+                                      ? MenuStore.instance
+                                          .activeDishes[i]
+                                          .publicDescription
+                                          .trim()
+                                      : '');
                           return _popularDishCarouselTile(
                             imageB64:
-                                i < w.popularDishImageBase64.length
-                                    ? w.popularDishImageBase64[i]
-                                    : null,
+                                resolvedImage.isNotEmpty ? resolvedImage : null,
                             label: label,
                             description:
-                                description != null && description.isNotEmpty
-                                    ? description
-                                    : null,
+                                description.isNotEmpty ? description : null,
                           );
                         })
                         : fallbackDishes.isNotEmpty

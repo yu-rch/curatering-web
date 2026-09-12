@@ -14,6 +14,7 @@ import '../utils/order_type_utils.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/antd_buttons.dart';
 import '../widgets/antd_staff.dart';
+import '../widgets/antd_tokens.dart';
 import '../widgets/paginated_data_table.dart';
 
 class _HistoryRow {
@@ -336,157 +337,116 @@ class _TransactionsState extends State<Transactions> {
             onPressed: _loadCompletedOrders,
           ),
         ],
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+        filters: AntdToolbar(
+          elevated: false,
+          padding: EdgeInsets.zero,
           children: [
-            Wrap(
-              spacing: 12,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                SizedBox(
-                  width: 220,
-                  child: DropdownButtonFormField<String>(
-                    key: ValueKey('service_$_serviceTypeFilter'),
-                    value: _serviceTypeFilter,
-                    decoration: const InputDecoration(
-                      labelText: 'Service type',
-                      isDense: true,
-                      border: OutlineInputBorder(),
-                    ),
-                    items: [
-                      const DropdownMenuItem(
-                        value: '',
-                        child: Text('All service types'),
-                      ),
-                      ...{for (final r in _allRows) r.serviceType.trim()}
-                          .where((t) => t.isNotEmpty)
-                          .map(
-                            (t) => DropdownMenuItem(value: t, child: Text(t)),
-                          ),
-                    ],
-                    onChanged:
-                        (v) => setState(() => _serviceTypeFilter = v ?? ''),
-                  ),
+            AntdSelect<String>(
+              label: 'Service type',
+              width: 200,
+              value: _serviceTypeFilter,
+              items: [
+                const DropdownMenuItem(
+                  value: '',
+                  child: Text('All service types'),
                 ),
-                SizedBox(
-                  width: 220,
-                  child: DropdownButtonFormField<String>(
-                    key: ValueKey('event_$_eventTypeFilter'),
-                    value: _eventTypeFilter,
-                    decoration: const InputDecoration(
-                      labelText: 'Event type',
-                      isDense: true,
-                      border: OutlineInputBorder(),
-                    ),
-                    items: [
-                      const DropdownMenuItem(
-                        value: '',
-                        child: Text('All event types'),
-                      ),
-                      ...{
-                        for (final r in _allRows)
-                          if (r.eventType.trim().isNotEmpty &&
-                              r.eventType != 'N/A' &&
-                              r.eventType != '—')
-                            r.eventType.trim(),
-                      }.map((t) => DropdownMenuItem(value: t, child: Text(t))),
-                    ],
-                    onChanged:
-                        (v) => setState(() => _eventTypeFilter = v ?? ''),
-                  ),
+                ...{for (final r in _allRows) r.serviceType.trim()}
+                    .where((t) => t.isNotEmpty)
+                    .map((t) => DropdownMenuItem(value: t, child: Text(t))),
+              ],
+              onChanged: (v) => setState(() => _serviceTypeFilter = v ?? ''),
+            ),
+            AntdSelect<String>(
+              label: 'Event type',
+              width: 200,
+              value: _eventTypeFilter,
+              items: [
+                const DropdownMenuItem(
+                  value: '',
+                  child: Text('All event types'),
                 ),
-                SizedBox(
-                  width: 150,
-                  child: DropdownButtonFormField<int?>(
-                    key: ValueKey('year_$_completionYearFilter'),
-                    value: _completionYearFilter,
-                    decoration: const InputDecoration(
-                      labelText: 'Completion year',
-                      isDense: true,
-                      border: OutlineInputBorder(),
-                    ),
-                    items: [
-                      const DropdownMenuItem<int?>(
-                        value: null,
-                        child: Text('All years'),
-                      ),
-                      ...completionYears.map(
-                        (y) =>
-                            DropdownMenuItem<int?>(value: y, child: Text('$y')),
-                      ),
-                    ],
-                    onChanged:
-                        (v) => setState(() {
-                          _completionYearFilter = v;
-                          _completionMonthFilter = null;
-                          _completionDayFilter = null;
-                        }),
-                  ),
+                ...{
+                  for (final r in _allRows)
+                    if (r.eventType.trim().isNotEmpty &&
+                        r.eventType != 'N/A' &&
+                        r.eventType != '—')
+                      r.eventType.trim(),
+                }.map((t) => DropdownMenuItem(value: t, child: Text(t))),
+              ],
+              onChanged: (v) => setState(() => _eventTypeFilter = v ?? ''),
+            ),
+            AntdSelect<int?>(
+              label: 'Completion year',
+              width: 160,
+              value: _completionYearFilter,
+              items: [
+                const DropdownMenuItem<int?>(
+                  value: null,
+                  child: Text('All years'),
                 ),
-                SizedBox(
-                  width: 150,
-                  child: DropdownButtonFormField<int?>(
-                    key: ValueKey('month_$_completionMonthFilter'),
-                    value: _completionMonthFilter,
-                    decoration: const InputDecoration(
-                      labelText: 'Completion month',
-                      isDense: true,
-                      border: OutlineInputBorder(),
-                    ),
-                    items: [
-                      const DropdownMenuItem<int?>(
-                        value: null,
-                        child: Text('All months'),
-                      ),
-                      ...completionMonths.map(
-                        (m) => DropdownMenuItem<int?>(
-                          value: m,
-                          child: Text(m.toString().padLeft(2, '0')),
-                        ),
-                      ),
-                    ],
-                    onChanged:
-                        (v) => setState(() {
-                          _completionMonthFilter = v;
-                          _completionDayFilter = null;
-                        }),
-                  ),
+                ...completionYears.map(
+                  (y) => DropdownMenuItem<int?>(value: y, child: Text('$y')),
                 ),
-                SizedBox(
-                  width: 140,
-                  child: DropdownButtonFormField<int?>(
-                    key: ValueKey('day_$_completionDayFilter'),
-                    value: _completionDayFilter,
-                    decoration: const InputDecoration(
-                      labelText: 'Completion day',
-                      isDense: true,
-                      border: OutlineInputBorder(),
-                    ),
-                    items: [
-                      const DropdownMenuItem<int?>(
-                        value: null,
-                        child: Text('All days'),
-                      ),
-                      ...completionDays.map(
-                        (d) => DropdownMenuItem<int?>(
-                          value: d,
-                          child: Text(d.toString().padLeft(2, '0')),
-                        ),
-                      ),
-                    ],
-                    onChanged: (v) => setState(() => _completionDayFilter = v),
+              ],
+              onChanged:
+                  (v) => setState(() {
+                    _completionYearFilter = v;
+                    _completionMonthFilter = null;
+                    _completionDayFilter = null;
+                  }),
+            ),
+            AntdSelect<int?>(
+              label: 'Completion month',
+              width: 160,
+              value: _completionMonthFilter,
+              items: [
+                const DropdownMenuItem<int?>(
+                  value: null,
+                  child: Text('All months'),
+                ),
+                ...completionMonths.map(
+                  (m) => DropdownMenuItem<int?>(
+                    value: m,
+                    child: Text(m.toString().padLeft(2, '0')),
                   ),
                 ),
               ],
+              onChanged:
+                  (v) => setState(() {
+                    _completionMonthFilter = v;
+                    _completionDayFilter = null;
+                  }),
             ),
-            const SizedBox(height: 16),
+            AntdSelect<int?>(
+              label: 'Completion day',
+              width: 150,
+              value: _completionDayFilter,
+              items: [
+                const DropdownMenuItem<int?>(
+                  value: null,
+                  child: Text('All days'),
+                ),
+                ...completionDays.map(
+                  (d) => DropdownMenuItem<int?>(
+                    value: d,
+                    child: Text(d.toString().padLeft(2, '0')),
+                  ),
+                ),
+              ],
+              onChanged: (v) => setState(() => _completionDayFilter = v),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
             Expanded(
               child: Card(
                 elevation: 0,
+                color: AntdTokens.cardBg,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
-                  side: BorderSide(color: Colors.black.withValues(alpha: 0.08)),
+                  side: BorderSide(color: AntdTokens.borderSubtle),
                 ),
                 child: Padding(
                   padding: const EdgeInsets.all(16),
@@ -517,7 +477,7 @@ class _TransactionsState extends State<Transactions> {
                                     Text(
                                       _errorMessage!,
                                       style: TextStyle(
-                                        color: Colors.grey.shade600,
+                                        color: AntdTokens.textSecondary,
                                       ),
                                     ),
                                     const SizedBox(height: 12),
@@ -531,7 +491,7 @@ class _TransactionsState extends State<Transactions> {
                                 : Text(
                                   'No orders match the selected filters.',
                                   style: TextStyle(
-                                    color: Colors.grey.shade600,
+                                    color: AntdTokens.textSecondary,
                                   ),
                                 ),
                           ),

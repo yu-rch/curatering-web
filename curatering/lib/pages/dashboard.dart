@@ -11,6 +11,7 @@ import '../utils/print_tabular_report.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/antd_buttons.dart';
 import '../widgets/antd_dialog.dart';
+import '../widgets/antd_staff.dart';
 import '../widgets/antd_tokens.dart';
 
 class Dashboard extends StatefulWidget {
@@ -327,10 +328,9 @@ class _DashboardState extends State<Dashboard> {
   }
 
   Widget _filterBar() {
-    return Wrap(
-      spacing: 12,
-      runSpacing: 12,
-      crossAxisAlignment: WrapCrossAlignment.center,
+    return AntdToolbar(
+      elevated: false,
+      padding: EdgeInsets.zero,
       children: [
         _filterDropdown(
           value: _range,
@@ -387,23 +387,17 @@ class _DashboardState extends State<Dashboard> {
     required Map<String, String> items,
     required ValueChanged<String> onChanged,
   }) {
-    return SizedBox(
+    return AntdSelect<String>(
       width: 190,
-      child: DropdownButtonFormField<String>(
-        value: value,
-        decoration: InputDecoration(
-          labelText: label,
-          isDense: true,
-          border: const OutlineInputBorder(),
-        ),
-        items: [
-          for (final entry in items.entries)
-            DropdownMenuItem(value: entry.key, child: Text(entry.value)),
-        ],
-        onChanged: (v) {
-          if (v != null) onChanged(v);
-        },
-      ),
+      label: label,
+      value: value,
+      items: [
+        for (final entry in items.entries)
+          DropdownMenuItem(value: entry.key, child: Text(entry.value)),
+      ],
+      onChanged: (v) {
+        if (v != null) onChanged(v);
+      },
     );
   }
 
@@ -466,7 +460,7 @@ class _DashboardState extends State<Dashboard> {
                         child: Text(
                           title,
                           style: TextStyle(
-                            color: Colors.grey.shade700,
+                            color: AntdTokens.textSecondary,
                             fontWeight: FontWeight.w600,
                             fontSize: 12,
                           ),

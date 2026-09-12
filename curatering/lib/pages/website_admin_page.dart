@@ -2393,6 +2393,7 @@ class _RevisionsPanelState extends State<_RevisionsPanel> {
         enableSearch: false,
         enableCsv: false,
         enablePrint: false,
+        fullWidth: true,
         columns: const [
           DataColumn(label: Text('When')),
           DataColumn(label: Text('Note')),

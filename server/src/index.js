@@ -8418,7 +8418,7 @@ app.post("/api/online-inquiries", async (req, res) => {
            estimated_total, theme_design, note)
         VALUES
           ('online_inquiry', 'online_inquiries', 'catering', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-           $11, $12, $13, $14, $15, $16, $17::jsonb, $18::jsonb, $19, $20, $21, $22, $23, $24::jsonb, $25)
+           $11, $12, $13, $14, $15, $16, $17, $18::jsonb, $19::jsonb, $20, $21, $22, $23, $24::jsonb, $25)
          RETURNING id, catering_id;`,
         [
           cateringId,
@@ -8508,8 +8508,12 @@ app.post("/api/online-inquiries", async (req, res) => {
 
     return res.json({ ok: true, id: result.rows[0].id, cateringId: result.rows[0].catering_id });
   } catch (e) {
-    console.error(e);
-    return res.status(500).json({ message: "Failed to create online inquiry" });
+    console.error("online-inquiries", e);
+    const detail = String(e?.message || e || "").slice(0, 240);
+    return res.status(500).json({
+      message: "Failed to create online inquiry",
+      ...(detail ? { detail } : {}),
+    });
   }
 });
 
@@ -10083,14 +10087,29 @@ async function registerRoutesAfterDbInit() {
         // Full base64 payloads were ~500KB+ on the homepage cold path.
         // Cap count/size for marketing cards; gallery may request a bit more.
         const maxDesigns = lite ? 8 : forGallery ? 8 : 4;
-        const maxImageChars = forGallery ? 100000 : 48000;
+        // Popular dish photos in menu_dishes are typically 70KB–300KB base64.
+        // Cap high enough that homepage cards get real images; lite still omits.
+        const maxImageChars = forGallery ? 350000 : 400000;
         const dishCounts = {};
+        const isPseudoPopularDishName = (name) => {
+          const n = String(name || '').trim().toLowerCase();
+          if (!n) return true;
+          return (
+            n.includes('suggest me a menu') ||
+            n.includes('suggest a menu') ||
+            n.includes('customer will confirm menu') ||
+            n === 'tba' ||
+            n === 'tbd'
+          );
+        };
         const pushMenuItem = (item, qtyFallback = 1) => {
           const name = String(
             item?.dishName || item?.dish_name || item?.name || '',
           )
             .trim();
-          if (!name) return;
+          if (!name || isPseudoPopularDishName(name)) return;
+          const kind = String(item?.kind || '').trim().toLowerCase();
+          if (kind === 'suggest') return;
           const qty = Math.max(
             1,
             Number(item?.quantity ?? item?.qty ?? item?.paxCount ?? qtyFallback) ||

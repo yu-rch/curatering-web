@@ -6,6 +6,8 @@ import 'package:image_picker/image_picker.dart';
 
 import '../widgets/app_scaffold.dart';
 import '../widgets/antd_staff.dart';
+import '../widgets/antd_buttons.dart';
+import '../widgets/antd_tokens.dart';
 import '../widgets/paginated_data_table.dart';
 import '../models/menu_dish.dart';
 import '../constants/catering_meal_types.dart';
@@ -1693,13 +1695,13 @@ class _MenuState extends State<Menu> {
             Icon(
               isGrid ? Icons.grid_view : Icons.table_view,
               size: 16,
-              color: isSelected ? Colors.black : Colors.grey.shade600,
+              color: isSelected ? Colors.black : AntdTokens.textSecondary,
             ),
             const SizedBox(width: 4),
             Text(
               label,
               style: TextStyle(
-                color: isSelected ? Colors.black : Colors.grey.shade600,
+                color: isSelected ? Colors.black : AntdTokens.textSecondary,
                 fontSize: 12,
                 fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
               ),
@@ -1726,10 +1728,10 @@ class _MenuState extends State<Menu> {
           height: 36,
           margin: const EdgeInsets.symmetric(horizontal: 1),
           decoration: BoxDecoration(
-            color: selected ? const Color(0xFFFFC024) : Colors.white,
+            color: selected ? const Color(0xFFFFC024) : AntdTokens.cardBg,
             borderRadius: BorderRadius.circular(18),
             border: Border.all(
-              color: selected ? const Color(0xFFFFC024) : Colors.grey.shade300,
+              color: selected ? const Color(0xFFFFC024) : AntdTokens.border,
               width: 1,
             ),
             boxShadow: [
@@ -1757,7 +1759,7 @@ class _MenuState extends State<Menu> {
                 color:
                     selected
                         ? const Color(0xFF1E1E1E)
-                        : Colors.grey.shade700,
+                        : AntdTokens.textSecondary,
               ),
             ),
           ),
@@ -1775,7 +1777,7 @@ class _MenuState extends State<Menu> {
       return Center(
         child: Text(
           'No dishes available.',
-          style: TextStyle(color: Colors.grey.shade600),
+          style: TextStyle(color: AntdTokens.textSecondary),
         ),
       );
     }
@@ -1796,7 +1798,7 @@ class _MenuState extends State<Menu> {
       return Center(
         child: Text(
           'No dishes available.',
-          style: TextStyle(color: Colors.grey.shade600),
+          style: TextStyle(color: AntdTokens.textSecondary),
         ),
       );
     }
@@ -1829,66 +1831,81 @@ class _MenuState extends State<Menu> {
               return DataRow(
                 cells: [
                   DataCell(
-                    Row(
-                      children: [
-                        if (dish.imageBase64 != null &&
-                            dish.imageBase64!.isNotEmpty)
-                          Container(
-                            width: 40,
-                            height: 40,
-                            margin: const EdgeInsets.only(right: 8),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(4),
-                              color: Colors.grey.shade200,
-                            ),
-                            clipBehavior: Clip.antiAlias,
-                            child: CachedBase64Image(
-                              base64String: dish.imageBase64,
-                              fit: BoxFit.cover,
-                              placeholder: Container(
-                                color: Colors.grey.shade200,
-                                child: const Icon(
-                                  Icons.fastfood,
-                                  color: Colors.grey,
-                                  size: 20,
+                    SizedBox(
+                      width: 260,
+                      child: Row(
+                        children: [
+                          if (dish.imageBase64 != null &&
+                              dish.imageBase64!.isNotEmpty)
+                            Container(
+                              width: 40,
+                              height: 40,
+                              margin: const EdgeInsets.only(right: 8),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(4),
+                                color: AntdTokens.fillTertiary,
+                              ),
+                              clipBehavior: Clip.antiAlias,
+                              child: CachedBase64Image(
+                                base64String: dish.imageBase64,
+                                fit: BoxFit.cover,
+                                placeholder: Container(
+                                  color: AntdTokens.fillTertiary,
+                                  child: const Icon(
+                                    Icons.fastfood,
+                                    color: Colors.grey,
+                                    size: 20,
+                                  ),
                                 ),
                               ),
                             ),
+                          Expanded(
+                            child: Text(
+                              dish.name,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontWeight: FontWeight.w500),
+                            ),
                           ),
-                        Expanded(
-                          child: Text(
-                            dish.name,
-                            style: const TextStyle(fontWeight: FontWeight.w500),
-                          ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                   DataCell(Text('PHP${dish.price}')),
                   if (!isCatering)
                     DataCell(
-                      Wrap(
-                        spacing: 4,
-                        children:
-                            dish.paxOptions.map((pax) {
-                              return Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
-                                  color:
-                                      pax == '1 pax'
-                                          ? const Color(0xFFFFC107)
-                                          : Colors.grey.shade200,
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(
-                                  pax,
-                                  style: const TextStyle(fontSize: 10),
-                                ),
-                              );
-                            }).toList(),
+                      SizedBox(
+                        width: 140,
+                        child: Wrap(
+                          spacing: 4,
+                          runSpacing: 4,
+                          children:
+                              dish.paxOptions.map((pax) {
+                                return Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color:
+                                        pax == '1 pax'
+                                            ? const Color(0xFFFFC107)
+                                            : AntdTokens.fillTertiary,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    pax,
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color:
+                                          pax == '1 pax'
+                                              ? const Color(0xFF1E1E1E)
+                                              : AntdTokens.valueDark,
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                        ),
                       ),
                     ),
                   if (!isCatering)
@@ -2037,7 +2054,8 @@ class _MenuState extends State<Menu> {
         mealTypeValues.contains(_mealTypeFilter) ? _mealTypeFilter : 'all';
 
     return AntdToolbar(
-      padding: const EdgeInsets.all(10),
+      elevated: false,
+      padding: EdgeInsets.zero,
       children: [
         AntdSearchInput(
           controller: _searchController,
@@ -2112,11 +2130,27 @@ class _MenuState extends State<Menu> {
           onChanged:
               (value) => setState(() => _mealTypeFilter = value ?? 'all'),
         ),
+        if (_ingredientFilter != 'all' ||
+            _allergenFilter != 'all' ||
+            _mealTypeFilter != 'all' ||
+            _searchController.text.trim().isNotEmpty)
+          AntdSecondaryButton(
+            onPressed: () => setState(() {
+              _ingredientFilter = 'all';
+              _allergenFilter = 'all';
+              _mealTypeFilter = 'all';
+              _searchController.clear();
+            }),
+            icon: Icons.filter_alt_off,
+            label: 'Clear',
+          ),
+      ],
+      trailing: [
         if (showViewToggle)
           Container(
             padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
-              color: Colors.grey.shade100,
+              color: AntdTokens.fillTertiary,
               borderRadius: BorderRadius.circular(10),
             ),
             child: Row(
@@ -2156,21 +2190,6 @@ class _MenuState extends State<Menu> {
             ),
           ),
         ),
-        if (_ingredientFilter != 'all' ||
-            _allergenFilter != 'all' ||
-            _mealTypeFilter != 'all' ||
-            _searchController.text.trim().isNotEmpty)
-          TextButton.icon(
-            onPressed:
-                () => setState(() {
-                  _ingredientFilter = 'all';
-                  _allergenFilter = 'all';
-                  _mealTypeFilter = 'all';
-                  _searchController.clear();
-                }),
-            icon: const Icon(Icons.filter_alt_off, size: 18),
-            label: const Text('Clear'),
-          ),
       ],
     );
   }
@@ -2185,21 +2204,15 @@ class _MenuState extends State<Menu> {
 
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: _buildMenuToolbar(
-            category: 'catering',
-            isGridView: _isGridView,
-            onViewChanged: (value) => setState(() => _isGridView = value),
-            onAddDish: () => _openDishDialog(category: 'catering'),
-            searchHint: 'Search catering dishes',
-            showBulkPrice: true,
-          ),
-        ),
         Expanded(
           child:
               cateringDishes.isEmpty
-                  ? const Center(child: Text('No catering dishes available'))
+                  ? Center(
+                    child: Text(
+                      'No catering dishes available',
+                      style: TextStyle(color: AntdTokens.textSecondary),
+                    ),
+                  )
                   : _isGridView
                   ? _buildMenuGrid(cateringDishes)
                   : _buildMenuTable(cateringDishes),
@@ -2218,24 +2231,13 @@ class _MenuState extends State<Menu> {
 
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: _buildMenuToolbar(
-            category: 'restaurant',
-            isGridView: _isRestaurantGridView,
-            onViewChanged:
-                (value) => setState(() => _isRestaurantGridView = value),
-            onAddDish: () => _openDishDialog(category: 'restaurant'),
-            searchHint: 'Search restaurant dishes',
-          ),
-        ),
         Expanded(
           child:
               restaurantDishes.isEmpty
                   ? Center(
                     child: Text(
                       'No restaurant dishes',
-                      style: TextStyle(color: Colors.grey.shade600),
+                      style: TextStyle(color: AntdTokens.textSecondary),
                     ),
                   )
                   : _isRestaurantGridView
@@ -2370,396 +2372,336 @@ class _MenuState extends State<Menu> {
                 .name
             : null;
 
-    return Column(
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: _buildMenuToolbar(
-            category: 'catering',
-            isGridView: true,
-            onViewChanged: (_) {},
-            onAddDish: () => _openDishDialog(category: 'catering'),
-            searchHint: 'Search set menu dishes',
-            showViewToggle: false,
+        Expanded(
+          child: _setMenuColumn(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AntdTokens.brandPrimary.withValues(alpha: 0.22),
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(12),
+                      topRight: Radius.circular(12),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.add_circle_outline,
+                        size: 18,
+                        color: AntdTokens.valueDark,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'NEW MENU',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: AntdTokens.valueDark,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    children: [
+                      Text(
+                        'Menu Set Name',
+                        style: TextStyle(color: AntdTokens.textSecondary),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: _setMenuNameController,
+                          style: TextStyle(color: AntdTokens.valueDark),
+                          decoration: InputDecoration(
+                            hintText: 'Set Name',
+                            hintStyle: TextStyle(color: AntdTokens.labelMuted),
+                            filled: true,
+                            fillColor: AntdTokens.fillTertiary,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide(color: AntdTokens.border),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide(color: AntdTokens.border),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (_setMenuError != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AntdTokens.error.withValues(alpha: 0.16),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: AntdTokens.error.withValues(alpha: 0.45),
+                        ),
+                      ),
+                      child: Text(
+                        _setMenuError!,
+                        style: TextStyle(
+                          color: AntdTokens.error,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                Expanded(
+                  child:
+                      _selectedSetDishIds.isEmpty
+                          ? Center(
+                            child: Text(
+                              'add dishes here for your new menu',
+                              style: TextStyle(
+                                color: AntdTokens.labelMuted,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          )
+                          : ListView.builder(
+                            padding: const EdgeInsets.all(12),
+                            itemCount: _selectedSetDishIds.length,
+                            itemBuilder: (context, index) {
+                              final dishId = _selectedSetDishIds[index];
+                              final dish = cateringDishes.firstWhere(
+                                (d) => d.id == dishId,
+                                orElse:
+                                    () => MenuDish(
+                                      id: dishId,
+                                      name: 'Unknown',
+                                      price: '0',
+                                      paxOptions: const [],
+                                    ),
+                              );
+                              return _buildSetMenuDishCard(
+                                dish,
+                                isInSet: true,
+                                onRemove: () => _removeDishFromSet(dish.id),
+                              );
+                            },
+                          ),
+                ),
+                if (_selectedSetDishIds.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: _isSavingSetMenu ? null : _saveSetMenu,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF1DB954),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                        child: Text(
+                          _isSavingSetMenu
+                              ? 'Saving...'
+                              : _selectedSetMenuId == null
+                              ? 'Create Set Menu'
+                              : 'Update Set Menu',
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
-        // Three-column layout
+        const SizedBox(width: 12),
         Expanded(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Left column: NEW MENU
-              Expanded(
-                flex: 1,
-                child: Container(
-                  margin: const EdgeInsets.only(left: 16, right: 8, bottom: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    border: Border.all(
-                      color: Colors.black.withValues(alpha: 0.08),
+          child: _setMenuColumn(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Text(
+                    'Choose from existing set menus',
+                    style: TextStyle(
+                      color: AntdTokens.textSecondary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
                     ),
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.03),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // NEW MENU header
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFFF3D0),
-                          borderRadius: const BorderRadius.only(
-                            topLeft: Radius.circular(12),
-                            topRight: Radius.circular(12),
-                          ),
-                        ),
-                        child: const Row(
-                          children: [
-                            Icon(Icons.add_circle_outline, size: 18),
-                            SizedBox(width: 8),
-                            Text(
-                              'NEW MENU',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                          ],
-                        ),
-                      ),
-                      // Menu Set Name input
-                      Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Row(
-                          children: [
-                            const Text('Menu Set Name'),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: TextField(
-                                controller: _setMenuNameController,
-                                decoration: InputDecoration(
-                                  hintText: 'Set Name',
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 8,
-                                  ),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(10),
-                                    borderSide: BorderSide(
-                                      color: Colors.grey.shade300,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      if (_setMenuError != null)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                          child: Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: Colors.red.shade50,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.red.shade200),
-                            ),
-                            child: Text(
-                              _setMenuError!,
-                              style: TextStyle(
-                                color: Colors.red.shade800,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ),
-                      // Dishes in new menu
-                      Expanded(
-                        child:
-                            _selectedSetDishIds.isEmpty
-                                ? Center(
-                                  child: Text(
-                                    'add dishes here for your new menu',
-                                    style: TextStyle(
-                                      color: Colors.grey.shade400,
-                                      fontStyle: FontStyle.italic,
-                                    ),
-                                  ),
-                                )
-                                : ListView.builder(
-                                  padding: const EdgeInsets.all(12),
-                                  itemCount: _selectedSetDishIds.length,
-                                  itemBuilder: (context, index) {
-                                    final dishId = _selectedSetDishIds[index];
-                                    final dish = cateringDishes.firstWhere(
-                                      (d) => d.id == dishId,
-                                      orElse:
-                                          () => MenuDish(
-                                            id: dishId,
-                                            name: 'Unknown',
-                                            price: '0',
-                                            paxOptions: const [],
-                                          ),
-                                    );
-                                    return _buildSetMenuDishCard(
-                                      dish,
-                                      isInSet: true,
-                                      onRemove:
-                                          () => _removeDishFromSet(dish.id),
-                                    );
-                                  },
-                                ),
-                      ),
-                      // Save button
-                      if (_selectedSetDishIds.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton(
-                              onPressed: _isSavingSetMenu ? null : _saveSetMenu,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF1DB954),
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 12,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                              ),
-                              child: Text(
-                                _isSavingSetMenu
-                                    ? 'Saving...'
-                                    : _selectedSetMenuId == null
-                                    ? 'Create Set Menu'
-                                    : 'Update Set Menu',
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
                   ),
                 ),
-              ),
-              // Middle column: Choose from existing set menus
-              Expanded(
-                flex: 1,
-                child: Container(
-                  margin: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 0,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    border: Border.all(
-                      color: Colors.black.withValues(alpha: 0.08),
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.03),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Row(
                     children: [
-                      // Header
-                      Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Text(
-                          'Choose from existing set menus',
-                          style: TextStyle(
-                            color: Colors.grey.shade600,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                      // Set menu selector row
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                ),
-                                decoration: BoxDecoration(
-                                  border: Border.all(
-                                    color: Colors.grey.shade300,
-                                  ),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: DropdownButtonHideUnderline(
-                                  child: DropdownButton<String>(
-                                    isExpanded: true,
-                                    value: _selectedSetMenuId,
-                                    hint: const Text('Select set menu'),
-                                    items:
-                                        setMenus.map((setMenu) {
-                                          return DropdownMenuItem(
-                                            value: setMenu.id,
-                                            child: Text(setMenu.name),
-                                          );
-                                        }).toList(),
-                                    onChanged: (value) {
-                                      if (value != null) {
-                                        final setMenu = setMenus.firstWhere(
-                                          (s) => s.id == value,
-                                        );
-                                        _viewSetMenu(setMenu);
-                                      }
-                                    },
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            ElevatedButton(
-                              onPressed:
-                                  _selectedSetMenuId != null
-                                      ? () => _loadSetMenuForEditing(
-                                        _selectedSetMenuId!,
-                                      )
-                                      : null,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFFF4511E),
-                                foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                              ),
-                              child: const Text('modify this set'),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      // Dishes in selected set
                       Expanded(
-                        child:
-                            selectedSetName == null
-                                ? Center(
-                                  child: Text(
-                                    'select set menu to modify',
-                                    style: TextStyle(
-                                      color: Colors.grey.shade400,
-                                      fontStyle: FontStyle.italic,
+                        child: AntdSelect<String>(
+                          width: null,
+                          value: _selectedSetMenuId,
+                          hint: 'Select set menu',
+                          items:
+                              setMenus
+                                  .map(
+                                    (setMenu) => DropdownMenuItem(
+                                      value: setMenu.id,
+                                      child: Text(
+                                        setMenu.name,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
                                     ),
-                                  ),
-                                )
-                                : selectedSetDishes.isEmpty
-                                ? Center(
-                                  child: Text(
-                                    'No dishes in this set menu',
-                                    style: TextStyle(
-                                      color: Colors.grey.shade400,
-                                    ),
-                                  ),
-                                )
-                                : ListView.builder(
-                                  padding: const EdgeInsets.all(12),
-                                  itemCount: selectedSetDishes.length,
-                                  itemBuilder: (context, index) {
-                                    final dish = selectedSetDishes[index];
-                                    final isInCurrentSelection =
-                                        _selectedSetDishIds.contains(dish.id);
-                                    return _buildSetMenuDishCard(
-                                      dish,
-                                      isInSet: isModifyingSelectedSet
-                                          ? isInCurrentSelection
-                                          : true,
-                                      onAddToMenu:
-                                          isModifyingSelectedSet &&
-                                                  !isInCurrentSelection
-                                              ? () =>
-                                                  _addDishToCurrentSet(dish.id)
-                                              : null,
-                                      onRemove: null,
-                                    );
-                                  },
-                                ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              // Right column: Select from all dishes
-              Expanded(
-                flex: 1,
-                child: Container(
-                  margin: const EdgeInsets.only(left: 8, right: 16, bottom: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    border: Border.all(
-                      color: Colors.black.withValues(alpha: 0.08),
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.03),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Header
-                      Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Text(
-                          'select from all dishes',
-                          style: TextStyle(
-                            color: Colors.grey.shade600,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                      // All catering dishes (selected set dishes sorted first)
-                      Expanded(
-                        child: ListView.builder(
-                          padding: const EdgeInsets.all(12),
-                          itemCount: sortedCateringDishes.length,
-                          itemBuilder: (context, index) {
-                            final dish = sortedCateringDishes[index];
-                            final isInCurrentSelection = _selectedSetDishIds
-                                .contains(dish.id);
-                            return _buildSetMenuDishCard(
-                              dish,
-                              isInSet: isInCurrentSelection,
-                              onAddToMenu:
-                                  isInCurrentSelection
-                                      ? null
-                                      : () => _addDishToCurrentSet(dish.id),
-                              onRemove:
-                                  isInCurrentSelection
-                                      ? () => _removeDishFromSet(dish.id)
-                                      : null,
+                                  )
+                                  .toList(),
+                          onChanged: (value) {
+                            if (value == null) return;
+                            final setMenu = setMenus.firstWhere(
+                              (s) => s.id == value,
                             );
+                            _viewSetMenu(setMenu);
                           },
                         ),
                       ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        onPressed:
+                            _selectedSetMenuId != null
+                                ? () =>
+                                    _loadSetMenuForEditing(_selectedSetMenuId!)
+                                : null,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFF4511E),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                        child: const Text('modify this set'),
+                      ),
                     ],
                   ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 12),
+                Expanded(
+                  child:
+                      selectedSetName == null
+                          ? Center(
+                            child: Text(
+                              'select set menu to modify',
+                              style: TextStyle(
+                                color: AntdTokens.labelMuted,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          )
+                          : selectedSetDishes.isEmpty
+                          ? Center(
+                            child: Text(
+                              'No dishes in this set menu',
+                              style: TextStyle(color: AntdTokens.labelMuted),
+                            ),
+                          )
+                          : ListView.builder(
+                            padding: const EdgeInsets.all(12),
+                            itemCount: selectedSetDishes.length,
+                            itemBuilder: (context, index) {
+                              final dish = selectedSetDishes[index];
+                              final isInCurrentSelection = _selectedSetDishIds
+                                  .contains(dish.id);
+                              return _buildSetMenuDishCard(
+                                dish,
+                                isInSet:
+                                    isModifyingSelectedSet
+                                        ? isInCurrentSelection
+                                        : true,
+                                onAddToMenu:
+                                    isModifyingSelectedSet &&
+                                            !isInCurrentSelection
+                                        ? () => _addDishToCurrentSet(dish.id)
+                                        : null,
+                                onRemove: null,
+                              );
+                            },
+                          ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _setMenuColumn(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Text(
+                    'select from all dishes',
+                    style: TextStyle(
+                      color: AntdTokens.textSecondary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: ListView.builder(
+                    padding: const EdgeInsets.all(12),
+                    itemCount: sortedCateringDishes.length,
+                    itemBuilder: (context, index) {
+                      final dish = sortedCateringDishes[index];
+                      final isInCurrentSelection = _selectedSetDishIds.contains(
+                        dish.id,
+                      );
+                      return _buildSetMenuDishCard(
+                        dish,
+                        isInSet: isInCurrentSelection,
+                        onAddToMenu:
+                            isInCurrentSelection
+                                ? null
+                                : () => _addDishToCurrentSet(dish.id),
+                        onRemove:
+                            isInCurrentSelection
+                                ? () => _removeDishFromSet(dish.id)
+                                : null,
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _setMenuColumn({required Widget child}) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AntdTokens.cardBg,
+        border: Border.all(color: AntdTokens.borderSubtle),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: child,
     );
   }
 
@@ -2806,9 +2748,10 @@ class _MenuState extends State<Menu> {
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       elevation: 0,
+      color: AntdTokens.fillTertiary,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Colors.grey.shade300),
+        side: BorderSide(color: AntdTokens.borderSubtle),
       ),
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -2817,21 +2760,23 @@ class _MenuState extends State<Menu> {
           children: [
             Row(
               children: [
-                // Dish image
                 Container(
                   width: 80,
                   height: 60,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(4),
-                    color: Colors.grey.shade200,
+                    color: AntdTokens.cardBg,
                   ),
                   clipBehavior: Clip.antiAlias,
                   child: CachedBase64Image(
                     base64String: dish.imageBase64,
                     fit: BoxFit.cover,
                     placeholder: Container(
-                      color: Colors.grey.shade200,
-                      child: const Icon(Icons.fastfood, color: Colors.grey),
+                      color: AntdTokens.cardBg,
+                      child: Icon(
+                        Icons.fastfood,
+                        color: AntdTokens.labelMuted,
+                      ),
                     ),
                   ),
                 ),
@@ -2843,9 +2788,12 @@ class _MenuState extends State<Menu> {
                     children: [
                       Text(
                         dish.name,
-                        style: const TextStyle(
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 14,
+                          color: AntdTokens.valueDark,
                         ),
                       ),
                     ],
@@ -2943,42 +2891,84 @@ class _MenuState extends State<Menu> {
 
         return AppScaffold(
           child: Container(
-            color: const Color(0xFFF7F8FA),
-            padding: const EdgeInsets.all(16),
+            color: AntdTokens.pageBg,
             child: Column(
               children: [
-                // Tab buttons
-                Container(
-                  padding: const EdgeInsets.all(3),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade100,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    children: [
-                      _buildTabButton('CATERING', 0),
-                      const SizedBox(width: 2),
-                      _buildTabButton('RESTAURANT', 1),
-                      const SizedBox(width: 2),
-                      _buildTabButton('SET MENUS', 2),
-                    ],
+                Material(
+                  color: AntdTokens.cardBg,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+                    child: Column(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(3),
+                          decoration: BoxDecoration(
+                            color: AntdTokens.fillTertiary,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Row(
+                            children: [
+                              _buildTabButton('CATERING', 0),
+                              const SizedBox(width: 2),
+                              _buildTabButton('RESTAURANT', 1),
+                              const SizedBox(width: 2),
+                              _buildTabButton('SET MENUS', 2),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildMenuToolbar(
+                          category:
+                              _activeTabIndex == 1 ? 'restaurant' : 'catering',
+                          isGridView:
+                              _activeTabIndex == 1
+                                  ? _isRestaurantGridView
+                                  : _isGridView,
+                          onViewChanged: (value) {
+                            setState(() {
+                              if (_activeTabIndex == 1) {
+                                _isRestaurantGridView = value;
+                              } else {
+                                _isGridView = value;
+                              }
+                            });
+                          },
+                          onAddDish:
+                              () => _openDishDialog(
+                                category:
+                                    _activeTabIndex == 1
+                                        ? 'restaurant'
+                                        : 'catering',
+                              ),
+                          searchHint:
+                              _activeTabIndex == 0
+                                  ? 'Search catering dishes'
+                                  : _activeTabIndex == 1
+                                  ? 'Search restaurant dishes'
+                                  : 'Search set menu dishes',
+                          showBulkPrice: _activeTabIndex == 0,
+                          showViewToggle: _activeTabIndex != 2,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-                const SizedBox(height: 6),
-                // Content based on active tab
                 Expanded(
-                  child:
-                      _activeTabIndex == 0
-                          ? _buildCateringTab()
-                          : _activeTabIndex == 1
-                          ? _buildRestaurantTab()
-                          : _buildSetMenuTab(
-                            MenuStore.instance.activeDishes
-                                .where((d) => d.category == 'catering')
-                                .where(_matchesSearch)
-                                .where(_matchesMenuFilters)
-                                .toList(),
-                          ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child:
+                        _activeTabIndex == 0
+                            ? _buildCateringTab()
+                            : _activeTabIndex == 1
+                            ? _buildRestaurantTab()
+                            : _buildSetMenuTab(
+                              MenuStore.instance.activeDishes
+                                  .where((d) => d.category == 'catering')
+                                  .where(_matchesSearch)
+                                  .where(_matchesMenuFilters)
+                                  .toList(),
+                            ),
+                  ),
                 ),
               ],
             ),

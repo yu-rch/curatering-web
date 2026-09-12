@@ -9,6 +9,8 @@ import '../utils/payment_proof_image.dart';
 import '../widgets/antd_dialog.dart';
 import '../widgets/antd_message.dart';
 import '../widgets/antd_buttons.dart';
+import '../widgets/antd_staff.dart';
+import '../widgets/antd_tokens.dart';
 
 class RestaurantTransactionsPage extends StatefulWidget {
   const RestaurantTransactionsPage({super.key});
@@ -574,149 +576,150 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: Colors.grey.shade50,
+      color: AntdTokens.pageBg,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Material(
-            color: Colors.white,
-            elevation: 1,
-            child: Row(
-              children: [
-                Expanded(
-                  child: TabBar(
-                    controller: _tabController,
-                    indicatorColor: const Color(0xFFFFC024),
-                    labelColor: const Color(0xFFFFC024),
-                    unselectedLabelColor: Colors.grey.shade600,
-                    labelStyle: const TextStyle(fontWeight: FontWeight.w600),
-                    tabs: [
-                      Tab(
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.pending_actions, size: 20),
-                            const SizedBox(width: 8),
-                            Text('Pending (${_confirmationOrders.length})'),
+            color: AntdTokens.cardBg,
+            elevation: 0,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TabBar(
+                          controller: _tabController,
+                          indicatorColor: const Color(0xFFFFC024),
+                          labelColor: const Color(0xFFFFC024),
+                          unselectedLabelColor: AntdTokens.textSecondary,
+                          labelStyle: const TextStyle(fontWeight: FontWeight.w600),
+                          tabs: [
+                            Tab(
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.pending_actions, size: 20),
+                                  const SizedBox(width: 8),
+                                  Text('Pending (${_confirmationOrders.length})'),
+                                ],
+                              ),
+                            ),
+                            Tab(
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.local_shipping, size: 20),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Processing (${_processingOrders.length})',
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Tab(
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.check_circle, size: 20),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Completed (${_completedOrders.length})',
+                                  ),
+                                ],
+                              ),
+                            ),
                           ],
                         ),
                       ),
-                      Tab(
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.local_shipping, size: 20),
-                            const SizedBox(width: 8),
-                            Text('Processing (${_processingOrders.length})'),
-                          ],
+                      IconButton(
+                        icon: Icon(
+                          Icons.refresh,
+                          color: AntdTokens.valueDark,
                         ),
-                      ),
-                      Tab(
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.check_circle, size: 20),
-                            const SizedBox(width: 8),
-                            Text('Completed (${_completedOrders.length})'),
-                          ],
-                        ),
+                        onPressed: _refreshOrders,
+                        tooltip: 'Refresh Orders',
                       ),
                     ],
                   ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.refresh),
-                  onPressed: _refreshOrders,
-                  tooltip: 'Refresh Orders',
-                ),
-                const SizedBox(width: 8),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 14, 20, 6),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  'Track confirmations, delivery progress, and completed orders.',
-                  style: TextStyle(color: Colors.grey.shade700),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
+                  const SizedBox(height: 10),
+                  Text(
+                    'Track confirmations, delivery progress, and completed orders.',
+                    style: TextStyle(color: AntdTokens.textSecondary),
+                  ),
+                  const SizedBox(height: 12),
+                  AntdToolbar(
+                    elevated: false,
+                    padding: EdgeInsets.zero,
+                    children: [
+                      AntdSearchInput(
                         controller: _searchCtrl,
-                        decoration: InputDecoration(
-                          hintText: 'Search order no, customer, phone, status',
-                          prefixIcon: const Icon(Icons.search),
-                          suffixIcon: _searchQuery.isEmpty
-                              ? null
-                              : IconButton(
-                                icon: const Icon(Icons.close),
-                                onPressed: () => setState(() {
-                                  _searchCtrl.clear();
-                                  _searchQuery = '';
-                                }),
-                              ),
-                          border: const OutlineInputBorder(),
-                          isDense: true,
-                        ),
+                        hintText: 'Search order no, customer, phone, status',
+                        width: 360,
                         onChanged: (v) =>
                             setState(() => _searchQuery = v.trim().toLowerCase()),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    DropdownButton<String>(
-                      value: _orderTypeFilter,
-                      items: const [
-                        DropdownMenuItem(value: 'all', child: Text('All types')),
-                        DropdownMenuItem(value: 'online', child: Text('Online')),
-                        DropdownMenuItem(value: 'walk_in', child: Text('Walk-in')),
-                      ],
-                      onChanged: (v) {
-                        if (v == null) return;
-                        setState(() => _orderTypeFilter = v);
-                      },
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    _managerDateChip(
-                      label: 'From',
-                      value: _dateFrom,
-                      onPick: () => _pickManagerDate(isFrom: true),
-                      onClear: () => setState(() => _dateFrom = null),
-                    ),
-                    _managerDateChip(
-                      label: 'To',
-                      value: _dateTo,
-                      onPick: () => _pickManagerDate(isFrom: false),
-                      onClear: () => setState(() => _dateTo = null),
-                    ),
-                    if (_dateFrom != null ||
-                        _dateTo != null ||
-                        _searchQuery.isNotEmpty ||
-                        _orderTypeFilter != 'all')
-                      TextButton(
-                        onPressed: () => setState(() {
-                          _dateFrom = null;
-                          _dateTo = null;
+                        onClear: () => setState(() {
                           _searchCtrl.clear();
                           _searchQuery = '';
-                          _orderTypeFilter = 'all';
                         }),
-                        child: const Text('Clear filters'),
                       ),
-                  ],
-                ),
-              ],
+                      AntdSelect<String>(
+                        label: 'Order type',
+                        width: 160,
+                        value: _orderTypeFilter,
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'all',
+                            child: Text('All types'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'online',
+                            child: Text('Online'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'walk_in',
+                            child: Text('Walk-in'),
+                          ),
+                        ],
+                        onChanged: (v) {
+                          if (v == null) return;
+                          setState(() => _orderTypeFilter = v);
+                        },
+                      ),
+                      _managerDateChip(
+                        label: 'From',
+                        value: _dateFrom,
+                        onPick: () => _pickManagerDate(isFrom: true),
+                        onClear: () => setState(() => _dateFrom = null),
+                      ),
+                      _managerDateChip(
+                        label: 'To',
+                        value: _dateTo,
+                        onPick: () => _pickManagerDate(isFrom: false),
+                        onClear: () => setState(() => _dateTo = null),
+                      ),
+                      if (_dateFrom != null ||
+                          _dateTo != null ||
+                          _searchQuery.isNotEmpty ||
+                          _orderTypeFilter != 'all')
+                        AntdSecondaryButton(
+                          label: 'Clear filters',
+                          icon: Icons.filter_alt_off,
+                          onPressed: () => setState(() {
+                            _dateFrom = null;
+                            _dateTo = null;
+                            _searchCtrl.clear();
+                            _searchQuery = '';
+                            _orderTypeFilter = 'all';
+                          }),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
           Expanded(
@@ -745,14 +748,14 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.inbox, size: 64, color: Colors.grey.shade400),
+            Icon(Icons.inbox, size: 64, color: AntdTokens.labelMuted),
             const SizedBox(height: 16),
             Text(
               _confirmationOrders.isEmpty
                   ? 'No orders awaiting payment confirmation'
                   : 'No pending orders match your filters',
               style: TextStyle(
-                color: Colors.grey.shade600,
+                color: AntdTokens.textSecondary,
                 fontSize: 16,
                 fontWeight: FontWeight.w500,
               ),
@@ -790,15 +793,9 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
           // Orders Table
           Container(
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: AntdTokens.cardBg,
               borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.grey.shade200,
-                  blurRadius: 4,
-                  offset: const Offset(0, 2),
-                ),
-              ],
+              border: Border.all(color: AntdTokens.borderSubtle),
             ),
             child: Column(
               children: [
@@ -806,7 +803,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade50,
+                    color: AntdTokens.tableHeaderBg,
                     borderRadius: const BorderRadius.only(
                       topLeft: Radius.circular(12),
                       topRight: Radius.circular(12),
@@ -847,14 +844,14 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.local_shipping, size: 64, color: Colors.grey.shade400),
+            Icon(Icons.local_shipping, size: 64, color: AntdTokens.labelMuted),
             const SizedBox(height: 16),
             Text(
               _processingOrders.isEmpty
                   ? 'No orders in processing'
                   : 'No processing orders match your filters',
               style: TextStyle(
-                color: Colors.grey.shade600,
+                color: AntdTokens.textSecondary,
                 fontSize: 16,
                 fontWeight: FontWeight.w500,
               ),
@@ -892,15 +889,9 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
           // Orders Table
           Container(
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: AntdTokens.cardBg,
               borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.grey.shade200,
-                  blurRadius: 4,
-                  offset: const Offset(0, 2),
-                ),
-              ],
+              border: Border.all(color: AntdTokens.borderSubtle),
             ),
             child: Column(
               children: [
@@ -908,7 +899,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade50,
+                    color: AntdTokens.tableHeaderBg,
                     borderRadius: const BorderRadius.only(
                       topLeft: Radius.circular(12),
                       topRight: Radius.circular(12),
@@ -952,7 +943,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
             Icon(
               Icons.check_circle_outline,
               size: 64,
-              color: Colors.grey.shade400,
+              color: AntdTokens.labelMuted,
             ),
             const SizedBox(height: 16),
             Text(
@@ -960,7 +951,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                   ? 'No completed orders yet'
                   : 'No completed orders match your filters',
               style: TextStyle(
-                color: Colors.grey.shade600,
+                color: AntdTokens.textSecondary,
                 fontSize: 16,
                 fontWeight: FontWeight.w500,
               ),
@@ -1005,15 +996,9 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
           // Orders Table
           Container(
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: AntdTokens.cardBg,
               borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.grey.shade200,
-                  blurRadius: 4,
-                  offset: const Offset(0, 2),
-                ),
-              ],
+              border: Border.all(color: AntdTokens.borderSubtle),
             ),
             child: Column(
               children: [
@@ -1021,7 +1006,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade50,
+                    color: AntdTokens.tableHeaderBg,
                     borderRadius: const BorderRadius.only(
                       topLeft: Radius.circular(12),
                       topRight: Radius.circular(12),
@@ -1167,7 +1152,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
               2: FlexColumnWidth(1.2),
             },
             border: TableBorder(
-              horizontalInside: BorderSide(color: Colors.grey.shade200),
+              horizontalInside: BorderSide(color: AntdTokens.borderSubtle),
             ),
             children: [
               TableRow(
@@ -1178,7 +1163,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                       'Dish',
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
-                        color: Colors.grey.shade700,
+                        color: AntdTokens.textSecondary,
                       ),
                     ),
                   ),
@@ -1188,7 +1173,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                       'Qty',
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
-                        color: Colors.grey.shade700,
+                        color: AntdTokens.textSecondary,
                       ),
                     ),
                   ),
@@ -1199,7 +1184,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                       textAlign: TextAlign.end,
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
-                        color: Colors.grey.shade700,
+                        color: AntdTokens.textSecondary,
                       ),
                     ),
                   ),
@@ -1239,7 +1224,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                               desc,
                               style: TextStyle(
                                 fontSize: 12,
-                                color: Colors.grey.shade700,
+                                color: AntdTokens.textSecondary,
                               ),
                             ),
                         ],
@@ -1322,7 +1307,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
               Text(
                 title,
                 style: TextStyle(
-                  color: Colors.grey.shade600,
+                  color: AntdTokens.textSecondary,
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
                 ),
@@ -1347,7 +1332,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     return Text(
       text,
       style: TextStyle(
-        color: Colors.grey.shade700,
+        color: AntdTokens.textSecondary,
         fontSize: 12,
         fontWeight: FontWeight.w600,
         letterSpacing: 0.5,
@@ -1372,9 +1357,9 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
-          color: isEven ? Colors.white : Colors.grey.shade50,
+          color: isEven ? AntdTokens.cardBg : AntdTokens.fillTertiary,
           border: Border(
-            bottom: BorderSide(color: Colors.grey.shade200, width: 0.5),
+            bottom: BorderSide(color: AntdTokens.borderSubtle, width: 0.5),
           ),
         ),
         child: IntrinsicHeight(
@@ -1497,7 +1482,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     return Text(
       text,
       style: TextStyle(
-        color: Colors.grey.shade800,
+        color: AntdTokens.valueDark,
         fontSize: 13,
         fontWeight: FontWeight.w500,
       ),
@@ -1537,9 +1522,9 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
-          color: isEven ? Colors.white : Colors.grey.shade50,
+          color: isEven ? AntdTokens.cardBg : AntdTokens.fillTertiary,
           border: Border(
-            bottom: BorderSide(color: Colors.grey.shade200, width: 0.5),
+            bottom: BorderSide(color: AntdTokens.borderSubtle, width: 0.5),
           ),
         ),
         child: IntrinsicHeight(
@@ -1718,9 +1703,9 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
-          color: isEven ? Colors.white : Colors.grey.shade50,
+          color: isEven ? AntdTokens.cardBg : AntdTokens.fillTertiary,
           border: Border(
-            bottom: BorderSide(color: Colors.grey.shade200, width: 0.5),
+            bottom: BorderSide(color: AntdTokens.borderSubtle, width: 0.5),
           ),
         ),
         child: IntrinsicHeight(

@@ -8,6 +8,7 @@ import '../services/super_admin_api.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/antd_buttons.dart';
 import '../widgets/antd_staff.dart';
+import '../widgets/antd_tokens.dart';
 import '../widgets/paginated_data_table.dart';
 
 enum _DateFilterPreset { all, today, yesterday, last7Days, thisMonth, custom }
@@ -354,7 +355,7 @@ class _ActionLogsPageState extends State<ActionLogsPage> {
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w600,
-              color: Colors.grey.shade700,
+              color: AntdTokens.textSecondary,
             ),
           ),
           const SizedBox(height: 4),
@@ -376,6 +377,8 @@ class _ActionLogsPageState extends State<ActionLogsPage> {
     ];
 
     return AntdToolbar(
+      elevated: false,
+      padding: EdgeInsets.zero,
       children: [
         AntdSelect<String>(
           label: 'User',
@@ -479,10 +482,9 @@ class _ActionLogsPageState extends State<ActionLogsPage> {
       child: AntdPage(
         title: 'Action Logs',
         subtitle: 'Audit staff activity by user, feature, action, and date.',
+        filters: _filterToolbar(),
         child: Column(
           children: [
-            _filterToolbar(),
-            const SizedBox(height: 16),
             Expanded(
               child:
                   _loading
