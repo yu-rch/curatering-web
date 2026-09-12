@@ -981,7 +981,10 @@ function staffEventOrderSelectList(eventCols, themeColSql) {
 
 const STAFF_EVENTS_STATUS_WHERE = `
   WHERE
-    status = $1
+    (
+      status = $1
+      AND NOT ($1 = 'online_inquiries' AND lower(COALESCE(source, '')) = 'new_event')
+    )
     OR ($1 = 'for_down_payment' AND status = 'for_downpayment')
     OR ($1 = 'on_going' AND (
       status = 'ongoing'
@@ -989,8 +992,8 @@ const STAFF_EVENTS_STATUS_WHERE = `
     ))
     OR ($1 = 'for_full_payment' AND status = 'for_post_analysis')
     OR ($1 = 'for_post_analysis' AND status = 'for_full_payment')
-    OR ($1 = 'new_event' AND source = 'new_event' AND status = 'for_processing')
-    OR ($1 = 'for_processing' AND status = 'for_processing')`;
+    OR ($1 = 'new_event' AND source = 'new_event' AND status IN ('online_inquiries', 'for_processing'))
+    OR ($1 = 'for_processing' AND status = 'for_processing' AND COALESCE(source, '') <> 'new_event')`;
 
 /** Manager/supervisor list: catering_orders UNION event_orders by status. */
 export function buildStaffEventsOrdersListSql(

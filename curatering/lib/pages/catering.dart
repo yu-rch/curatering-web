@@ -38,7 +38,6 @@ import '../utils/order_type_utils.dart';
 import '../utils/image_cache.dart';
 import '../utils/payment_proof_image.dart';
 import '../utils/web_html.dart' as html;
-import 'customer_website.dart';
 
 part 'catering_manage_events_part.dart';
 part 'catering_manage_events_detail_part.dart';
@@ -831,6 +830,7 @@ class _ManageEventsState extends State<ManageEvents>
       }
       final theme = map['themeDesign'];
       if (theme is Map) {
+        _newEventThemeDesign = Map<String, dynamic>.from(theme);
         final picks = theme['picksBase64'];
         _themePicks.clear();
         _themePickHashes.clear();
@@ -910,6 +910,8 @@ class _ManageEventsState extends State<ManageEvents>
   List<Uint8List> _collageOrder = const [];
   bool _themeTintEnabled = false;
   Color _themeTintColor = const Color(0xFFF4511E);
+  /// AI theme design payload for New Event (customer-style EventThemeDesignScreen).
+  Map<String, dynamic>? _newEventThemeDesign;
   bool _isAiProcessingTheme = false;
   bool _paymentDialogLoading = false;
   bool _pdfExportBusy = false;
@@ -1011,6 +1013,7 @@ class _ManageEventsState extends State<ManageEvents>
       _collageOrder = const [];
       _themeTintEnabled = false;
       _themeTintColor = const Color(0xFFF4511E);
+      _newEventThemeDesign = null;
       _newEventPaxBufferController.text = '0';
       _newEventLaborCostController.text = '0.00';
       _newEventTravelCostController.text = '0.00';
@@ -1472,7 +1475,9 @@ class _ManageEventsState extends State<ManageEvents>
             compact: false,
           ),
         ]);
-        _onlineInquiryOrders = lists[0];
+        _onlineInquiryOrders = lists[0]
+            .where((o) => o.source.trim().toLowerCase() != 'new_event')
+            .toList();
         _processingOrdersDto = [
           ...lists[1],
           ...lists[2],
@@ -1735,7 +1740,38 @@ class _ManageEventsState extends State<ManageEvents>
                     0xFF000000,
               );
       _collageOrder = _themePicks.toList();
+      _newEventThemeDesign = _themeDesignMapFromOrder(order);
     });
+  }
+
+  Map<String, dynamic> _themeDesignMapFromOrder(EventOrderDto order) {
+    final td = order.themeDesign;
+    final palette =
+        td.colorPalette.isNotEmpty
+            ? td.colorPalette
+            : (td.macrinaColorPalette == null
+                ? const <String>[]
+                : [td.macrinaColorPalette!]);
+    return {
+      'picksBase64': td.picksBase64,
+      'tintEnabled': td.tintEnabled,
+      if (td.tintColorHex != null) 'tintColorHex': td.tintColorHex,
+      if (td.colorPrompt != null) 'colorPrompt': td.colorPrompt,
+      'wantsCustomDesign': td.wantsCustomDesign,
+      if (td.customerThemeRequest != null)
+        'customerThemeRequest': td.customerThemeRequest,
+      if (td.generatedImageUrl != null) 'generatedImageUrl': td.generatedImageUrl,
+      if (td.customInstructions != null)
+        'customInstructions': td.customInstructions,
+      if (td.eventDesignSource != null) 'eventDesignSource': td.eventDesignSource,
+      'style': td.style ?? td.macrinaTheme,
+      if (td.mood != null) 'mood': td.mood,
+      'colorPalette': palette,
+      'decorElements': td.decorElements,
+      if (td.macrinaColorPalette != null)
+        'macrinaColorPalette': td.macrinaColorPalette,
+      if (td.macrinaTheme != null) 'macrinaTheme': td.macrinaTheme,
+    };
   }
 
   Map<String, dynamic> _buildPayloadFromForm() {
@@ -1777,12 +1813,10 @@ class _ManageEventsState extends State<ManageEvents>
       'menu': _buildNewEventMenuPayload(),
       'menu_additional_charge_total': _newEventSetMenuAdditionalChargeTotal(),
       'additional_costs': _newEventAdditionalCosts,
-      'themeDesign': {
-        'picksBase64': _themePicks.map((b) => base64Encode(b)).toList(),
-        'tintEnabled': _themeTintEnabled,
-        'tintColorHex':
-            _themeTintEnabled ? _themeTintColorHex(_themeTintColor) : null,
-      },
+      'themeDesign':
+          _newEventThemeDesign == null
+              ? <String, dynamic>{}
+              : Map<String, dynamic>.from(_newEventThemeDesign!),
     };
   }
 
@@ -5797,166 +5831,58 @@ class _ManageEventsState extends State<ManageEvents>
   }
 
   Future<void> _showThemeDesignDialog() async {
+    final forNewEventForm =
+        _showNewEventForm || _selectedStatus == EventStatus.newEvent;
     final selectedOrder =
-        _selectedStatus == EventStatus.newEvent
-            ? null
-            : _selectedProcessingOrderDto;
-    final isForProcessingReadOnly = selectedOrder?.status == 'for_processing';
-    if (isForProcessingReadOnly && selectedOrder != null) {
-      final previewSources =
-          selectedOrder.themeDesign.picksBase64
-              .where((s) => s.trim().isNotEmpty)
-              .map((s) => s.trim())
-              .toList();
-      Widget previewWidget(String source, {BoxFit fit = BoxFit.cover}) {
-        if (source.startsWith('http://') || source.startsWith('https://')) {
-          return Image.network(
-            source,
-            fit: fit,
-            errorBuilder:
-                (_, __, ___) => const Center(child: Icon(Icons.broken_image)),
-          );
-        }
-        try {
-          return Image.memory(base64Decode(source), fit: fit);
-        } catch (_) {
-          return const Center(child: Icon(Icons.broken_image));
-        }
-      }
-
-      await showDialog<void>(
-        context: context,
-        builder: (context) {
-          return AlertDialog(
-            backgroundColor: const Color(0xFFF7F8FA),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(18),
+        forNewEventForm ? null : _selectedProcessingOrderDto;
+    final email = AuthSession.instance.currentUser.value?.email ?? '';
+    final initialEventType =
+        (selectedOrder?.eventType.trim().isNotEmpty ?? false)
+            ? selectedOrder!.eventType.trim()
+            : ((_eventType ?? '').trim().isEmpty ? 'other' : _eventType!.trim());
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return Dialog(
+          insetPadding: const EdgeInsets.all(16),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 920, maxHeight: 680),
+            child: EventThemeDesignScreen(
+              apiBase: apiBaseUrl,
+              userEmail: email,
+              orderId: selectedOrder?.id,
+              orderKind:
+                  (selectedOrder?.orderKind.trim().isNotEmpty ?? false)
+                      ? selectedOrder!.orderKind
+                      : 'event',
+              initialEventType: initialEventType,
+              initialThemeDesign:
+                  selectedOrder != null
+                      ? _themeDesignMapFromOrder(selectedOrder)
+                      : _newEventThemeDesign,
+              eventTitle:
+                  selectedOrder?.eventTitle ??
+                  _eventTitleController.text.trim(),
+              formalityLevel:
+                  selectedOrder?.formalityLevel ??
+                  (_formalityLevel == null
+                      ? null
+                      : _formalityToString(_formalityLevel!)),
+              persistToOrder: selectedOrder != null,
             ),
-            title: const Text('Events Theme Design'),
-            content: SizedBox(
-              width: 760,
-              height: 520,
-              child:
-                  previewSources.isEmpty
-                      ? Center(
-                        child: Text(
-                          'No event theme design image available.',
-                          style: TextStyle(color: Colors.grey.shade600),
-                        ),
-                      )
-                      : GridView.builder(
-                        gridDelegate:
-                            const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 2,
-                              crossAxisSpacing: 10,
-                              mainAxisSpacing: 10,
-                              childAspectRatio: 1.1,
-                            ),
-                        itemCount: previewSources.length,
-                        itemBuilder: (context, index) {
-                          return GestureDetector(
-                            onTap: () {
-                              showDialog<void>(
-                                context: context,
-                                barrierColor: Colors.black87,
-                                builder: (dialogContext) {
-                                  return Dialog(
-                                    insetPadding: const EdgeInsets.all(16),
-                                    backgroundColor: Colors.black,
-                                    child: Stack(
-                                      children: [
-                                        Positioned.fill(
-                                          child: InteractiveViewer(
-                                            minScale: 0.5,
-                                            maxScale: 5,
-                                            child: Center(
-                                              child: previewWidget(
-                                                previewSources[index],
-                                                fit: BoxFit.contain,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                        Positioned(
-                                          top: 8,
-                                          right: 8,
-                                          child: IconButton(
-                                            onPressed: () =>
-                                                Navigator.of(dialogContext).pop(),
-                                            icon: const Icon(
-                                              Icons.close,
-                                              color: Colors.white,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                },
-                              );
-                            },
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(10),
-                              child: previewWidget(
-                                previewSources[index],
-                                fit: BoxFit.cover,
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Close'),
-              ),
-            ],
-          );
-        },
-      );
+          ),
+        );
+      },
+    );
+    if (!mounted) return;
+    if (selectedOrder != null) {
+      await _refreshOrders();
       return;
     }
-    final result = await Navigator.of(context).push<Map<String, dynamic>>(
-      MaterialPageRoute(
-        fullscreenDialog: true,
-        builder:
-            (_) => const CustomerWebsiteScreen(
-              showStaffChrome: false,
-              staffThemeStudioMode: true,
-            ),
-      ),
-    );
-    if (result == null || !mounted) return;
-
+    if (result == null) return;
     setState(() {
-      _themePicks.clear();
-      _themePickHashes.clear();
-      final composite = result['confirmedCompositeBase64']?.toString().trim();
-      if (composite != null && composite.isNotEmpty) {
-        try {
-          final bytes = base64Decode(composite);
-          _themePicks.add(bytes);
-          _themePickHashes.add(_themeImageKey(bytes));
-        } catch (_) {}
-      }
-      final picks = result['picksBase64'];
-      if (picks is List) {
-        for (final item in picks) {
-          final s = item.toString().trim();
-          if (s.isEmpty) continue;
-          try {
-            final bytes = base64Decode(s);
-            final key = _themeImageKey(bytes);
-            if (!_themePickHashes.contains(key)) {
-              _themePicks.add(bytes);
-              _themePickHashes.add(key);
-            }
-          } catch (_) {}
-        }
-      }
-      _collageOrder = _themePicks.toList();
-      _focusedPickIndex = 0;
+      _newEventThemeDesign = Map<String, dynamic>.from(result);
     });
   }
 
@@ -7270,6 +7196,13 @@ class _ManageEventsState extends State<ManageEvents>
 
   Widget _buildNewEventThemeDesignBlock() {
     final isCateringOnly = _orderType == 'catering';
+    final generatedUrl =
+        '${_newEventThemeDesign?['generatedImageUrl'] ?? ''}'.trim();
+    final styleLabel = '${_newEventThemeDesign?['style'] ?? ''}'.trim();
+    final hasDesign =
+        generatedUrl.isNotEmpty ||
+        styleLabel.isNotEmpty ||
+        (_newEventThemeDesign?['wantsCustomDesign'] == true);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -7282,7 +7215,9 @@ class _ManageEventsState extends State<ManageEvents>
             label: Text(
               isCateringOnly
                   ? 'Event theme design (not for catering-only)'
-                  : 'Edit Event Theme Design',
+                  : (hasDesign
+                      ? 'Edit Event Theme Design'
+                      : 'Create Event Theme Design'),
             ),
             style: OutlinedButton.styleFrom(
               foregroundColor: const Color(0xFF1E1E1E),
@@ -7291,36 +7226,33 @@ class _ManageEventsState extends State<ManageEvents>
           ),
         ),
         const SizedBox(height: 8),
-        if (!isCateringOnly && _themePicks.isNotEmpty)
-          SizedBox(
-            height: 92,
-            child: Scrollbar(
-              thumbVisibility: true,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: _themePicks.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 8),
-                itemBuilder: (context, i) => Container(
-                  width: 92,
-                  height: 92,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.grey.shade300),
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: Image.memory(
-                    _themePicks[i],
-                    width: 92,
-                    height: 92,
-                    fit: BoxFit.cover,
-                  ),
-                ),
+        if (!isCateringOnly && generatedUrl.isNotEmpty)
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: AspectRatio(
+              aspectRatio: 16 / 9,
+              child: Image.network(
+                generatedUrl,
+                fit: BoxFit.cover,
+                errorBuilder:
+                    (_, __, ___) => Container(
+                      color: Colors.grey.shade200,
+                      alignment: Alignment.center,
+                      child: const Icon(Icons.broken_image),
+                    ),
               ),
             ),
           )
+        else if (!isCateringOnly && hasDesign)
+          Text(
+            styleLabel.isNotEmpty
+                ? 'Theme ready: $styleLabel'
+                : 'Theme design saved. Open editor to regenerate.',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+          )
         else if (!isCateringOnly)
           Text(
-            'No theme design preview yet. Open the editor to add picks.',
+            'No theme design yet. Open the editor to create one with AI.',
             style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
           ),
       ],
@@ -8591,7 +8523,9 @@ class _ManageEventsState extends State<ManageEvents>
         final source = o.source.trim().toLowerCase();
         final s = o.status.trim().toLowerCase();
         if (source == 'new_event') {
-          return s == 'for_processing' || s == 'new_event';
+          return s == 'online_inquiries' ||
+              s == 'for_processing' ||
+              s == 'new_event';
         }
         return s == 'new_event';
       }).toList();

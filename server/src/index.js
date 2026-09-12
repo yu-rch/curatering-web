@@ -6160,7 +6160,7 @@ app.post(
              updated_at = now()
            WHERE id = $16
              AND source = 'new_event'
-             AND status = 'for_processing'
+             AND status = 'online_inquiries'
            RETURNING id, catering_id;`,
           [
             isCateringOnly ? null : eventTitle,
@@ -6190,7 +6190,7 @@ app.post(
                  email_address = $4, schedule_slots = $5, address = $6,
                  guest_count = $7, menu = $8, theme_design = $9, allergens = $10,
                  updated_by = $11, updated_at = now()
-               WHERE id = $12 AND source = 'new_event' AND status = 'for_processing'
+               WHERE id = $12 AND source = 'new_event' AND status = 'online_inquiries'
                RETURNING id, catering_id;`,
               [
                 customerName, contactPerson, contactNumber, emailAddress,
@@ -6206,7 +6206,7 @@ app.post(
                  email_address = $4, schedule_slots = $5, address = $6,
                  guest_count = $7, menu = $8, allergens = $9,
                  updated_by = $10, updated_at = now()
-               WHERE id = $11 AND source = 'new_event' AND status = 'for_processing'
+               WHERE id = $11 AND source = 'new_event' AND status = 'online_inquiries'
                RETURNING id, catering_id;`,
               [
                 customerName, contactPerson, contactNumber, emailAddress,
@@ -6221,7 +6221,7 @@ app.post(
                  email_address = $4, schedule_slots = $5, address = $6,
                  guest_count = $7, menu = $8,
                  updated_by = $9, updated_at = now()
-               WHERE id = $10 AND source = 'new_event' AND status = 'for_processing'
+               WHERE id = $10 AND source = 'new_event' AND status = 'online_inquiries'
                RETURNING id, catering_id;`,
               [
                 customerName, contactPerson, contactNumber, emailAddress,
@@ -6259,7 +6259,7 @@ app.post(
               (source, status, order_type, catering_id, customer_name, contact_person, contact_number, email_address,
                schedule_slots, address, guest_count, menu, theme_design, allergens, created_by, updated_by)
             VALUES
-              ('new_event', 'for_processing', 'catering', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+              ('new_event', 'online_inquiries', 'catering', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
              RETURNING id, catering_id;`,
             [
               transactionId,
@@ -6283,7 +6283,7 @@ app.post(
               (source, status, order_type, catering_id, customer_name, contact_person, contact_number, email_address,
                schedule_slots, address, guest_count, menu, allergens, created_by, updated_by)
             VALUES
-              ('new_event', 'for_processing', 'catering', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+              ('new_event', 'online_inquiries', 'catering', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
              RETURNING id, catering_id;`,
             [
               transactionId,
@@ -6309,7 +6309,7 @@ app.post(
              schedule_slots, address, guest_count, menu, theme_design, allergens,
              created_by, updated_by)
            VALUES
-            ('new_event', 'for_processing', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+            ('new_event', 'online_inquiries', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
            RETURNING id, catering_id;`,
           [
             eventTitle,
@@ -7389,7 +7389,7 @@ app.post(
       const finalizableWhere = `
              AND (
                (source = 'online_inquiry' AND status = 'online_inquiries')
-               OR (source = 'new_event' AND status = 'for_processing')
+               OR (source = 'new_event' AND status = 'online_inquiries')
              )`;
 
       if (isCancelEvent) {
@@ -7459,7 +7459,7 @@ app.post(
          WHERE id = $1
            AND (
              (source = 'online_inquiry' AND status = 'online_inquiries')
-             OR (source = 'new_event' AND status = 'for_processing')
+             OR (source = 'new_event' AND status = 'online_inquiries')
            )
          LIMIT 1;`,
         [orderId],
@@ -7499,7 +7499,7 @@ app.post(
            WHERE id = $1
              AND (
                (source = 'online_inquiry' AND status = 'online_inquiries')
-               OR (source = 'new_event' AND status = 'for_processing')
+               OR (source = 'new_event' AND status = 'online_inquiries')
              )
            LIMIT 1;`,
           [orderId],
@@ -7513,9 +7513,8 @@ app.post(
       }
 
       const existing = existingOrderResult.rows[0];
-      const existingSource = String(existing.source || '').toLowerCase();
       const nextStatus = isPostChanges
-        ? (existingSource === 'new_event' ? 'for_processing' : 'online_inquiries')
+        ? 'online_inquiries'
         : 'for_down_payment';
       const changedFields = [];
       const addChanged = (key, oldValue, newValue) => {
@@ -7697,7 +7696,7 @@ app.post(
                WHERE id = $${p}
                  AND (
                    (source = 'online_inquiry' AND status = 'online_inquiries')
-                   OR (source = 'new_event' AND status = 'for_processing')
+                   OR (source = 'new_event' AND status = 'online_inquiries')
                  )
                RETURNING id;`,
               params,
@@ -7798,7 +7797,7 @@ app.post(
                WHERE id = $${p}
                  AND (
                    (source = 'online_inquiry' AND status = 'online_inquiries')
-                   OR (source = 'new_event' AND status = 'for_processing')
+                   OR (source = 'new_event' AND status = 'online_inquiries')
                  )
                RETURNING id;`,
               catParams,

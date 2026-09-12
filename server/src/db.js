@@ -1844,6 +1844,10 @@ export async function migrateCateringOrderStatuses(tableName) {
 
   await pool.query(
     `UPDATE ${tableName} SET status = 'online_inquiries'
+     WHERE source = 'new_event' AND status IN ('for_processing', 'new_event')`,
+  );
+  await pool.query(
+    `UPDATE ${tableName} SET status = 'online_inquiries'
      WHERE status IN ('new_event', 'online_inquiry')`,
   );
   await pool.query(
