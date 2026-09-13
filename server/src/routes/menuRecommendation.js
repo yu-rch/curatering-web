@@ -201,6 +201,57 @@ function extractMessageText(message) {
     .trim();
 }
 
+function extractCandidateDishRefs(recommendation) {
+  const refs = [];
+  const push = (value) => {
+    if (value == null) return;
+    if (typeof value === "string" || typeof value === "number") {
+      const s = String(value).trim();
+      if (s) refs.push(s);
+      return;
+    }
+    if (typeof value === "object") {
+      const id = value.id ?? value.dishId ?? value.dish_id;
+      const name = value.name ?? value.dishName ?? value.dish_name;
+      if (id != null && String(id).trim()) refs.push(String(id).trim());
+      if (name != null && String(name).trim()) refs.push(String(name).trim());
+    }
+  };
+
+  if (Array.isArray(recommendation?.dishIds)) {
+    recommendation.dishIds.forEach(push);
+  }
+  if (Array.isArray(recommendation?.dish_ids)) {
+    recommendation.dish_ids.forEach(push);
+  }
+  if (Array.isArray(recommendation?.dishes)) {
+    recommendation.dishes.forEach(push);
+  }
+  if (Array.isArray(recommendation?.menu)) {
+    recommendation.menu.forEach(push);
+  }
+  return refs;
+}
+
+function resolveCatalogueDish(ref, catalogue, byId, byName) {
+  const key = String(ref || "").trim();
+  if (!key) return null;
+  if (byId.has(key)) return byId.get(key);
+  const byNameHit = byName.get(key.toLowerCase());
+  if (byNameHit) return byNameHit;
+  // Tolerate minor punctuation/spacing differences in names.
+  const compact = key.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  if (compact) {
+    for (const dish of catalogue) {
+      const dishCompact = String(dish.name || "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "");
+      if (dishCompact && dishCompact === compact) return dish;
+    }
+  }
+  return null;
+}
+
 async function generateRecommendation(input) {
   const userPrompt = `/no_think\n${JSON.stringify({
     event: {
@@ -243,30 +294,43 @@ async function generateRecommendation(input) {
 
   const raw = extractMessageText(response.choices?.[0]?.message);
   const recommendation = parseRecommendationJson(raw);
-  const validDishIds = new Set(input.dishCatalogue.map((dish) => dish.id));
+  const byId = new Map(input.dishCatalogue.map((dish) => [dish.id, dish]));
+  const byName = new Map(
+    input.dishCatalogue.map((dish) => [String(dish.name || "").trim().toLowerCase(), dish]),
+  );
 
-  let selectedIds = Array.isArray(recommendation.dishIds)
-    ? recommendation.dishIds
-        .map(String)
-        .filter((id) => validDishIds.has(id))
-        .filter((id) => {
-          const dish = input.dishCatalogue.find((d) => d.id === id);
-          return dish && !dishHasAllergen(dish.allergens, input.customerAllergens);
-        })
-    : [];
+  const selected = [];
+  const seen = new Set();
+  for (const ref of extractCandidateDishRefs(recommendation)) {
+    const dish = resolveCatalogueDish(ref, input.dishCatalogue, byId, byName);
+    if (!dish) continue;
+    if (seen.has(dish.id)) continue;
+    if (dishHasAllergen(dish.allergens, input.customerAllergens)) continue;
+    seen.add(dish.id);
+    selected.push(dish);
+    if (selected.length >= 10) break;
+  }
 
-  selectedIds = [...new Set(selectedIds)].slice(0, 10);
+  // If the model returned too few valid dishes, top up with a balanced catalogue fill.
+  if (selected.length < 8) {
+    for (const dish of input.dishCatalogue) {
+      if (seen.has(dish.id)) continue;
+      if (dishHasAllergen(dish.allergens, input.customerAllergens)) continue;
+      seen.add(dish.id);
+      selected.push(dish);
+      if (selected.length >= 8) break;
+    }
+  }
 
-  if (selectedIds.length < 8) {
+  if (selected.length < 8) {
     const err = new Error("AI could not produce enough valid dishes");
     err.status = 422;
     err.raw = recommendation;
     throw err;
   }
 
-  const selectedDishes = selectedIds.map((id) =>
-    input.dishCatalogue.find((dish) => dish.id === id),
-  );
+  const selectedDishes = selected.slice(0, 10);
+  const selectedIds = selectedDishes.map((dish) => dish.id);
 
   return {
     success: true,

@@ -1170,8 +1170,7 @@ class _InquirePageState extends State<InquirePage> {
     final recommendation = _menuRecommendation;
     if (recommendation == null) return;
 
-    final ids = recommendation.dishIds
-        .where(_activeDishById.containsKey)
+    final ids = _resolveRecommendedDishIds(recommendation)
         .take(_maxSelectedDishesRequired)
         .toList();
 
@@ -1211,33 +1210,78 @@ class _InquirePageState extends State<InquirePage> {
     );
   }
 
+  /// Prefer server-validated catalogue rows; fall back to store/name matching.
+  List<String> _resolveRecommendedDishIds(
+    MenuRecommendationResult recommendation,
+  ) {
+    final byId = <String, MenuDish>{
+      for (final dish in _inquiryCateringDishes()) dish.id: dish,
+    };
+    final byName = <String, MenuDish>{
+      for (final dish in byId.values)
+        dish.name.trim().toLowerCase(): dish,
+    };
+
+    String? resolveRef(String raw) {
+      final key = raw.trim();
+      if (key.isEmpty) return null;
+      if (byId.containsKey(key)) return key;
+      final byNameHit = byName[key.toLowerCase()];
+      if (byNameHit != null) return byNameHit.id;
+      return null;
+    }
+
+    final resolved = <String>[];
+    final seen = <String>{};
+
+    void addId(String? id) {
+      if (id == null || id.isEmpty || seen.contains(id)) return;
+      seen.add(id);
+      resolved.add(id);
+    }
+
+    for (final dish in recommendation.dishes) {
+      addId(resolveRef(dish['id']?.toString() ?? ''));
+      addId(resolveRef(dish['name']?.toString() ?? ''));
+    }
+    for (final id in recommendation.dishIds) {
+      addId(resolveRef(id));
+    }
+
+    return resolved;
+  }
+
   List<String> _recommendedDishNames(
     MenuRecommendationResult recommendation,
-    Map<String, MenuDish> dishById,
   ) {
-    final resultNameById = <String, String>{
-      for (final dish in recommendation.dishes)
-        if ((dish['id']?.toString() ?? '').isNotEmpty)
-          dish['id'].toString(): (dish['name']?.toString() ?? '').trim(),
+    final dishById = {
+      for (final dish in _inquiryCateringDishes()) dish.id: dish,
     };
-    return recommendation.dishIds
-        .map((id) {
-          final fromStore = dishById[id]?.name.trim() ?? '';
-          if (fromStore.isNotEmpty) return fromStore;
-          final fromResult = resultNameById[id] ?? '';
-          return fromResult.isNotEmpty ? fromResult : id;
-        })
+    final resolvedIds = _resolveRecommendedDishIds(recommendation);
+    if (resolvedIds.isNotEmpty) {
+      return resolvedIds
+          .map((id) => dishById[id]?.name.trim() ?? id)
+          .where((name) => name.isNotEmpty)
+          .toList();
+    }
+
+    // Last resort: show whatever the API returned.
+    final fromPayload = recommendation.dishes
+        .map((dish) => (dish['name']?.toString() ?? '').trim())
         .where((name) => name.isNotEmpty)
+        .toList();
+    if (fromPayload.isNotEmpty) return fromPayload;
+    return recommendation.dishIds
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
         .toList();
   }
 
   Widget _buildMenuRecommendationCard() {
     final recommendation = _menuRecommendation!;
-    final dishById = _activeDishById;
-    final dishes = recommendation.dishIds
-        .map((id) => dishById[id])
-        .whereType<MenuDish>()
-        .toList();
+    final names = _recommendedDishNames(recommendation);
+    final canUse = _resolveRecommendedDishIds(recommendation).length >=
+        _minSelectedDishesRequired;
 
     return Container(
       key: _menuRecommendationCardKey,
@@ -1286,28 +1330,34 @@ class _InquirePageState extends State<InquirePage> {
               style: const TextStyle(height: 1.4),
             ),
           const SizedBox(height: 14),
-          ..._recommendedDishNames(recommendation, dishById).map(
-            (name) => Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(
-                    Icons.check,
-                    size: 18,
-                    color: Colors.amber.shade800,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      name,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
+          if (names.isEmpty)
+            Text(
+              'No dish names were returned. Tap Suggest Another to try again.',
+              style: TextStyle(color: Colors.red.shade700),
+            )
+          else
+            ...names.map(
+              (name) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.check,
+                      size: 18,
+                      color: Colors.amber.shade800,
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        name,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
           const SizedBox(height: 12),
           Row(
             children: [
@@ -1321,9 +1371,7 @@ class _InquirePageState extends State<InquirePage> {
               const SizedBox(width: 12),
               Expanded(
                 child: ElevatedButton(
-                  onPressed: dishes.length >= _minSelectedDishesRequired
-                      ? _useRecommendedMenu
-                      : null,
+                  onPressed: canUse ? _useRecommendedMenu : null,
                   child: const Text('USE THIS MENU'),
                 ),
               ),

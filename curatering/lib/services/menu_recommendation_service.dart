@@ -51,9 +51,8 @@ class MenuRecommendationService {
     }
 
     final data = _decodeMap(response.body);
-    if (data['dishIds'] is List) {
-      return MenuRecommendationResult.fromJson(data);
-    }
+    final immediate = _tryParseResult(data);
+    if (immediate != null) return immediate;
 
     final jobId = data['jobId']?.toString().trim() ?? '';
     if (jobId.isEmpty) {
@@ -92,13 +91,19 @@ class MenuRecommendationService {
 
       final data = _decodeMap(response.body);
       final status = data['status']?.toString().toLowerCase() ?? '';
-      if (status == 'completed' || data['dishIds'] is List) {
-        return MenuRecommendationResult.fromJson(data);
-      }
       if (status == 'failed') {
         throw ApiError(
           message: data['error']?.toString() ??
               'Unable to generate menu recommendation',
+        );
+      }
+
+      final parsed = _tryParseResult(data);
+      if (parsed != null) return parsed;
+
+      if (status == 'completed') {
+        throw ApiError(
+          message: 'Menu recommendation returned no dishes. Please try again.',
         );
       }
     }
@@ -107,6 +112,16 @@ class MenuRecommendationService {
       message:
           'Menu recommendation took too long. Please try again in a moment.',
     );
+  }
+
+  /// Accepts flat `{dishIds,...}` or nested `{result:{dishIds,...}}`.
+  MenuRecommendationResult? _tryParseResult(Map<String, dynamic> data) {
+    final payload = data['result'] is Map
+        ? Map<String, dynamic>.from(data['result'] as Map)
+        : data;
+    final ids = payload['dishIds'];
+    if (ids is! List || ids.isEmpty) return null;
+    return MenuRecommendationResult.fromJson(payload);
   }
 
   Map<String, dynamic> _decodeMap(String body) {
@@ -142,14 +157,23 @@ class MenuRecommendationResult {
   final List<String> notes;
 
   factory MenuRecommendationResult.fromJson(Map<String, dynamic> json) {
+    final dishes = (json['dishes'] as List? ?? const [])
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+    var dishIds = (json['dishIds'] as List? ?? const [])
+        .map((e) => e.toString().trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    if (dishIds.isEmpty) {
+      dishIds = dishes
+          .map((d) => (d['id'] ?? d['dishId'] ?? '').toString().trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+    }
     return MenuRecommendationResult(
-      dishIds: (json['dishIds'] as List? ?? const [])
-          .map((e) => e.toString())
-          .toList(),
-      dishes: (json['dishes'] as List? ?? const [])
-          .whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e))
-          .toList(),
+      dishIds: dishIds,
+      dishes: dishes,
       summary: json['summary']?.toString() ?? '',
       notes: (json['notes'] as List? ?? const [])
           .map((e) => e.toString())
