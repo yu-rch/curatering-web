@@ -90,6 +90,7 @@ import {
   isOpenAiConfigured,
   openAiModel,
 } from "./services/openaiService.js";
+import menuRecommendationRoutes from "./routes/menuRecommendation.js";
 
 // Prefer IPv4 when resolving SMTP hosts (avoids ENETUNREACH on IPv6 in many cloud/container networks).
 try {
@@ -348,6 +349,8 @@ app.use(express.json({ limit: REQUEST_BODY_LIMIT }));
 
 const publicRateLimit = createPublicRateLimiter();
 app.use("/api/public/events/theme-design", publicRateLimit);
+app.use("/api/recommend-menu", publicRateLimit);
+app.use("/api", menuRecommendationRoutes);
 
 let dbReady = false;
 let routesRegistered = false;
@@ -8317,6 +8320,8 @@ app.post("/api/online-inquiries", async (req, res) => {
       foodTastingTime,
       menuSuggestionNote,
       curateOwnMenu,
+      menuRecommendationSource,
+      menuRecommendationSummary,
       guestAllergens,
       themeDesign,
       note,
@@ -8339,6 +8344,12 @@ app.post("/api/online-inquiries", async (req, res) => {
     if (inquiryType) slimTheme.inquiry_type = String(inquiryType).trim();
     if (menuSuggestionNote) slimTheme.menu_suggestion_note = String(menuSuggestionNote).trim();
     if (curateOwnMenu !== undefined) slimTheme.curate_own_menu = Boolean(curateOwnMenu);
+    if (menuRecommendationSource) {
+      slimTheme.menu_recommendation_source = String(menuRecommendationSource).trim();
+    }
+    if (menuRecommendationSummary) {
+      slimTheme.menu_recommendation_summary = String(menuRecommendationSummary).trim();
+    }
     if (normalizedCostBreakdown.length) slimTheme.cost_breakdown = normalizedCostBreakdown;
     if (Object.keys(normalizedMenuMods).length) slimTheme.menu_modifications = normalizedMenuMods;
     if (noteText) {
