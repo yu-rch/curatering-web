@@ -15,6 +15,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config.dart';
 import '../models/menu_dish.dart';
+import '../services/menu_recommendation_service.dart';
 import '../services/menu_store.dart';
 import '../services/public_events_api.dart';
 import '../services/runpod_service.dart';
@@ -182,6 +183,11 @@ class _InquirePageState extends State<InquirePage> {
   final Set<String> _selectedDishIds = {};
   String _allergensSerialized = '';
   final _menuSearchController = TextEditingController();
+  bool _generatingMenuRecommendation = false;
+  MenuRecommendationResult? _menuRecommendation;
+  String? _menuRecommendationError;
+  bool _menuWasAiRecommended = false;
+  String _menuRecommendationSummary = '';
 
   // ---- Theme design ----
   String _themeDesignChoice = '';
@@ -993,17 +999,27 @@ class _InquirePageState extends State<InquirePage> {
       if (em <= sm) return 'End time must be after start time for each event.';
     }
     if (!_menuChoicePicked) return 'Choose a menu preference.';
-    if (_curateOwn && _selectedDishIds.length < _minSelectedDishesRequired) {
+    if (_curateOwn &&
+        _selectedDishIds.length < _minSelectedDishesRequired) {
       return 'Select at least $_minSelectedDishesRequired dish(es) for the menu.';
     }
-    if (_curateOwn && _selectedDishIds.length > _maxSelectedDishesRequired) {
+    if (_curateOwn &&
+        _selectedDishIds.length > _maxSelectedDishesRequired) {
       return 'Select at most $_maxSelectedDishesRequired dishes for the menu.';
     }
-    if (!_curateOwn && _menuSelections.isEmpty && !_isSuggestMenuMode) {
-      final block = _menuSelections.isNotEmpty ? _menuSelections.first : null;
-      if (block == null) {
-        return 'Choose your menu using the options below.';
-      }
+    if (_menuWasAiRecommended &&
+        _selectedDishIds.length < _minSelectedDishesRequired) {
+      return 'Select at least $_minSelectedDishesRequired dish(es) for the menu.';
+    }
+    if (_menuWasAiRecommended &&
+        _selectedDishIds.length > _maxSelectedDishesRequired) {
+      return 'Select at most $_maxSelectedDishesRequired dishes for the menu.';
+    }
+    if (!_curateOwn &&
+        !_menuWasAiRecommended &&
+        _menuSelections.isEmpty &&
+        !_isSuggestMenuMode) {
+      return 'Choose your menu using the options below.';
     }
     if (_isEventStyling && _themeDesignChoice.isEmpty) {
       return 'Choose an event theme design option.';
@@ -1041,23 +1057,337 @@ class _InquirePageState extends State<InquirePage> {
       !_curateOwn &&
       _menuSuggestionNote.isNotEmpty;
 
+  List<Map<String, dynamic>> _menuRecommendationCatalogue() {
+    return _inquiryCateringDishes().map((dish) {
+      return {
+        'id': dish.id,
+        'name': dish.name,
+        'description': dish.publicDescription,
+        'category': dish.category,
+        'allergens': dish.allergens
+            .split(',')
+            .map((e) => e.trim())
+            .where((e) => e.isNotEmpty)
+            .toList(),
+      };
+    }).toList();
+  }
+
+  Future<void> _suggestMenu() async {
+    if (_generatingMenuRecommendation) return;
+
+    final guests = int.tryParse(_guestCount.text.trim());
+    if (guests == null || guests < 1) {
+      showAntdMessage(
+        context,
+        'Enter the number of guests first.',
+        type: AntdMessageType.error,
+      );
+      return;
+    }
+
+    final dishes = _menuRecommendationCatalogue();
+    if (dishes.length < _minSelectedDishesRequired) {
+      showAntdMessage(
+        context,
+        'There are not enough available dishes to generate a menu.',
+        type: AntdMessageType.error,
+      );
+      return;
+    }
+
+    setState(() {
+      _generatingMenuRecommendation = true;
+      _menuRecommendationError = null;
+      _menuRecommendation = null;
+    });
+
+    try {
+      final result = await MenuRecommendationService.instance.recommend(
+        eventType: _resolvedEventType(),
+        eventTitle: _eventTitle.text.trim(),
+        eventSetting: _eventSetting,
+        guestCount: guests,
+        allergens: _selectedAllergenLabels().toList(),
+        dishes: dishes,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _menuRecommendation = result;
+        _menuRecommendationSummary = result.summary;
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _menuRecommendationError =
+            'We could not generate a menu right now. Please try again.';
+      });
+
+      showAntdMessage(
+        context,
+        'Menu suggestion failed. Please try again.',
+        type: AntdMessageType.error,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _generatingMenuRecommendation = false;
+        });
+      }
+    }
+  }
+
+  void _useRecommendedMenu() {
+    final recommendation = _menuRecommendation;
+    if (recommendation == null) return;
+
+    final ids = recommendation.dishIds
+        .where(_activeDishById.containsKey)
+        .take(_maxSelectedDishesRequired)
+        .toList();
+
+    if (ids.length < _minSelectedDishesRequired) {
+      showAntdMessage(
+        context,
+        'The recommended menu does not contain enough valid dishes.',
+        type: AntdMessageType.error,
+      );
+      return;
+    }
+
+    final dishById = _activeDishById;
+    final selection = <String, dynamic>{
+      'kind': 'custom',
+      'dishIds': ids,
+      'dishNames': ids.map((id) => dishById[id]?.name ?? id).toList(),
+    };
+
+    setState(() {
+      _menuWasAiRecommended = true;
+      _menuSelections
+        ..clear()
+        ..add(selection);
+      _selectedDishIds
+        ..clear()
+        ..addAll(ids);
+      _menuSuggestionNote =
+          'Menu recommended by Macrina AI based on the event details.';
+      _menuRecommendationSummary = recommendation.summary;
+      _menuRecommendation = null;
+    });
+
+    showAntdMessage(
+      context,
+      'Recommended menu added. You can review or adjust it before submitting.',
+    );
+  }
+
+  Widget _buildMenuRecommendationCard() {
+    final recommendation = _menuRecommendation!;
+    final dishById = _activeDishById;
+    final dishes = recommendation.dishIds
+        .map((id) => dishById[id])
+        .whereType<MenuDish>()
+        .toList();
+
+    return Container(
+      margin: const EdgeInsets.only(top: 16),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Colors.amber.shade300,
+          width: 1.5,
+        ),
+        boxShadow: const [
+          BoxShadow(
+            blurRadius: 8,
+            offset: Offset(0, 2),
+            color: Color(0x14000000),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.auto_awesome,
+                color: Colors.amber.shade700,
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Macrina recommends this menu',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (recommendation.summary.isNotEmpty)
+            Text(
+              recommendation.summary,
+              style: const TextStyle(height: 1.4),
+            ),
+          const SizedBox(height: 14),
+          ...dishes.map(
+            (dish) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.check,
+                    size: 18,
+                    color: Colors.amber.shade800,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      dish.name,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed:
+                      _generatingMenuRecommendation ? null : _suggestMenu,
+                  child: const Text('SUGGEST ANOTHER'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: dishes.length >= _minSelectedDishesRequired
+                      ? _useRecommendedMenu
+                      : null,
+                  child: const Text('USE THIS MENU'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAcceptedAiMenuCard() {
+    final dishById = _activeDishById;
+    final dishes = _selectedDishIds
+        .map((id) => dishById[id])
+        .whereType<MenuDish>()
+        .toList();
+
+    return Container(
+      margin: const EdgeInsets.only(top: 16),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.amber.shade300, width: 1.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'Your recommended menu',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 12),
+          ...dishes.map(
+            (dish) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.check,
+                    size: 18,
+                    color: Colors.amber.shade800,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      dish.name,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'You can review or adjust this menu before submitting.',
+            style: TextStyle(
+              color: Colors.grey.shade700,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton(
+            onPressed: _generatingMenuRecommendation
+                ? null
+                : () {
+                    setState(() {
+                      _menuWasAiRecommended = false;
+                      _menuSelections.clear();
+                      _selectedDishIds.clear();
+                      _menuRecommendation = null;
+                      _menuRecommendationError = null;
+                      _menuSuggestionNote =
+                          'Have Macrina suggest me a menu.';
+                    });
+                    _suggestMenu();
+                  },
+            child: const Text('SUGGEST ANOTHER'),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ===========================================================================
   // Build menu for API
   // ===========================================================================
 
   List<Map<String, dynamic>> _buildMenuForApi() {
-    if (_isSuggestMenuMode) {
+    if (_isSuggestMenuMode && !_menuWasAiRecommended) {
       return [
         {
           'kind': 'suggest',
-          'dishName': 'Suggest me a menu instead',
-          'dishNames': ['Suggest me a menu instead'],
+          'dishName': 'Have Macrina suggest me a menu',
+          'dishNames': [
+            'Have Macrina suggest me a menu',
+          ],
         },
       ];
     }
     if (_menuSelections.isEmpty) {
       return [
-        {'dishName': 'Customer will confirm menu details with coordinator'},
+        {
+          'dishName':
+              'Customer will confirm menu details with coordinator',
+        },
       ];
     }
     final additionalRows = _setMenuAdditionalChargeRows();
@@ -1208,6 +1538,11 @@ class _InquirePageState extends State<InquirePage> {
         'menu': _buildMenuForApi(),
         'curateOwnMenu': _curateOwn,
         'menuSuggestionNote': _curateOwn ? '' : _menuSuggestionNote,
+        'menuRecommendationSource':
+            _menuWasAiRecommended ? 'qwen3' : null,
+        'menuRecommendationSummary': _menuWasAiRecommended
+            ? _menuRecommendationSummary
+            : '',
         'selectedSetMenu': _selectedSetMenu,
         'selectedDishes': _selectedDishIds.toList(),
         'estimatedTotal': est,
@@ -1296,6 +1631,11 @@ class _InquirePageState extends State<InquirePage> {
       _themeSuggestionNote = '';
       _selectedSetMenu = 'All Dishes';
       _selectedDishIds.clear();
+      _generatingMenuRecommendation = false;
+      _menuRecommendation = null;
+      _menuRecommendationError = null;
+      _menuWasAiRecommended = false;
+      _menuRecommendationSummary = '';
       _eventTypeChoice = 'Birthday';
       _eventSetting = 'Indoor';
       _serviceIncluded = 'no';
@@ -3391,7 +3731,7 @@ class _InquirePageState extends State<InquirePage> {
               runSpacing: 8,
               children: [
                 ChoiceChip(
-                  label: const Text('Yes, curate my own menu'),
+                  label: const Text('I want to choose my own menu'),
                   selected: _menuChoicePicked && _curateOwn,
                   selectedColor: _accentYellow,
                   labelStyle: TextStyle(
@@ -3410,11 +3750,15 @@ class _InquirePageState extends State<InquirePage> {
                       _selectedSetMenu = 'All Dishes';
                       _selectedDishIds.clear();
                       _menuSelections.clear();
+                      _menuRecommendation = null;
+                      _menuRecommendationError = null;
+                      _menuWasAiRecommended = false;
+                      _menuRecommendationSummary = '';
                     });
                   },
                 ),
                 ChoiceChip(
-                  label: const Text('No, suggest a menu'),
+                  label: const Text('Have Macrina suggest me a menu'),
                   selected: _menuChoicePicked && !_curateOwn,
                   selectedColor: _accentYellow,
                   labelStyle: TextStyle(
@@ -3431,7 +3775,12 @@ class _InquirePageState extends State<InquirePage> {
                       _curateOwn = false;
                       _selectedDishIds.clear();
                       _menuSelections.clear();
-                      _menuSuggestionNote = 'No, suggest me a menu instead.';
+                      _menuSuggestionNote =
+                          'Have Macrina suggest me a menu.';
+                      _menuRecommendation = null;
+                      _menuRecommendationError = null;
+                      _menuWasAiRecommended = false;
+                      _menuRecommendationSummary = '';
                     });
                   },
                 ),
@@ -3546,15 +3895,79 @@ class _InquirePageState extends State<InquirePage> {
               ),
             ],
             if (_menuChoicePicked && !_curateOwn) ...[
-              const SizedBox(height: 8),
-              Text(
-                'Our team will suggest a curated menu based on your event details and preferences.',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Colors.grey.shade700,
-                  fontStyle: FontStyle.italic,
+              if (_menuWasAiRecommended)
+                _buildAcceptedAiMenuCard()
+              else ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Colors.amber.shade200,
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        'Have Macrina suggest me a menu',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'We will use your event type, event details, '
+                        'venue setting, guest count, and dietary restrictions '
+                        'to recommend dishes from our available catering menu.',
+                        style: TextStyle(
+                          color: Colors.grey.shade700,
+                          height: 1.4,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      ElevatedButton.icon(
+                        onPressed: _generatingMenuRecommendation
+                            ? null
+                            : _suggestMenu,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _accentYellow,
+                          foregroundColor: _darkHeader,
+                          disabledBackgroundColor: Colors.amber.shade100,
+                        ),
+                        icon: _generatingMenuRecommendation
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.auto_awesome),
+                        label: Text(
+                          _generatingMenuRecommendation
+                              ? 'CREATING YOUR MENU…'
+                              : 'SUGGEST MY MENU',
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
+                if (_menuRecommendationError != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    _menuRecommendationError!,
+                    style: TextStyle(
+                      color: Colors.red.shade700,
+                    ),
+                  ),
+                ],
+                if (_menuRecommendation != null)
+                  _buildMenuRecommendationCard(),
+              ],
             ],
           ],
         ),
