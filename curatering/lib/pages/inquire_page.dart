@@ -4228,26 +4228,6 @@ class _InquirePageState extends State<InquirePage> {
             ],
             if (_themeDesignChoice == 'create_own') ...[
               const SizedBox(height: 12),
-              if (_aiThemeDesignPayload != null &&
-                  '${_aiThemeDesignPayload!['generatedImageUrl'] ?? ''}'
-                      .trim()
-                      .isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: RepaintBoundary(
-                    key: ValueKey('ai_design_${_aiThemeDesignPayload!['generatedImageUrl']}'),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.network(
-                        '${_aiThemeDesignPayload!['generatedImageUrl']}',
-                        height: 160,
-                        width: double.infinity,
-                        fit: BoxFit.cover,
-                        gaplessPlayback: true,
-                      ),
-                    ),
-                  ),
-                ),
               _buildAiDesignForm(context),
             ],
           ],
@@ -4544,6 +4524,75 @@ class _InquirePageState extends State<InquirePage> {
             style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
           ),
         ],
+        if (_aiThemeDesignPayload != null &&
+            '${_aiThemeDesignPayload!['generatedImageUrl'] ?? ''}'
+                .trim()
+                .isNotEmpty) ...[
+          const SizedBox(height: 16),
+          _buildFormSectionTitle('Generated design'),
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => _showGeneratedDesignLightbox(
+                context,
+                '${_aiThemeDesignPayload!['generatedImageUrl']}',
+              ),
+              borderRadius: BorderRadius.circular(8),
+              child: Stack(
+                children: [
+                  RepaintBoundary(
+                    key: ValueKey(
+                      'ai_design_${_aiThemeDesignPayload!['generatedImageUrl']}',
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.network(
+                        '${_aiThemeDesignPayload!['generatedImageUrl']}',
+                        height: 220,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                        gaplessPlayback: true,
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    right: 8,
+                    bottom: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.zoom_in,
+                            size: 14,
+                            color: Colors.white,
+                          ),
+                          SizedBox(width: 4),
+                          Text(
+                            'Tap to enlarge',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
         if (_generatedImageHistory.length > 1) ...[
           const SizedBox(height: 12),
           const Text(
@@ -4571,6 +4620,7 @@ class _InquirePageState extends State<InquirePage> {
                             };
                           })
                       : null,
+                  onLongPress: () => _showGeneratedDesignLightbox(context, url),
                   child: Container(
                     width: 72,
                     decoration: BoxDecoration(
@@ -4596,6 +4646,57 @@ class _InquirePageState extends State<InquirePage> {
           ),
         ],
       ],
+    );
+  }
+
+  void _showGeneratedDesignLightbox(BuildContext context, String imageUrl) {
+    final url = imageUrl.trim();
+    if (url.isEmpty) return;
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black87,
+      builder: (dialogContext) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 24,
+          ),
+          child: SizedBox(
+            width: MediaQuery.sizeOf(dialogContext).width * 0.92,
+            height: MediaQuery.sizeOf(dialogContext).height * 0.88,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: InteractiveViewer(
+                    minScale: 0.5,
+                    maxScale: 5,
+                    child: Center(
+                      child: Image.network(
+                        url,
+                        fit: BoxFit.contain,
+                        gaplessPlayback: true,
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: 4,
+                  right: 4,
+                  child: IconButton(
+                    style: IconButton.styleFrom(
+                      backgroundColor: Colors.black54,
+                      foregroundColor: Colors.white,
+                    ),
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(dialogContext),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
