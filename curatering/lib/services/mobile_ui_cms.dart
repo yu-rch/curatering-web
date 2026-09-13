@@ -1,5 +1,7 @@
 /// Mobile app layout CMS models (published inside website_content.mobileUi).
 
+import 'catering_pricing_store.dart';
+
 const kMobileUiScreenIds = <String>[
   'guest_landing',
   'customer_dashboard',
@@ -262,13 +264,16 @@ class MobileUiBlock {
             MobileUiPackageCard(
               id: 'p1',
               title: 'Catering',
-              lines: ['Php 500 per pax', 'Setup: staff and buffet service'],
+              lines: [
+                CateringPricingStore.instance.formatPerPaxLabel(),
+                'Setup: staff and buffet service',
+              ],
             ),
             MobileUiPackageCard(
               id: 'p2',
               title: 'Catering with Event Styling',
               lines: [
-                'Php 500 per pax',
+                CateringPricingStore.instance.formatPerPaxLabel(),
                 'Minimal Design: tables and chairs with linen and centerpiece',
                 'Setup: staff and buffet service',
               ],

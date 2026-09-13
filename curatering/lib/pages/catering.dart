@@ -15,6 +15,7 @@ import '../auth/roles.dart';
 import '../models/event_order.dart';
 import '../models/menu_dish.dart';
 import '../services/api_client.dart';
+import '../services/catering_pricing_store.dart';
 import '../services/events_api.dart';
 import '../services/manager_catering_api.dart';
 import '../services/menu_store.dart';
@@ -493,6 +494,7 @@ class _ManageEventsState extends State<ManageEvents>
   @override
   void initState() {
     super.initState();
+    unawaited(CateringPricingStore.instance.ensureLoaded());
     final role = AuthSession.instance.currentRole;
     final isSupervisor = role == Role.supervisor;
     _tabController = TabController(
@@ -1183,7 +1185,7 @@ class _ManageEventsState extends State<ManageEvents>
           'dishId': id,
           'dishName': dish?.name ?? id,
           'paxOption': '$pax pax',
-          'price': '${500 * pax}',
+          'price': '${cateringPricePerGuest() * pax}',
           'additionalChargeAmount': addCharge,
           'menu_dishes_additional_charge_amount': addCharge,
         });
@@ -2585,7 +2587,7 @@ class _ManageEventsState extends State<ManageEvents>
           (d) => d.id == dishId,
         );
         final paxCount = effectiveGuestCount > 0 ? effectiveGuestCount : 1;
-        final computedPrice = 500 * paxCount;
+        final computedPrice = cateringPricePerGuest() * paxCount;
         menuItems.add({
           'dishId': dishId,
           'dishName': dish.name,
@@ -2604,7 +2606,7 @@ class _ManageEventsState extends State<ManageEvents>
           (d) => d.id == dishId,
         );
         final paxCount = effectiveGuestCount > 0 ? effectiveGuestCount : 1;
-        final computedPrice = 500 * paxCount;
+        final computedPrice = cateringPricePerGuest() * paxCount;
         menuItems.add({
           'dishId': dishId,
           'dishName': dish.name,
@@ -7487,7 +7489,7 @@ class _ManageEventsState extends State<ManageEvents>
             ),
             const SizedBox(height: 6),
             Text(
-              'Formula: (pax × 500) + menu add-ons + labor + travel + additional costs',
+              'Formula: (pax × ${cateringPricePerGuest().toStringAsFixed(0)}) + menu add-ons + labor + travel + additional costs',
               style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
             ),
             if (showSubmitActions) ...[

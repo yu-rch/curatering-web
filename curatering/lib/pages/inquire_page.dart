@@ -15,8 +15,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config.dart';
 import '../models/menu_dish.dart';
+import '../services/api_client.dart';
 import '../services/menu_recommendation_service.dart';
 import '../services/menu_store.dart';
+import '../services/catering_pricing_store.dart';
 import '../services/public_events_api.dart';
 import '../services/runpod_service.dart';
 import '../services/set_menu_store.dart';
@@ -68,7 +70,6 @@ const String kInquiryTypeCateringWithEventStyling =
 const int kMinCateringOnlyPax = 20;
 const int kMinCateringEventPax = 50;
 const int kInquiryLandingEventStylingMinPax = 50;
-const double kPesosPerPax = kCateringInquiryPricePerGuest;
 
 bool isInquiryCateringWithEventStyling(String type) =>
     type.trim().toUpperCase() == kInquiryTypeCateringWithEventStyling;
@@ -188,6 +189,8 @@ class _InquirePageState extends State<InquirePage> {
   String? _menuRecommendationError;
   bool _menuWasAiRecommended = false;
   String _menuRecommendationSummary = '';
+  final GlobalKey _menuRecommendationCardKey = GlobalKey();
+  int _menuRecommendationRequestId = 0;
 
   // ---- Theme design ----
   String _themeDesignChoice = '';
@@ -286,6 +289,10 @@ class _InquirePageState extends State<InquirePage> {
   @override
   void initState() {
     super.initState();
+    unawaited(CateringPricingStore.instance.ensureLoaded().then((_) {
+      if (mounted) setState(() {});
+    }));
+    CateringPricingStore.instance.addListener(_onCateringPricingChanged);
     MenuStore.instance.loadDishes().then((_) {
       unawaited(MenuStore.instance.ensureImagesLoaded());
     });
@@ -308,8 +315,13 @@ class _InquirePageState extends State<InquirePage> {
     _guestCount.addListener(_onGuestCountChanged);
   }
 
+  void _onCateringPricingChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
+    CateringPricingStore.instance.removeListener(_onCateringPricingChanged);
     _scheduleConflictDebounce?.cancel();
     _venueDebounce?.cancel();
     _eventCity.removeListener(_onVenueChanged);
@@ -507,7 +519,7 @@ class _InquirePageState extends State<InquirePage> {
   double _estimatedCost() {
     final guests = _billableGuestCountForPricing();
     final buffer = _paxBufferForPricing();
-    return (guests + buffer) * kPesosPerPax + _menuAdditionalChargeTotal();
+    return (guests + buffer) * pesosPerPax() + _menuAdditionalChargeTotal();
   }
 
   Map<String, MenuDish> get _activeDishById => {
@@ -1096,6 +1108,7 @@ class _InquirePageState extends State<InquirePage> {
       return;
     }
 
+    final requestId = ++_menuRecommendationRequestId;
     setState(() {
       _generatingMenuRecommendation = true;
       _menuRecommendationError = null;
@@ -1112,18 +1125,31 @@ class _InquirePageState extends State<InquirePage> {
         dishes: dishes,
       );
 
-      if (!mounted) return;
+      if (!mounted || requestId != _menuRecommendationRequestId) return;
 
       setState(() {
         _menuRecommendation = result;
         _menuRecommendationSummary = result.summary;
       });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final ctx = _menuRecommendationCardKey.currentContext;
+        if (ctx == null || !ctx.mounted) return;
+        Scrollable.ensureVisible(
+          ctx,
+          duration: const Duration(milliseconds: 400),
+          alignment: 0.12,
+          curve: Curves.easeOut,
+        );
+      });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || requestId != _menuRecommendationRequestId) return;
+
+      final message = e is ApiError && e.message.trim().isNotEmpty
+          ? e.message
+          : 'We could not generate a menu right now. Please try again.';
 
       setState(() {
-        _menuRecommendationError =
-            'We could not generate a menu right now. Please try again.';
+        _menuRecommendationError = message;
       });
 
       showAntdMessage(
@@ -1132,7 +1158,7 @@ class _InquirePageState extends State<InquirePage> {
         type: AntdMessageType.error,
       );
     } finally {
-      if (mounted) {
+      if (mounted && requestId == _menuRecommendationRequestId) {
         setState(() {
           _generatingMenuRecommendation = false;
         });
@@ -1185,6 +1211,26 @@ class _InquirePageState extends State<InquirePage> {
     );
   }
 
+  List<String> _recommendedDishNames(
+    MenuRecommendationResult recommendation,
+    Map<String, MenuDish> dishById,
+  ) {
+    final resultNameById = <String, String>{
+      for (final dish in recommendation.dishes)
+        if ((dish['id']?.toString() ?? '').isNotEmpty)
+          dish['id'].toString(): (dish['name']?.toString() ?? '').trim(),
+    };
+    return recommendation.dishIds
+        .map((id) {
+          final fromStore = dishById[id]?.name.trim() ?? '';
+          if (fromStore.isNotEmpty) return fromStore;
+          final fromResult = resultNameById[id] ?? '';
+          return fromResult.isNotEmpty ? fromResult : id;
+        })
+        .where((name) => name.isNotEmpty)
+        .toList();
+  }
+
   Widget _buildMenuRecommendationCard() {
     final recommendation = _menuRecommendation!;
     final dishById = _activeDishById;
@@ -1194,6 +1240,7 @@ class _InquirePageState extends State<InquirePage> {
         .toList();
 
     return Container(
+      key: _menuRecommendationCardKey,
       margin: const EdgeInsets.only(top: 16),
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -1239,8 +1286,8 @@ class _InquirePageState extends State<InquirePage> {
               style: const TextStyle(height: 1.4),
             ),
           const SizedBox(height: 14),
-          ...dishes.map(
-            (dish) => Padding(
+          ..._recommendedDishNames(recommendation, dishById).map(
+            (name) => Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1253,7 +1300,7 @@ class _InquirePageState extends State<InquirePage> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      dish.name,
+                      name,
                       style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                   ),
@@ -1549,11 +1596,11 @@ class _InquirePageState extends State<InquirePage> {
         'costBreakdown': [
           {
             'label': 'Base food cost',
-            'amount': guestsSaved * kPesosPerPax,
+            'amount': guestsSaved * pesosPerPax(),
           },
           {
             'label': 'Pax buffer',
-            'amount': paxBufferSaved * kPesosPerPax,
+            'amount': paxBufferSaved * pesosPerPax(),
           },
         ],
         'foodTastingRequested': _foodTastingRequested,
@@ -1632,6 +1679,7 @@ class _InquirePageState extends State<InquirePage> {
       _selectedSetMenu = 'All Dishes';
       _selectedDishIds.clear();
       _generatingMenuRecommendation = false;
+      _menuRecommendationRequestId += 1;
       _menuRecommendation = null;
       _menuRecommendationError = null;
       _menuWasAiRecommended = false;
@@ -2368,8 +2416,8 @@ class _InquirePageState extends State<InquirePage> {
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            'Estimated: ₱${(pax * kPesosPerPax).toStringAsFixed(0)} '
-                            '(₱${kPesosPerPax.toStringAsFixed(0)} × $pax guests)',
+                            'Estimated: ₱${(pax * pesosPerPax()).toStringAsFixed(0)} '
+                            '(₱${pesosPerPax().toStringAsFixed(0)} × $pax guests)',
                             style: TextStyle(
                               fontSize: 13,
                               color: Colors.grey.shade700,
@@ -2895,10 +2943,10 @@ class _InquirePageState extends State<InquirePage> {
           if (guests > 0) ...[
             _costPanelRow(
               'Base food cost',
-              '₱${(guests * kPesosPerPax).toStringAsFixed(0)}',
+              '₱${(guests * pesosPerPax()).toStringAsFixed(0)}',
             ),
             _costPanelRow(
-              '  ₱${kPesosPerPax.toStringAsFixed(0)} × $guests guests',
+              '  ₱${pesosPerPax().toStringAsFixed(0)} × $guests guests',
               '',
               isSubtle: true,
             ),
@@ -2906,7 +2954,7 @@ class _InquirePageState extends State<InquirePage> {
               const SizedBox(height: 4),
               _costPanelRow(
                 'Pax buffer ($buffer)',
-                '₱${(buffer * kPesosPerPax).toStringAsFixed(0)}',
+                '₱${(buffer * pesosPerPax()).toStringAsFixed(0)}',
               ),
             ],
             if (_menuPrefTabIndex == 1 && guests > 0) ...[
@@ -3494,7 +3542,7 @@ class _InquirePageState extends State<InquirePage> {
                 decoration: InputDecoration(
                   labelText: 'Pax Buffer (optional)',
                   helperText:
-                      'Additional pax for estimate only (₱${kPesosPerPax.toStringAsFixed(0)} per pax)',
+                      'Additional pax for estimate only (₱${pesosPerPax().toStringAsFixed(0)} per pax)',
                   border: const OutlineInputBorder(),
                 ),
                 keyboardType: TextInputType.number,

@@ -536,8 +536,8 @@ class _CustomerInquireFormState extends State<CustomerInquireForm> {
                     if (g != null && g > 0)
                       _buildSummaryRow(
                         'Catering estimate',
-                        'â‚±${estimateInquiryCateringTotal(g).toStringAsFixed(0)} '
-                            '(â‚±${kCateringInquiryPricePerGuest.toStringAsFixed(0)} Ã— $g guests)',
+                        '₱${estimateInquiryCateringTotal(g).toStringAsFixed(0)} '
+                            '(₱${cateringPricePerGuest().toStringAsFixed(0)} × $g guests)',
                       ),
                   ]),
                   const Divider(height: 24),

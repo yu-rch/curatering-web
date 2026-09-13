@@ -38,6 +38,8 @@ import {
   getLoyaltyProgramConfig,
   calculateLoyaltyPointsForOrder,
   setLoyaltyProgramConfig,
+  getCateringPricePerGuest,
+  setCateringPricePerGuest,
   getCustomAllergenPresets,
   getMenuAllergenCatalog,
   upsertMenuAllergensFromSerialized,
@@ -349,7 +351,10 @@ app.use(express.json({ limit: REQUEST_BODY_LIMIT }));
 
 const publicRateLimit = createPublicRateLimiter();
 app.use("/api/public/events/theme-design", publicRateLimit);
-app.use("/api/recommend-menu", publicRateLimit);
+app.use("/api/recommend-menu", (req, res, next) => {
+  if (req.method === "GET") return next();
+  return publicRateLimit(req, res, next);
+});
 app.use("/api", menuRecommendationRoutes);
 
 let dbReady = false;
@@ -9906,6 +9911,33 @@ async function registerRoutesAfterDbInit() {
         }
       },
     );
+
+    // Catering inquiry price per guest (PHP) — used by inquire estimates + display copy
+    app.get('/api/catering/price-per-guest', async (_req, res) => {
+      try {
+        const pricePerGuest = await getCateringPricePerGuest();
+        res.json({ pricePerGuest });
+      } catch (error) {
+        console.error('Error fetching catering price per guest:', error);
+        res.status(500).json({ error: 'Failed to fetch catering price per guest' });
+      }
+    });
+
+    app.put('/api/catering/price-per-guest', authRequired, async (req, res) => {
+      try {
+        const raw = req.body?.pricePerGuest ?? req.body?.price;
+        const pricePerGuest = await setCateringPricePerGuest(raw);
+        res.json({ ok: true, pricePerGuest });
+      } catch (error) {
+        const status = error?.status === 400 ? 400 : 500;
+        res.status(status).json({
+          error:
+            status === 400
+              ? String(error.message || 'Invalid price')
+              : 'Failed to save catering price per guest',
+        });
+      }
+    });
 
     app.get('/api/loyalty/user-points', authRequired, async (req, res) => {
       try {

@@ -1358,7 +1358,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                'Catering base: ${formatPesos(dishCostLive)} (₱${kCateringInquiryPricePerGuest.toStringAsFixed(0)} × pax)',
+                                'Catering base: ${formatPesos(dishCostLive)} (₱${cateringPricePerGuest().toStringAsFixed(0)} × pax)',
                                 style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w700,

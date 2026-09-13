@@ -80,7 +80,7 @@ double computeOrderTotalCost(EventOrderDto order) {
 
   final guests = order.guestCount > 0 ? order.guestCount : 0;
   final paxBuffer = _paxBufferFromOrder(order);
-  var total = (guests + paxBuffer) * kCateringInquiryPricePerGuest;
+  var total = (guests + paxBuffer) * cateringPricePerGuest();
   total += _menuAdditionalChargesFromOrder(order);
   total += _themeDesignCostFromOrder(order);
   total += order.themeDesign.laborCost ?? 0;

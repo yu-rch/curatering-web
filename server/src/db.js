@@ -1506,6 +1506,53 @@ export async function setLoyaltyProgramConfig(config) {
   );
 }
 
+const CATERING_PRICE_PER_GUEST_KEY = 'catering_price_per_guest';
+const DEFAULT_CATERING_PRICE_PER_GUEST = 500;
+
+/** @returns {number} */
+export async function getCateringPricePerGuest() {
+  try {
+    const r = await pool.query(
+      `SELECT value FROM system_settings WHERE key = $1`,
+      [CATERING_PRICE_PER_GUEST_KEY],
+    );
+    if (r.rows.length === 0) return DEFAULT_CATERING_PRICE_PER_GUEST;
+    const v = r.rows[0].value;
+    const n =
+      typeof v === 'number'
+        ? v
+        : v && typeof v === 'object'
+          ? Number(v.pricePerGuest ?? v.price ?? v.value)
+          : Number(v);
+    if (!Number.isFinite(n) || n <= 0) return DEFAULT_CATERING_PRICE_PER_GUEST;
+    return Math.round(n * 100) / 100;
+  } catch (e) {
+    console.log('getCateringPricePerGuest:', e.message);
+    return DEFAULT_CATERING_PRICE_PER_GUEST;
+  }
+}
+
+/** @param {number} price */
+export async function setCateringPricePerGuest(price) {
+  const n = Number(price);
+  if (!Number.isFinite(n) || n <= 0) {
+    const err = new Error('pricePerGuest must be a positive number');
+    err.status = 400;
+    throw err;
+  }
+  const normalized = Math.round(n * 100) / 100;
+  await pool.query(
+    `INSERT INTO system_settings (key, value, updated_at)
+     VALUES ($1, $2::jsonb, now())
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+    [
+      CATERING_PRICE_PER_GUEST_KEY,
+      JSON.stringify({ pricePerGuest: normalized }),
+    ],
+  );
+  return normalized;
+}
+
 let restaurantOrderWorkflowColumnsPromise = null;
 
 /** Critical restaurant_orders columns used before full initDb (auto-cancel, payment). */

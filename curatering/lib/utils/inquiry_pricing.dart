@@ -1,11 +1,24 @@
-/// Default per-guest rate for catering inquiry estimates (PHP).
-const double kCateringInquiryPricePerGuest = 500;
+import '../services/catering_pricing_store.dart';
+
+export '../services/catering_pricing_store.dart'
+    show kDefaultCateringInquiryPricePerGuest;
+
+/// Default / fallback — prefer [cateringPricePerGuest] for live estimates.
+const double kCateringInquiryPricePerGuest =
+    kDefaultCateringInquiryPricePerGuest;
 
 /// Extra dish beyond a set menu: ₱100 per guest.
 const double kExtraSetMenuDishFeePerPax = 100;
 
-/// Alias used by mobile handoff / wizard copy.
-const double kPesosPerPax = kCateringInquiryPricePerGuest;
+/// Live catering price per guest (falls back to [kDefaultCateringInquiryPricePerGuest]).
+double cateringPricePerGuest() =>
+    CateringPricingStore.instance.pricePerGuest;
+
+/// Alias used by mobile handoff / wizard copy (live).
+double pesosPerPax() => cateringPricePerGuest();
+
+/// Deprecated const alias — use [pesosPerPax] / [cateringPricePerGuest].
+const double kPesosPerPax = kDefaultCateringInquiryPricePerGuest;
 
 const int kMinCateringOnlyPax = 10;
 const int kMinCateringEventPax = 50;
@@ -19,7 +32,11 @@ const String kInquiryTypeCateringWithEventStyling =
 const String kLegacyInquiryTypeCateringAndEvent = 'CATERING AND EVENT';
 
 /// Extra styling charge per guest when styling is selected below the 50-pax threshold.
-const double kEventStylingSurchargePerPaxBelow50 = kPesosPerPax;
+double eventStylingSurchargePerPaxBelow50() => cateringPricePerGuest();
+
+/// Deprecated const alias — use [eventStylingSurchargePerPaxBelow50].
+const double kEventStylingSurchargePerPaxBelow50 =
+    kDefaultCateringInquiryPricePerGuest;
 
 bool isInquiryCateringWithEventStyling(String inquiryType) {
   final u = inquiryType.trim().toUpperCase();
@@ -58,15 +75,15 @@ String inquiryEventStylingChoiceLabel({
       : 'Without event styling';
 }
 
-/// Catering food estimate: ₱500 × number of guests.
+/// Catering food estimate: price-per-guest × number of guests.
 double estimateInquiryCateringTotal(int guestCount) {
   if (guestCount <= 0) return 0;
-  return guestCount * kCateringInquiryPricePerGuest;
+  return guestCount * cateringPricePerGuest();
 }
 
 double estimateInquiryPaxBufferTotal(int paxBuffer) {
   if (paxBuffer <= 0) return 0;
-  return paxBuffer * kPesosPerPax;
+  return paxBuffer * pesosPerPax();
 }
 
 /// Styling surcharge when opted-in below [kInquiryLandingEventStylingMinPax].
@@ -83,7 +100,7 @@ double estimateInquiryStylingSurcharge({
   )) {
     return 0;
   }
-  return guestCount * kEventStylingSurchargePerPaxBelow50;
+  return guestCount * eventStylingSurchargePerPaxBelow50();
 }
 
 /// Package type after landing guest count (or when form guests cross 50).
@@ -106,13 +123,13 @@ List<Map<String, dynamic>> buildInquiryCostBreakdownLines({
   required String inquiryType,
   required String serviceIncluded,
 }) {
+  final rate = pesosPerPax();
   final lines = <Map<String, dynamic>>[];
   final base = estimateInquiryCateringTotal(guestCount);
   if (guestCount > 0) {
     lines.add({
       'label': 'Base food cost',
-      'detail':
-          '₱${kPesosPerPax.toStringAsFixed(0)} × $guestCount guests',
+      'detail': '₱${rate.toStringAsFixed(0)} × $guestCount guests',
       'amount': base,
     });
   }
@@ -120,7 +137,7 @@ List<Map<String, dynamic>> buildInquiryCostBreakdownLines({
   if (buffer > 0) {
     lines.add({
       'label': 'Pax buffer',
-      'detail': '₱${kPesosPerPax.toStringAsFixed(0)} × $paxBuffer',
+      'detail': '₱${rate.toStringAsFixed(0)} × $paxBuffer',
       'amount': buffer,
     });
   }
@@ -148,7 +165,7 @@ List<Map<String, dynamic>> buildInquiryCostBreakdownLines({
     lines.add({
       'label': 'Event styling surcharge',
       'detail':
-          '₱${kEventStylingSurchargePerPaxBelow50.toStringAsFixed(0)} × $guestCount guests (below $kInquiryLandingEventStylingMinPax)',
+          '₱${eventStylingSurchargePerPaxBelow50().toStringAsFixed(0)} × $guestCount guests (below $kInquiryLandingEventStylingMinPax)',
       'amount': surcharge,
     });
   }
@@ -165,4 +182,7 @@ double sumInquiryCostBreakdown(List<Map<String, dynamic>> lines) {
 }
 
 String formatInquiryCateringDishPrice() =>
-    '₱${kCateringInquiryPricePerGuest.toStringAsFixed(0)}';
+    CateringPricingStore.instance.formatPesoAmount();
+
+String formatInquiryCateringPerPaxLabel() =>
+    CateringPricingStore.instance.formatPerPaxLabel();

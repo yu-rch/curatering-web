@@ -12,8 +12,10 @@ import '../widgets/paginated_data_table.dart';
 import '../models/menu_dish.dart';
 import '../constants/catering_meal_types.dart';
 import '../services/api_client.dart';
+import '../services/catering_pricing_store.dart';
 import '../services/menu_store.dart';
 import '../services/set_menu_store.dart';
+import '../services/website_content_store.dart';
 import '../utils/debouncer.dart';
 import '../utils/image_cache.dart';
 import '../widgets/antd_message.dart';
@@ -306,12 +308,22 @@ class _MenuState extends State<Menu> {
     super.initState();
     MenuStore.instance.addListener(_onMenuChanged);
     SetMenuStore.instance.addListener(_onSetMenusChanged);
+    CateringPricingStore.instance.addListener(_onCateringPricingChanged);
+    unawaited(CateringPricingStore.instance.ensureLoaded());
     // Always ensure dishes are loading so the page never looks empty.
     if (MenuStore.instance.activeDishes.isEmpty) {
       unawaited(MenuStore.instance.loadDishes());
     }
     unawaited(MenuStore.instance.ensureImagesLoaded());
     unawaited(SetMenuStore.instance.loadSetMenus());
+  }
+
+  void _onCateringPricingChanged() {
+    if (mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
+    }
   }
 
   void _onMenuChanged() {
@@ -347,6 +359,7 @@ class _MenuState extends State<Menu> {
     _typeController.dispose();
     _publicDescriptionController.dispose();
     _allergensController.dispose();
+    CateringPricingStore.instance.removeListener(_onCateringPricingChanged);
     MenuStore.instance.removeListener(_onMenuChanged);
     SetMenuStore.instance.removeListener(_onSetMenusChanged);
     super.dispose();
@@ -1138,6 +1151,119 @@ class _MenuState extends State<Menu> {
           : 'Updated $done, failed $failed.',
       type: failed == 0 ? AntdMessageType.success : AntdMessageType.warning,
     );
+  }
+
+  Future<void> _showCateringPerGuestPriceDialog() async {
+    final pricing = CateringPricingStore.instance;
+    await pricing.ensureLoaded();
+    final priceCtrl = TextEditingController(
+      text: pricing.pricePerGuest.toStringAsFixed(
+        pricing.pricePerGuest == pricing.pricePerGuest.roundToDouble() ? 0 : 2,
+      ),
+    );
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Catering price per guest'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Used for inquiry estimates, catering order totals, and '
+                '"Php … per pax" package display text.',
+                style: TextStyle(color: Colors.grey.shade700, height: 1.35),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: priceCtrl,
+                autofocus: true,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Price per guest (PHP)',
+                  prefixText: '₱ ',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('CANCEL'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('SAVE'),
+            ),
+          ],
+        );
+      },
+    );
+    final raw = priceCtrl.text.trim();
+    priceCtrl.dispose();
+    if (confirmed != true || !mounted) return;
+    final parsed = double.tryParse(raw.replaceAll(',', ''));
+    if (parsed == null || parsed <= 0) {
+      showAntdMessage(
+        context,
+        'Enter a valid price greater than zero.',
+        type: AntdMessageType.error,
+      );
+      return;
+    }
+    try {
+      final saved = await pricing.savePricePerGuest(parsed);
+      await _syncPerPaxDisplayTextInCms();
+      if (!mounted) return;
+      showAntdMessage(
+        context,
+        'Catering price set to ₱${saved.toStringAsFixed(0)} per guest.',
+      );
+    } catch (e) {
+      if (!mounted) return;
+      showAntdMessage(
+        context,
+        'Failed to save price: $e',
+        type: AntdMessageType.error,
+      );
+    }
+  }
+
+  Future<void> _syncPerPaxDisplayTextInCms() async {
+    final cms = WebsiteContentStore.instance;
+    try {
+      await cms.loadDraft();
+    } catch (_) {
+      try {
+        await cms.ensureLoaded(force: true);
+      } catch (_) {
+        return;
+      }
+    }
+    final rewrite = CateringPricingStore.instance.rewriteDisplayLine;
+    var changed = false;
+    for (final screen in cms.mobileUi.screens.values) {
+      for (final block in screen.blocks) {
+        for (final pkg in block.packages) {
+          for (var i = 0; i < pkg.lines.length; i++) {
+            final next = rewrite(pkg.lines[i]);
+            if (next != pkg.lines[i]) {
+              pkg.lines[i] = next;
+              changed = true;
+            }
+          }
+        }
+      }
+    }
+    if (!changed) return;
+    try {
+      await cms.publish(note: 'Sync catering per-pax display price');
+    } catch (_) {
+      // Price is already saved; CMS sync is best-effort for package card copy.
+    }
   }
 
   Future<void> _confirmArchiveDish(MenuDish dish) async {
@@ -2035,6 +2161,7 @@ class _MenuState extends State<Menu> {
     required VoidCallback onAddDish,
     required String searchHint,
     bool showBulkPrice = false,
+    bool showPerGuestPrice = false,
     bool showViewToggle = true,
   }) {
     final ingredients = _distinctIngredients(category);
@@ -2143,6 +2270,13 @@ class _MenuState extends State<Menu> {
             }),
             icon: Icons.filter_alt_off,
             label: 'Clear',
+          ),
+        if (showPerGuestPrice)
+          AntdSecondaryButton(
+            onPressed: _showCateringPerGuestPriceDialog,
+            icon: Icons.payments_outlined,
+            label:
+                '₱${CateringPricingStore.instance.pricePerGuest.toStringAsFixed(0)}/guest',
           ),
       ],
       trailing: [
@@ -2947,6 +3081,7 @@ class _MenuState extends State<Menu> {
                                   ? 'Search restaurant dishes'
                                   : 'Search set menu dishes',
                           showBulkPrice: _activeTabIndex == 0,
+                          showPerGuestPrice: _activeTabIndex == 0,
                           showViewToggle: _activeTabIndex != 2,
                         ),
                       ],
