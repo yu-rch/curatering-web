@@ -8,12 +8,25 @@ const double restaurantLat = 14.513436;
 const double restaurantLng = 121.059198;
 const double deliveryMaxDistanceKm = 50;
 
-const double defaultMapLat = 14.5995;
-const double defaultMapLng = 120.9842;
+const double defaultMapLat = restaurantLat;
+const double defaultMapLng = restaurantLng;
 
 /// Contact Us page map preview (Macrina's Kitchen).
 const double contactPageMapLat = 14.513537;
 const double contactPageMapLng = 121.061896;
+
+/// Restaurant delivery: Taguig plus bordering / adjacent cities.
+/// Matching is case-insensitive substring against reverse-geocode text.
+const List<String> kRestaurantDeliveryCities = [
+  'Taguig',
+  'Makati',
+  'Pasig',
+  'Pateros',
+  'Parañaque',
+  'Paranaque',
+  'Pasay',
+  'Mandaluyong',
+];
 
 class GeoPin {
   final double lat;
@@ -36,7 +49,60 @@ double haversineKm(GeoPin a, GeoPin b) {
 
 double _deg2rad(double deg) => deg * math.pi / 180;
 
-bool isWithinDeliveryRadius(GeoPin pin) {
+String restaurantDeliveryAreaLabel() {
+  // Prefer accented Parañaque in user-facing copy once.
+  const display = [
+    'Taguig',
+    'Makati',
+    'Pasig',
+    'Pateros',
+    'Parañaque',
+    'Pasay',
+    'Mandaluyong',
+  ];
+  return display.join(', ');
+}
+
+/// True when [address] / Nominatim parts mention Taguig or an adjacent city.
+bool isAllowedRestaurantDeliveryLocation({
+  required String address,
+  Map<String, String>? addressParts,
+}) {
+  final parts = <String>[address];
+  if (addressParts != null) {
+    // Prefer locality fields first.
+    for (final key in const [
+      'city',
+      'town',
+      'municipality',
+      'city_district',
+      'suburb',
+      'village',
+      'county',
+      'state_district',
+    ]) {
+      final v = addressParts[key];
+      if (v != null && v.trim().isNotEmpty) parts.add(v);
+    }
+    parts.addAll(addressParts.values);
+  }
+  final haystack = parts.join(' ').toLowerCase();
+  if (haystack.trim().isEmpty) return false;
+
+  for (final city in kRestaurantDeliveryCities) {
+    final needle = city.toLowerCase();
+    if (haystack.contains(needle)) return true;
+  }
+  return false;
+}
+
+/// Legacy name used by map picker — city allowlist for restaurant delivery.
+bool isWithinDeliveryRadius(GeoPin pin, {String address = ''}) {
+  if (address.trim().isNotEmpty) {
+    return isAllowedRestaurantDeliveryLocation(address: address);
+  }
+  // Without an address, allow provisional pin placement; Save still needs
+  // reverse-geocode + city check.
   return true;
 }
 

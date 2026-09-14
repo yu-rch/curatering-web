@@ -1,42 +1,41 @@
 ((a,b)=>{a[b]=a[b]||{}})(self,"$__dart_deferred_initializers__")
 $__dart_deferred_initializers__.current=function(a,b,c,$){var B,C,D={
-rk(d,e,f,g,h){return B.Q(d,!1).auS(e,f,null,g,h)}},A,E
+rl(d,e,f,g,h){return B.R(d,!1).av0(e,f,null,g,h)}},A,E
 B=c[0]
 C=c[2]
 D=a.updateHolder(c[27],D)
-A=c[32]
+A=c[35]
 E=c[28]
 var z=a.updateTypes([]);(function constants(){A.Ex=new B.am(18,1/0,18,1/0)
-A.G5=new B.qF(C.W,!0,null,null)
-A.qv=new E.m4(null)
-A.GM=new B.m7(null,null,null,null,null,C.nw,null)
-A.xL=new B.ac(12,12,12,10)
-A.xM=new B.ac(12,8,8,8)
-A.Hh=new B.ac(20,10,20,10)
-A.Ho=new B.ac(8,12,8,16)
+A.G7=new B.qH(C.T,!0,null,null)
+A.qt=new E.m4(null)
+A.GO=new B.m7(null,null,null,null,null,C.nv,null)
+A.xM=new B.ac(12,12,12,10)
+A.xN=new B.ac(12,8,8,8)
+A.Hj=new B.ac(20,10,20,10)
+A.Hq=new B.ac(8,12,8,16)
 A.kl=new B.al(61838,"MaterialIcons",!1)
-A.o1=new B.al(62333,"MaterialIcons",!1)
+A.o0=new B.al(62333,"MaterialIcons",!1)
 A.yQ=new B.al(58290,"MaterialIcons",!1)
-A.IV=new B.aj(A.yQ,18,C.w,null,null)
-A.IX=new B.aj(C.kj,null,C.by,null,null)
-A.IZ=new B.aj(C.kk,22,null,null,null)
-A.re=new B.aj(C.jd,null,C.by,null,null)
-A.J8=new B.aj(C.iy,22,null,null,null)
-A.Jm=new B.aj(C.nY,null,C.W2,null,null)
-A.z6=new B.aj(A.o1,null,null,null,null)
-A.ri=new B.aj(A.o1,null,C.w,null,null)
-A.Ju=new B.aj(A.yQ,null,C.by,null,null)
-A.JA=new B.aj(C.jd,20,C.w,null,null)
-A.JD=new B.aj(C.hO,null,C.by,null,null)
-A.JG=new B.aj(A.kl,null,C.by,null,null)
-A.i2=new B.M(!0,C.w,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null)
-A.a1L=new B.M(!0,C.w,null,null,null,null,null,C.aa,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null)
-A.a1V=new B.M(!0,null,null,null,null,null,15,C.aa,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null)
-A.a27=new B.o("Logout",null,C.v3,null,null,null,null,null,null,null,null)
-A.a2c=new B.o("My Caterings",null,A.i2,null,null,null,null,null,null,null,null)
-A.vc=new B.o("Login",null,A.i2,null,null,null,null,null,null,null,null)
-A.a2j=new B.o("My Orders",null,A.i2,null,null,null,null,null,null,null,null)
-A.a2m=new B.o("Order Tracking",null,A.i2,null,null,null,null,null,null,null,null)
-A.a2I=new B.o("My Profile",null,A.i2,null,null,null,null,null,null,null,null)})();(function staticFields(){$.Ns=null
+A.IX=new B.aj(A.yQ,18,C.w,null,null)
+A.IZ=new B.aj(C.kj,null,C.bs,null,null)
+A.J0=new B.aj(C.kk,22,null,null,null)
+A.rc=new B.aj(C.je,null,C.bs,null,null)
+A.Ja=new B.aj(C.iy,22,null,null,null)
+A.Jo=new B.aj(C.nX,null,C.W4,null,null)
+A.z7=new B.aj(A.o0,null,null,null,null)
+A.rg=new B.aj(A.o0,null,C.w,null,null)
+A.Jw=new B.aj(A.yQ,null,C.bs,null,null)
+A.JC=new B.aj(C.je,20,C.w,null,null)
+A.JF=new B.aj(C.hP,null,C.bs,null,null)
+A.JI=new B.aj(A.kl,null,C.bs,null,null)
+A.a1N=new B.M(!0,C.w,null,null,null,null,null,C.aa,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null)
+A.a1W=new B.M(!0,null,null,null,null,null,15,C.aa,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null)
+A.a29=new B.o("Logout",null,C.CE,null,null,null,null,null,null,null,null)
+A.a2e=new B.o("My Caterings",null,C.fV,null,null,null,null,null,null,null,null)
+A.vb=new B.o("Login",null,C.fV,null,null,null,null,null,null,null,null)
+A.a2l=new B.o("My Orders",null,C.fV,null,null,null,null,null,null,null,null)
+A.a2o=new B.o("Order Tracking",null,C.fV,null,null,null,null,null,null,null,null)
+A.a2K=new B.o("My Profile",null,C.fV,null,null,null,null,null,null,null,null)})();(function staticFields(){$.Ns=null
 $.Nt=null})()};
-(a=>{a["DfQNTexLnMtzNVu9OGEzJuGw7pM="]=a.current})($__dart_deferred_initializers__);
+(a=>{a["MEq8wWWUbMb6aItEZlrME8Hs0ME="]=a.current})($__dart_deferred_initializers__);

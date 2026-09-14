@@ -65,6 +65,12 @@ class NominatimService {
   }
 
   Future<String> reverseGeocode(GeoPin pin) async {
+    final details = await reverseGeocodeDetails(pin);
+    return details.displayName;
+  }
+
+  /// Reverse geocode with address components (for city allowlist checks).
+  Future<ReverseGeocodeDetails> reverseGeocodeDetails(GeoPin pin) async {
     final uri = Uri.parse('$_base/reverse').replace(
       queryParameters: {
         'lat': pin.lat.toString(),
@@ -77,11 +83,34 @@ class NominatimService {
       final body = await _get(uri);
       if (body is Map) {
         final name = (body['display_name'] ?? '').toString().trim();
-        if (name.isNotEmpty) return name;
+        final rawAddr = body['address'];
+        final parts = <String, String>{};
+        if (rawAddr is Map) {
+          rawAddr.forEach((key, value) {
+            final k = key.toString();
+            final v = value?.toString().trim() ?? '';
+            if (v.isNotEmpty) parts[k] = v;
+          });
+        }
+        if (name.isNotEmpty) {
+          return ReverseGeocodeDetails(displayName: name, addressParts: parts);
+        }
       }
     } catch (_) {
       /* fall through */
     }
-    return '${pin.lat.toStringAsFixed(6)}, ${pin.lng.toStringAsFixed(6)}';
+    return ReverseGeocodeDetails(
+      displayName: '${pin.lat.toStringAsFixed(6)}, ${pin.lng.toStringAsFixed(6)}',
+    );
   }
+}
+
+class ReverseGeocodeDetails {
+  const ReverseGeocodeDetails({
+    required this.displayName,
+    this.addressParts = const {},
+  });
+
+  final String displayName;
+  final Map<String, String> addressParts;
 }

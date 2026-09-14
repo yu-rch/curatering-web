@@ -2342,78 +2342,65 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     );
   }
 
-  Widget _buildLatestEventSection(WebsiteContentStore w) {
+  Widget _buildLatestEventMain(WebsiteContentStore w) {
     final mobile = isMobile(context);
     return Stack(
       children: [
-        Flex(
-          direction: mobile ? Axis.vertical : Axis.horizontal,
+        Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              flex: 6,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _homeSectionTag(w.latestEventSectionLabel),
-                  const SizedBox(height: 12),
-                  WebsiteRichText(
-                    value: w.latestEventTitle,
-                    style: CustomerFonts.pacifico(
-                      fontSize: mobile ? 32 : 48,
-                      color: const Color(0xFFB0305A),
-                      height: 1.1,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  WebsiteRichText(
-                    value: w.latestEventSubtitle,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      letterSpacing: 1.4,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF0F0F0),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.grey.shade300),
-                    ),
-                    child: WebsiteRichText(
-                      value: w.latestEventBody,
-                      style: const TextStyle(fontSize: 14, height: 1.45),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Stack(
-                    children: [
-                      _buildLatestEventCollage(w),
-                      _editChip(() async {
-                        final b64 = await _pickImageB64();
-                        if (b64 == null) return;
-                        if (w.latestEventCollageBase64.length < 4) {
-                          w.latestEventCollageBase64.add(b64);
-                        } else {
-                          w.latestEventCollageBase64[w
-                                      .latestEventCollageBase64
-                                      .length -
-                                  1] =
-                              b64;
-                        }
-                        await w.saveDraft();
-                        setState(() {});
-                      }),
-                    ],
-                  ),
-                ],
+            _homeSectionTag(w.latestEventSectionLabel),
+            const SizedBox(height: 12),
+            WebsiteRichText(
+              value: w.latestEventTitle,
+              style: CustomerFonts.pacifico(
+                fontSize: mobile ? 32 : 48,
+                color: const Color(0xFFB0305A),
+                height: 1.1,
               ),
             ),
-            SizedBox(width: mobile ? 0 : 20, height: mobile ? 20 : 0),
-            Expanded(flex: 4, child: _buildHomeSidePanel(w)),
+            const SizedBox(height: 6),
+            WebsiteRichText(
+              value: w.latestEventSubtitle,
+              style: const TextStyle(
+                fontSize: 11,
+                letterSpacing: 1.4,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0F0F0),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: WebsiteRichText(
+                value: w.latestEventBody,
+                style: const TextStyle(fontSize: 14, height: 1.45),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Stack(
+              children: [
+                _buildLatestEventCollage(w),
+                _editChip(() async {
+                  final b64 = await _pickImageB64();
+                  if (b64 == null) return;
+                  if (w.latestEventCollageBase64.length < 4) {
+                    w.latestEventCollageBase64.add(b64);
+                  } else {
+                    w.latestEventCollageBase64[
+                            w.latestEventCollageBase64.length - 1] =
+                        b64;
+                  }
+                  await w.saveDraft();
+                  setState(() {});
+                }),
+              ],
+            ),
           ],
         ),
         _editChip(() async {
@@ -2445,6 +2432,81 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     );
   }
 
+  static const _homeMainClusterIds = {
+    'latestEvent',
+    'about',
+    'popularDishes',
+    'eventDesigns',
+  };
+
+  bool _isFirstVisibleHomeMainCluster(
+    List<CmsPageBlock> blocks,
+    CmsPageBlock block,
+  ) {
+    for (final b in blocks) {
+      if (!_homeMainClusterIds.contains(b.id) || !b.visible) continue;
+      return b.id == block.id;
+    }
+    return false;
+  }
+
+  /// Desktop: About / Popular / Event designs fill the left column beside the
+  /// Kitchen+ETD side panel (avoids a tall empty white gap).
+  Widget _buildHomeMainCluster(
+    WebsiteContentStore w,
+    List<CmsPageBlock> blocks,
+  ) {
+    final mobile = isMobile(context);
+    final visible = {
+      for (final b in blocks)
+        if (_homeMainClusterIds.contains(b.id) && b.visible) b.id,
+    };
+
+    final leftChildren = <Widget>[];
+    void addLeft(String id, Widget child) {
+      if (!visible.contains(id)) return;
+      if (leftChildren.isNotEmpty) {
+        leftChildren.add(const SizedBox(height: 28));
+      }
+      leftChildren.add(child);
+    }
+
+    addLeft('latestEvent', _buildLatestEventMain(w));
+    addLeft('about', _buildOwnerBlurb(w));
+    addLeft('popularDishes', _buildPopularDishesCarousel(w));
+    addLeft('eventDesigns', _eventDesignsSection(w));
+
+    if (leftChildren.isEmpty) {
+      return _buildHomeSidePanel(w);
+    }
+
+    final left = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: leftChildren,
+    );
+
+    if (mobile) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          left,
+          const SizedBox(height: 20),
+          _buildHomeSidePanel(w),
+        ],
+      );
+    }
+
+    return Flex(
+      direction: Axis.horizontal,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(flex: 6, child: left),
+        const SizedBox(width: 20),
+        Expanded(flex: 4, child: _buildHomeSidePanel(w)),
+      ],
+    );
+  }
+
   Widget _buildHome(WebsiteContentStore w) {
     return ListenableBuilder(
       listenable: w,
@@ -2468,8 +2530,17 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
             case 'banner':
               return _buildRedBannerStrip(w);
             case 'latestEvent':
+            case 'about':
+            case 'popularDishes':
+            case 'eventDesigns':
+              if (!_isFirstVisibleHomeMainCluster(blocks, block)) {
+                return const SizedBox.shrink();
+              }
               return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 32),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 32,
+                ),
                 child: Center(
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
@@ -2482,45 +2553,9 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                           _buildOrderAgainStrip(),
                           const SizedBox(height: 28),
                         ],
-                        _buildLatestEventSection(w),
+                        _buildHomeMainCluster(w, blocks),
                       ],
                     ),
-                  ),
-                ),
-              );
-            case 'about':
-              return Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxWidth: websiteContentMaxWidth(context),
-                    ),
-                    child: _buildOwnerBlurb(w),
-                  ),
-                ),
-              );
-            case 'popularDishes':
-              return Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxWidth: websiteContentMaxWidth(context),
-                    ),
-                    child: _buildPopularDishesCarousel(w),
-                  ),
-                ),
-              );
-            case 'eventDesigns':
-              return Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxWidth: websiteContentMaxWidth(context),
-                    ),
-                    child: _eventDesignsSection(w),
                   ),
                 ),
               );

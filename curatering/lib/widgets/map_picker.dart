@@ -42,11 +42,26 @@ class _MapPickerState extends State<MapPicker> {
   final TextEditingController _searchController = TextEditingController();
   LatLng? _selectedLocation;
   String _address = '';
+  Map<String, String> _addressParts = const {};
   bool _isLoading = false;
   bool _isGettingLocation = false;
   String? _error;
   List<String> _suggestions = const [];
   int _pickRequestId = 0;
+
+  bool get _enforceArea => widget.enforceDeliveryRadius;
+
+  String get _outOfAreaMessage =>
+      'Delivery is only available in ${restaurantDeliveryAreaLabel()}.';
+
+  bool get _locationAllowed {
+    if (!_enforceArea) return true;
+    if (_address.trim().isEmpty) return false;
+    return isAllowedRestaurantDeliveryLocation(
+      address: _address,
+      addressParts: _addressParts,
+    );
+  }
 
   @override
   void initState() {
@@ -72,8 +87,15 @@ class _MapPickerState extends State<MapPicker> {
     Future.delayed(const Duration(milliseconds: 300), () async {
       if (_searchController.text.trim() != q) return;
       final list = await NominatimService.instance.searchAddresses(q);
+      final filtered = _enforceArea
+          ? list
+              .where(
+                (s) => isAllowedRestaurantDeliveryLocation(address: s),
+              )
+              .toList()
+          : list;
       if (mounted && _searchController.text.trim() == q) {
-        setState(() => _suggestions = list);
+        setState(() => _suggestions = filtered);
       }
     });
   }
@@ -111,7 +133,7 @@ class _MapPickerState extends State<MapPicker> {
     if (loc == null) return;
     setState(() => _isLoading = true);
     try {
-      final resolved = await NominatimService.instance.reverseGeocode(
+      final resolved = await NominatimService.instance.reverseGeocodeDetails(
         GeoPin(lat: loc.latitude, lng: loc.longitude),
       );
       if (!mounted) return;
@@ -122,7 +144,16 @@ class _MapPickerState extends State<MapPicker> {
           current.longitude != loc.longitude) {
         return;
       }
-      setState(() => _address = resolved);
+      final allowed = !_enforceArea ||
+          isAllowedRestaurantDeliveryLocation(
+            address: resolved.displayName,
+            addressParts: resolved.addressParts,
+          );
+      setState(() {
+        _address = resolved.displayName;
+        _addressParts = resolved.addressParts;
+        _error = allowed ? null : _outOfAreaMessage;
+      });
     } finally {
       if (mounted && (requestId == null || requestId == _pickRequestId)) {
         setState(() => _isLoading = false);
@@ -135,6 +166,7 @@ class _MapPickerState extends State<MapPicker> {
     setState(() {
       _selectedLocation = location;
       _address = '';
+      _addressParts = const {};
       _error = null;
       _suggestions = const [];
     });
@@ -179,12 +211,18 @@ class _MapPickerState extends State<MapPicker> {
 
   bool get _canConfirm {
     if (_selectedLocation == null || _isLoading) return false;
-    return _address.trim().isNotEmpty;
+    if (_address.trim().isEmpty) return false;
+    if (_enforceArea && !_locationAllowed) return false;
+    return true;
   }
 
   void _confirm() {
     final loc = _selectedLocation;
     if (loc == null) return;
+    if (_enforceArea && !_locationAllowed) {
+      setState(() => _error = _outOfAreaMessage);
+      return;
+    }
     Navigator.of(context).pop(
       MapPickerResult(
         latitude: loc.latitude,
@@ -261,7 +299,9 @@ class _MapPickerState extends State<MapPicker> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Tap the map to set the pin. Address updates via OpenStreetMap.',
+                  _enforceArea
+                      ? 'Tap the map to set the pin. Delivery is limited to ${restaurantDeliveryAreaLabel()}.'
+                      : 'Tap the map to set the pin. Address updates via OpenStreetMap.',
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
                 ),
                 const SizedBox(height: 6),

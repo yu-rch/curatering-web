@@ -11431,6 +11431,25 @@ async function registerRoutesAfterDbInit() {
           return res.status(400).json({ error: 'Delivery address is required' });
         }
 
+        const allowedCities = [
+          'taguig',
+          'makati',
+          'pasig',
+          'pateros',
+          'parañaque',
+          'paranaque',
+          'pasay',
+          'mandaluyong',
+        ];
+        const hay = String(deliveryAddress).toLowerCase();
+        const inServiceArea = allowedCities.some((city) => hay.includes(city));
+        if (!inServiceArea) {
+          return res.status(400).json({
+            error:
+              'Delivery is only available in Taguig, Makati, Pasig, Pateros, Parañaque, Pasay, and Mandaluyong.',
+          });
+        }
+
         const lat = parseRestaurantCoord(deliveryLat);
         const lng = parseRestaurantCoord(deliveryLng);
         const orderNo = await allocateRestaurantOrderNo();

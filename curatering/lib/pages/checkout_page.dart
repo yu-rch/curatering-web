@@ -15,6 +15,7 @@ import 'package:latlong2/latlong.dart';
 
 import '../widgets/map_picker.dart';
 import '../widgets/antd_message.dart';
+import '../utils/geo_utils.dart';
 import 'payment_page.dart';
 import '../utils/responsive_layout.dart';
 
@@ -301,6 +302,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
       initialLongitude: _deliveryLng,
       initialAddress:
           _addressController.text.isNotEmpty ? _addressController.text : null,
+      enforceDeliveryRadius: true,
     );
 
     if (result != null) {
@@ -512,6 +514,11 @@ class _CheckoutPageState extends State<CheckoutPage> {
   String? get _deliveryPinError {
     if (_deliveryLat == null || _deliveryLng == null) {
       return 'Pin your delivery location on the map';
+    }
+    if (!isAllowedRestaurantDeliveryLocation(
+      address: _addressController.text,
+    )) {
+      return 'Delivery is only available in ${restaurantDeliveryAreaLabel()}.';
     }
     return null;
   }

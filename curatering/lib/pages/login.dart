@@ -8,6 +8,8 @@ import '../services/api_client.dart';
 import '../widgets/antd_dialog.dart';
 import 'verify_otp.dart';
 
+/// Staff login uses a fixed split palette (light logo | dark form) and does not
+/// follow staff light/dark mode.
 class Login extends StatefulWidget {
   const Login({super.key});
 
@@ -16,6 +18,14 @@ class Login extends StatefulWidget {
 }
 
 class _LoginState extends State<Login> {
+  static const _leftBg = Color(0xFFF4F4F6);
+  static const _rightBg = Color(0xFF1A1A1A);
+  static const _cardBg = Color(0xFF2A2A2A);
+  static const _fieldBg = Color(0xFF1F1F1F);
+  static const _fieldBorder = Color(0xFF5A5A5A);
+  static const _accent = Color(0xFFFFC024);
+  static const _customerLink = Color(0xFF7ED4E5);
+
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isLoading = false;
@@ -46,7 +56,6 @@ class _LoginState extends State<Login> {
 
       if (!mounted) return;
 
-      // Check if user is verified
       if (resp.user.isVerified == false) {
         final verified = await showStaffVerifyOtpDialog(
           context,
@@ -115,7 +124,7 @@ class _LoginState extends State<Login> {
         return;
       }
 
-      if (e.message.contains("not verified")) {
+      if (e.message.contains('not verified')) {
         final verified = await showStaffVerifyOtpDialog(
           context,
           email: _emailController.text.trim(),
@@ -146,235 +155,273 @@ class _LoginState extends State<Login> {
     }
   }
 
+  InputDecoration _fieldDecoration({
+    required String hint,
+    Widget? suffixIcon,
+  }) {
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: const TextStyle(color: Color(0xFF9A9A9A)),
+      filled: true,
+      fillColor: _fieldBg,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: const BorderSide(color: _fieldBorder),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: const BorderSide(color: _accent, width: 1.4),
+      ),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+      ),
+      suffixIcon: suffixIcon,
+    );
+  }
+
+  Widget _buildCurateringTitle() {
+    return ShaderMask(
+      blendMode: BlendMode.srcIn,
+      shaderCallback: (bounds) => const LinearGradient(
+        colors: [
+          Color(0xFFFFC024),
+          Color(0xFFFF8A1F),
+          Color(0xFFE53935),
+        ],
+      ).createShader(bounds),
+      child: const Text(
+        'CURATERING',
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          fontSize: 34,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 1.2,
+          height: 1.1,
+          color: Colors.white,
+        ),
+      ),
+    );
+  }
+
   Widget _buildLeftPanel() {
-    return Container(
-      color: const Color(0xFFF4F4F6),
+    return ColoredBox(
+      color: _leftBg,
       child: Center(
         child: Padding(
-          padding: const EdgeInsets.all(32.0),
-          child: Image.asset('lib/assets/login-1.png', fit: BoxFit.contain),
+          padding: const EdgeInsets.all(32),
+          child: Image.asset(
+            'lib/assets/login-1.png',
+            fit: BoxFit.contain,
+          ),
         ),
       ),
     );
   }
 
   Widget _buildRightPanel() {
-    return Container(
-      color: const Color(0xFFF4F4F6),
-      child: Stack(
-        children: [
-          Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: Card(
-                elevation: 3,
-                color: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(28.0),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const Text(
-                        'Welcome to',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.black87,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 12),
-                      Center(
-                        child: Image.asset(
-                          'lib/assets/login-2.png',
-                          height: 64,
-                          fit: BoxFit.contain,
-                        ),
-                      ),
-                      const SizedBox(height: 28),
-                      TextField(
-                        controller: _emailController,
-                        enableInteractiveSelection: true,
-                        style: const TextStyle(color: Color(0xFF1E1E1E)),
-                        textInputAction: TextInputAction.next,
-                        onSubmitted: (_) => FocusScope.of(context).nextFocus(),
-                        decoration: InputDecoration(
-                          labelText: 'Email address',
-                          labelStyle: const TextStyle(color: Colors.black54),
-                          filled: true,
-                          fillColor: Colors.white,
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: const BorderSide(color: Color(0xFFD9D9D9)),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: const BorderSide(color: Color(0xFFFFC024)),
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      TextField(
-                        controller: _passwordController,
-                        enableInteractiveSelection: true,
-                        style: const TextStyle(color: Color(0xFF1E1E1E)),
-                        decoration: InputDecoration(
-                          labelText: 'Password',
-                          labelStyle: const TextStyle(color: Colors.black54),
-                          filled: true,
-                          fillColor: Colors.white,
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: const BorderSide(color: Color(0xFFD9D9D9)),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: const BorderSide(color: Color(0xFFFFC024)),
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          suffixIcon: IconButton(
-                            tooltip: _obscurePassword
-                                ? 'Show password'
-                                : 'Hide password',
-                            onPressed: () => setState(
-                              () => _obscurePassword = !_obscurePassword,
-                            ),
-                            icon: Icon(
-                              _obscurePassword
-                                  ? Icons.visibility_outlined
-                                  : Icons.visibility_off_outlined,
-                              color: Colors.black54,
-                            ),
-                          ),
-                        ),
-                        obscureText: _obscurePassword,
-                        textInputAction: TextInputAction.done,
-                        onSubmitted: (_) => _onLogin(),
-                      ),
-                      const SizedBox(height: 24),
-                      SizedBox(
-                        height: 48,
-                        child: ElevatedButton(
-                          onPressed: _isLoading ? null : _onLogin,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFFFC024),
-                            foregroundColor: const Color(0xFF1E1E1E),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                          ),
-                          child: _isLoading
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Color(0xFF1E1E1E),
-                                  ),
-                                )
-                              : const Text(
-                                  'Log in',
-                                  style: TextStyle(fontWeight: FontWeight.bold),
-                                ),
-                        ),
-                      ),
-                      if (_errorMessage != null) ...[
-                        const SizedBox(height: 12),
-                        Text(
-                          _errorMessage!,
-                          style: const TextStyle(color: Colors.redAccent),
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                      const SizedBox(height: 16),
-                      TextButton(
-                        onPressed: () => showDialog<String>(
-                          context: context,
-                          builder: (BuildContext context) =>
-                              const ForgotPassword(),
-                        ),
-                        child: const Text(
-                          'Forgot Password?',
-                          style: TextStyle(
-                            color: Color(0xFFFFC024),
-                            decoration: TextDecoration.underline,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: () {
-                          if (isCustomerSiteHost) {
-                            Navigator.of(context).pushNamed('/');
-                          } else {
-                            redirectToSiteOrigin(customerSiteOrigin, '/');
-                          }
-                        },
-                        child: const Text(
-                          'View customer website',
-                          style: TextStyle(
-                            color: Color(0xFF7ED4E5),
-                            decoration: TextDecoration.underline,
-                          ),
-                        ),
-                      ),
-                    ],
+    return ColoredBox(
+      color: _rightBg,
+      child: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(28, 32, 28, 24),
+              decoration: BoxDecoration(
+                color: _cardBg,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x66000000),
+                    blurRadius: 24,
+                    offset: Offset(0, 10),
                   ),
-                ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'Welcome to',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.white,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 8),
+                  _buildCurateringTitle(),
+                  const SizedBox(height: 28),
+                  TextField(
+                    controller: _emailController,
+                    enableInteractiveSelection: true,
+                    style: const TextStyle(color: Colors.white),
+                    cursorColor: _accent,
+                    keyboardType: TextInputType.emailAddress,
+                    textInputAction: TextInputAction.next,
+                    onSubmitted: (_) => FocusScope.of(context).nextFocus(),
+                    decoration: _fieldDecoration(hint: 'Email address'),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _passwordController,
+                    enableInteractiveSelection: true,
+                    style: const TextStyle(color: Colors.white),
+                    cursorColor: _accent,
+                    obscureText: _obscurePassword,
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: (_) => _onLogin(),
+                    decoration: _fieldDecoration(
+                      hint: 'Password',
+                      suffixIcon: IconButton(
+                        tooltip: _obscurePassword
+                            ? 'Show password'
+                            : 'Hide password',
+                        onPressed: () => setState(
+                          () => _obscurePassword = !_obscurePassword,
+                        ),
+                        icon: Icon(
+                          _obscurePassword
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                          color: Colors.white70,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    height: 48,
+                    child: ElevatedButton(
+                      onPressed: _isLoading ? null : _onLogin,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _accent,
+                        disabledBackgroundColor: const Color(0xFFB8942A),
+                        foregroundColor: const Color(0xFF1E1E1E),
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      child: _isLoading
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Color(0xFF1E1E1E),
+                              ),
+                            )
+                          : const Text(
+                              'Log in',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
+                    ),
+                  ),
+                  if (_errorMessage != null) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      _errorMessage!,
+                      style: const TextStyle(
+                        color: Color(0xFFFF4D4F),
+                        fontSize: 13,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  TextButton(
+                    onPressed: () => showDialog<String>(
+                      context: context,
+                      builder: (BuildContext context) =>
+                          const ForgotPassword(),
+                    ),
+                    child: const Text(
+                      'Forgot Password?',
+                      style: TextStyle(
+                        color: _accent,
+                        decoration: TextDecoration.underline,
+                        decorationColor: _accent,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      if (isCustomerSiteHost) {
+                        Navigator.of(context).pushNamed('/');
+                      } else {
+                        redirectToSiteOrigin(customerSiteOrigin, '/');
+                      }
+                    },
+                    child: const Text(
+                      'View customer website',
+                      style: TextStyle(
+                        color: _customerLink,
+                        decoration: TextDecoration.underline,
+                        decorationColor: _customerLink,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
-        ],
+        ),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    // Login stays light even when staff dark mode is on.
+    // Fixed login chrome — ignore staff ThemeMode.dark / light.
     return Theme(
-      data: Theme.of(context).copyWith(
-        brightness: Brightness.light,
-        scaffoldBackgroundColor: const Color(0xFFF4F4F6),
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFFFFC024),
-          brightness: Brightness.light,
+      data: ThemeData(
+        brightness: Brightness.dark,
+        useMaterial3: true,
+        scaffoldBackgroundColor: _rightBg,
+        colorScheme: const ColorScheme.dark(
+          primary: _accent,
+          surface: _cardBg,
+          onPrimary: Color(0xFF1E1E1E),
+          onSurface: Colors.white,
+        ),
+        textSelectionTheme: const TextSelectionThemeData(
+          cursorColor: _accent,
+          selectionColor: Color(0x66FFC024),
+          selectionHandleColor: _accent,
         ),
       ),
       child: Scaffold(
-        backgroundColor: const Color(0xFFF4F4F6),
+        backgroundColor: _rightBg,
         body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final isNarrow = constraints.maxWidth < 800;
-            if (isNarrow) {
-              return Column(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final isNarrow = constraints.maxWidth < 800;
+              if (isNarrow) {
+                return Column(
+                  children: [
+                    Expanded(flex: 2, child: _buildLeftPanel()),
+                    Expanded(flex: 3, child: _buildRightPanel()),
+                  ],
+                );
+              }
+              return Row(
                 children: [
                   Expanded(child: _buildLeftPanel()),
-                  const Divider(height: 1),
                   Expanded(child: _buildRightPanel()),
                 ],
               );
-            }
-            return Row(
-              children: [
-                Expanded(child: _buildLeftPanel()),
-                const VerticalDivider(width: 1, thickness: 1),
-                Expanded(child: _buildRightPanel()),
-              ],
-            );
-          },
+            },
+          ),
         ),
-      ),
       ),
     );
   }
