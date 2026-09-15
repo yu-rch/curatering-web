@@ -8976,6 +8976,28 @@ class _ManageEventsState extends State<ManageEvents>
     );
   }
 
+  void _applyEventPhotosLocally(EventOrderDto order, List<String> photos) {
+    // ignore: invalid_use_of_protected_member
+    setState(() {
+      final selected = _selectedManageEventsOrder;
+      if (selected != null && selected.id == order.id) {
+        _selectedManageEventsOrder = selected.copyWith(
+          actualEventImages: photos,
+        );
+      }
+      void patchList(List<EventOrderDto> list) {
+        for (var i = 0; i < list.length; i++) {
+          if (list[i].id == order.id) {
+            list[i] = list[i].copyWith(actualEventImages: photos);
+          }
+        }
+      }
+      patchList(_postAnalysisOrdersDto);
+      patchList(_completedOrdersDto);
+      patchList(_processingOrdersDto);
+    });
+  }
+
   Future<void> _uploadEventPhotos(EventOrderDto order) async {
     try {
       final result = await FilePicker.platform.pickFiles(
@@ -8985,7 +9007,11 @@ class _ManageEventsState extends State<ManageEvents>
       );
       if (result == null || result.files.isEmpty) return;
 
-      final existing = List<String>.from(order.actualEventImages);
+      final existing = List<String>.from(
+        (_selectedManageEventsOrder?.id == order.id
+                ? _selectedManageEventsOrder!.actualEventImages
+                : order.actualEventImages),
+      );
       final added = <String>[];
       for (final file in result.files) {
         final bytes = file.bytes;
@@ -9012,24 +9038,28 @@ class _ManageEventsState extends State<ManageEvents>
         return;
       }
 
-      await EventsApi.instance.updateEventPhotos(
+      final saved = await EventsApi.instance.updateEventPhotos(
         orderId: order.id,
         photos: photos,
       );
-      await _refreshOrders();
       if (!mounted) return;
-      await _selectManageEventsOrder(order);
+      _applyEventPhotosLocally(order, saved);
       if (!mounted) return;
+      final savedCount = saved.length - existing.length;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            added.length == 1
+            savedCount <= 0
+                ? 'No new photos were saved.'
+                : savedCount == 1
                 ? '1 photo uploaded.'
-                : '${added.length} photos uploaded.',
+                : '$savedCount photos uploaded.',
           ),
-          backgroundColor: const Color(0xFF1DB954),
+          backgroundColor:
+              savedCount <= 0 ? Colors.orange : const Color(0xFF1DB954),
         ),
       );
+      unawaited(_refreshOrders());
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -9057,7 +9087,6 @@ class _ManageEventsState extends State<ManageEvents>
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Close button
                     Align(
                       alignment: Alignment.topRight,
                       child: IconButton(
@@ -9068,7 +9097,6 @@ class _ManageEventsState extends State<ManageEvents>
                       ),
                     ),
                     const SizedBox(height: 8),
-                    // Title
                     const Text(
                       'REMOVE PHOTO',
                       style: TextStyle(
@@ -9083,7 +9111,6 @@ class _ManageEventsState extends State<ManageEvents>
                       style: TextStyle(fontSize: 13),
                     ),
                     const SizedBox(height: 24),
-                    // Buttons
                     Row(
                       children: [
                         Expanded(
@@ -9137,34 +9164,29 @@ class _ManageEventsState extends State<ManageEvents>
 
       if (confirmed != true) return;
 
-      // Update backend
-      await EventsApi.instance.removeEventPhoto(
+      final saved = await EventsApi.instance.removeEventPhoto(
         orderId: order.id,
         photoIndex: photoIndex,
       );
 
-      // Refresh orders
-      await _refreshOrders();
       if (!mounted) return;
-      await _selectManageEventsOrder(order);
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Photo removed successfully'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
+      _applyEventPhotosLocally(order, saved);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Photo removed successfully'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      unawaited(_refreshOrders());
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to remove photo'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to remove photo: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 

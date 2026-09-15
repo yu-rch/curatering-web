@@ -18,6 +18,7 @@ class EventsApi {
     required String status,
     required String roleType, // manager | supervisor
     bool compact = false,
+    bool includeActualImages = false,
   }) async {
     final path =
         roleType == 'manager'
@@ -26,6 +27,7 @@ class EventsApi {
 
     final qp = <String, String>{'status': status};
     if (compact) qp['compact'] = '1';
+    if (includeActualImages) qp['includeActualImages'] = '1';
 
     final decoded = await ApiClient.instance.getJson(
       path,
@@ -286,23 +288,39 @@ class EventsApi {
   }
 
   // Event photos updates
-  Future<void> updateEventPhotos({
+  Future<List<String>> updateEventPhotos({
     required String orderId,
     required List<String> photos,
   }) async {
-    await ApiClient.instance.putJson(
+    final decoded = await ApiClient.instance.putJson(
       '/api/events/orders/$orderId/event-photos',
       body: {'photos': photos},
     );
+    final raw = decoded['actualEventImages'] ?? decoded['actual_event_images'];
+    if (raw is List) {
+      return raw
+          .map((e) => e.toString().trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
+    }
+    return List<String>.from(photos);
   }
 
-  Future<void> removeEventPhoto({
+  Future<List<String>> removeEventPhoto({
     required String orderId,
     required int photoIndex,
   }) async {
-    await ApiClient.instance.delete(
+    final decoded = await ApiClient.instance.delete(
       '/api/events/orders/$orderId/event-photos/$photoIndex',
     );
+    final raw = decoded['actualEventImages'] ?? decoded['actual_event_images'];
+    if (raw is List) {
+      return raw
+          .map((e) => e.toString().trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
+    }
+    return const <String>[];
   }
 
   Future<Map<String, dynamic>> processThemeColor({
@@ -554,6 +572,12 @@ class EventsApi {
     final generatedImageUrl =
         (themeRaw['generatedImageUrl'] ??
                 themeRaw['generated_image_url'] ??
+                themeRaw['generatedImageBase64'] ??
+                themeRaw['generated_image_base64'] ??
+                themeRaw['confirmedCompositeBase64'] ??
+                themeRaw['confirmed_composite_base64'] ??
+                themeRaw['compositeImageBase64'] ??
+                themeRaw['composite_image_base64'] ??
                 themeRaw['imageUrl'] ??
                 themeRaw['image_url'])
             ?.toString();

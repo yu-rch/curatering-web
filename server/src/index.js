@@ -7298,10 +7298,16 @@ app.get(
           .json({ message: "status query param is required" });
 
       const compact = String(req.query.compact || "") === "1";
+      const includeActualImages =
+        String(req.query.includeActualImages || req.query.include_actual_images || "")
+          .toLowerCase() === "1" ||
+        String(req.query.includeActualImages || req.query.include_actual_images || "")
+          .toLowerCase() === "true";
       const cateringCols = await getTableColumnNames('catering_orders');
       const eventCols = await getTableColumnNames('event_orders');
       const listSql = buildStaffEventsOrdersListSql(cateringCols, eventCols, {
         compact,
+        includeActualImages,
       });
 
       const result = await pool.query(listSql, [status]);
@@ -7885,10 +7891,16 @@ app.get(
         .json({ message: "status query param is required" });
 
     const compact = String(req.query.compact || "") === "1";
+    const includeActualImages =
+      String(req.query.includeActualImages || req.query.include_actual_images || "")
+        .toLowerCase() === "1" ||
+      String(req.query.includeActualImages || req.query.include_actual_images || "")
+        .toLowerCase() === "true";
     const cateringCols = await getTableColumnNames('catering_orders');
     const eventCols = await getTableColumnNames('event_orders');
     const listSql = buildStaffEventsOrdersListSql(cateringCols, eventCols, {
       compact,
+      includeActualImages,
     });
 
     const result = await pool.query(listSql, [status]);

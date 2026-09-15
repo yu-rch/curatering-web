@@ -196,6 +196,51 @@ class EventOrderDto {
     this.themeAssetsDeferred = false,
     this.updatedAt,
   });
+
+  EventOrderDto copyWith({
+    List<String>? actualEventImages,
+    bool? themeAssetsDeferred,
+  }) {
+    return EventOrderDto(
+      id: id,
+      cateringId: cateringId,
+      eventId: eventId,
+      customerId: customerId,
+      source: source,
+      status: status,
+      eventTitle: eventTitle,
+      orderType: orderType,
+      eventType: eventType,
+      formalityLevel: formalityLevel,
+      includeMinimalEventStyling: includeMinimalEventStyling,
+      customerName: customerName,
+      contactPerson: contactPerson,
+      contactNumber: contactNumber,
+      emailAddress: emailAddress,
+      scheduleSlots: scheduleSlots,
+      address: address,
+      addressLat: addressLat,
+      addressLng: addressLng,
+      guestCount: guestCount,
+      allergens: allergens,
+      menu: menu,
+      themeDesign: themeDesign,
+      seatingPlan: seatingPlan,
+      postAnalysis: postAnalysis,
+      postAnalysisRaw: postAnalysisRaw,
+      orderKind: orderKind,
+      downPaymentAmount: downPaymentAmount,
+      downPaymentStatus: downPaymentStatus,
+      fullPaymentAmount: fullPaymentAmount,
+      fullPaymentStatus: fullPaymentStatus,
+      totalCost: totalCost,
+      checklist: checklist,
+      actualEventImages: actualEventImages ?? this.actualEventImages,
+      finalStatus: finalStatus,
+      themeAssetsDeferred: themeAssetsDeferred ?? this.themeAssetsDeferred,
+      updatedAt: updatedAt,
+    );
+  }
 }
 
 class ChecklistItemDto {

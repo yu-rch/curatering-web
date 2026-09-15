@@ -1758,35 +1758,39 @@ extension _ManageEventsDetailExt on _ManageEventsState {
   }
 
   Widget _buildActualEventPhotosSection(EventOrderDto order) {
+    final photos =
+        (_selectedManageEventsOrder?.id == order.id
+                ? _selectedManageEventsOrder!.actualEventImages
+                : order.actualEventImages)
+            .toList();
+    final canEdit = _isManager;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (order.actualEventImages.isEmpty)
-          Column(
-            children: [
-              Icon(
-                Icons.photo_library_outlined,
-                size: 48,
-                color: Colors.grey.shade400,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'No event photos uploaded yet',
-                style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-              ),
-              const SizedBox(height: 12),
-              FilledButton.icon(
-                onPressed: () => _uploadEventPhotos(order),
-                icon: const Icon(Icons.upload, size: 18),
-                label: const Text('Upload photos'),
-              ),
-            ],
+        if (photos.isEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Column(
+              children: [
+                Icon(
+                  Icons.photo_library_outlined,
+                  size: 48,
+                  color: Colors.grey.shade400,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'No event photos uploaded yet',
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                ),
+              ],
+            ),
           )
         else ...[
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: order.actualEventImages.asMap().entries.map((entry) {
+            children: photos.asMap().entries.map((entry) {
               final index = entry.key;
               final imageUrl = entry.value;
               return Stack(
@@ -1815,12 +1819,17 @@ extension _ManageEventsDetailExt on _ManageEventsState {
                             ),
                     ),
                   ),
-                  if (_isManager)
+                  if (canEdit)
                     Positioned(
                       top: 4,
                       right: 4,
                       child: GestureDetector(
-                        onTap: () => _removeEventPhoto(order, index),
+                        onTap: () => _removeEventPhoto(
+                          _selectedManageEventsOrder?.id == order.id
+                              ? _selectedManageEventsOrder!
+                              : order,
+                          index,
+                        ),
                         child: Container(
                           padding: const EdgeInsets.all(4),
                           decoration: BoxDecoration(
@@ -1840,12 +1849,20 @@ extension _ManageEventsDetailExt on _ManageEventsState {
             }).toList(),
           ),
           const SizedBox(height: 12),
-          FilledButton.icon(
-            onPressed: () => _uploadEventPhotos(order),
-            icon: const Icon(Icons.add_photo_alternate, size: 18),
-            label: const Text('Add more photos'),
-          ),
         ],
+        if (canEdit)
+          FilledButton.icon(
+            onPressed: () => _uploadEventPhotos(
+              _selectedManageEventsOrder?.id == order.id
+                  ? _selectedManageEventsOrder!
+                  : order,
+            ),
+            icon: Icon(
+              photos.isEmpty ? Icons.upload : Icons.add_photo_alternate,
+              size: 18,
+            ),
+            label: Text(photos.isEmpty ? 'Upload photos' : 'Add more photos'),
+          ),
       ],
     );
   }

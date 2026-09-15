@@ -1,6 +1,6 @@
 ((a,b)=>{a[b]=a[b]||{}})(self,"$__dart_deferred_initializers__")
 $__dart_deferred_initializers__.current=function(a,b,c,$){var B,C,D={
-rl(d,e,f,g,h){return B.R(d,!1).av0(e,f,null,g,h)}},A,E
+rl(d,e,f,g,h){return B.R(d,!1).av3(e,f,null,g,h)}},A,E
 B=c[0]
 C=c[2]
 D=a.updateHolder(c[27],D)
@@ -38,4 +38,4 @@ A.a2l=new B.o("My Orders",null,C.fV,null,null,null,null,null,null,null,null)
 A.a2o=new B.o("Order Tracking",null,C.fV,null,null,null,null,null,null,null,null)
 A.a2K=new B.o("My Profile",null,C.fV,null,null,null,null,null,null,null,null)})();(function staticFields(){$.Ns=null
 $.Nt=null})()};
-(a=>{a["MEq8wWWUbMb6aItEZlrME8Hs0ME="]=a.current})($__dart_deferred_initializers__);
+(a=>{a["c7dDXZ/ndTmUtZav2JPR3N76Yn0="]=a.current})($__dart_deferred_initializers__);

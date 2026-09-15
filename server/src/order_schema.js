@@ -935,12 +935,19 @@ function staffCateringOrderSelectList(cateringCols) {
     FROM catering_orders`;
 }
 
-function staffEventOrderSelectList(eventCols, themeColSql) {
+function staffEventOrderSelectList(
+  eventCols,
+  themeColSql,
+  { includeActualImages = false } = {},
+) {
   const seating = eventCols.has('seating_plan')
     ? 'COALESCE(seating_plan, \'{}\'::jsonb)'
     : '\'{}\'::jsonb';
-  // List payloads omit heavy photo blobs; detail by-id loads full images.
-  const actualImages = `'[]'::jsonb`;
+  // List payloads omit heavy photo blobs by default; gallery/CMS can opt in.
+  const actualImages =
+    includeActualImages && eventCols.has('actual_event_images')
+      ? 'COALESCE(actual_event_images, \'[]\'::jsonb)'
+      : `'[]'::jsonb`;
   return `
     SELECT
       id,
@@ -999,13 +1006,15 @@ const STAFF_EVENTS_STATUS_WHERE = `
 export function buildStaffEventsOrdersListSql(
   cateringCols,
   eventCols,
-  { compact = false } = {},
+  { compact = false, includeActualImages = false } = {},
 ) {
   const themeColSql = staffThemeDesignColumnSql(eventCols, compact);
   const cateringPart =
     staffCateringOrderSelectList(cateringCols) + STAFF_EVENTS_STATUS_WHERE;
   const eventPart =
-    staffEventOrderSelectList(eventCols, themeColSql) + STAFF_EVENTS_STATUS_WHERE;
+    staffEventOrderSelectList(eventCols, themeColSql, {
+      includeActualImages,
+    }) + STAFF_EVENTS_STATUS_WHERE;
   return `${cateringPart}\nUNION ALL\n${eventPart}\nORDER BY created_at DESC\nLIMIT 500`;
 }
 

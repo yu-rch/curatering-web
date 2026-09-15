@@ -1,6 +1,6 @@
 ((a,b)=>{a[b]=a[b]||{}})(self,"$__dart_deferred_initializers__")
 $__dart_deferred_initializers__.current=function(a,b,c,$){var J,A,C,B={
-ccn(d,e){var x,w,v,u,t,s,r,q,p,o,n=new B.ayC(),m=new B.ayB(),l=new B.ayA(),k=d.h(0,"positive_prompt")
+ccw(d,e){var x,w,v,u,t,s,r,q,p,o,n=new B.ayC(),m=new B.ayB(),l=new B.ayA(),k=d.h(0,"positive_prompt")
 if(k==null)k=d.h(0,"prompt")
 x=C.e.l(A.h(k==null?e:k))
 if(x.length===0)throw A.p(A.bB("NLP prompt expansion returned no positive prompt."))
@@ -21,46 +21,46 @@ p=l.$1(d.h(0,"controlnet"))
 o=d.h(0,"mode")
 o=o==null?null:J.u(o)
 return new B.a50(x,k,w,v,u,t,s,n,r,m,q,p,o,l.$1(d.h(0,"transformation_plan")))},
-aOx(d){var x=y.w,w=y.b
+aOC(d){var x=y.w,w=y.b
 return y.B.b(d)?A.ax(d,x,w):A.H(x,w)},
-cfd(d){var x,w,v=B.aOx(d.h(0,"output")),u=B.aOx(v.h(0,"result"))
+cfm(d){var x,w,v=B.aOC(d.h(0,"output")),u=B.aOC(v.h(0,"result"))
 if(u.a!==0)return u
-x=B.aOx(v.h(0,"analysis"))
+x=B.aOC(v.h(0,"analysis"))
 if(x.a!==0)return x
 if(v.a!==0)return v
-w=B.aOx(d.h(0,"result"))
+w=B.aOC(d.h(0,"result"))
 if(w.a!==0)return w
 return d},
-SB(d,e){return B.cvz(d,e)},
-cvz(d,e){var x=0,w=A.l(y.q),v,u=2,t=[],s,r,q,p,o,n,m,l,k,j,i,h,g
+SB(d,e){return B.cvK(d,e)},
+cvK(d,e){var x=0,w=A.l(y.q),v,u=2,t=[],s,r,q,p,o,n,m,l,k,j,i,h,g
 var $async$SB=A.m(function(f,a0){if(f===1){t.push(a0)
 x=u}for(;;)switch(x){case 0:u=4
-if(A.xU().length===0)A.ap(A.bB("API_BASE_URL is empty; set --dart-define=API_BASE_URL=... so the RunPod proxy can be reached."))
+if(A.xW().length===0)A.ap(A.bB("API_BASE_URL is empty; set --dart-define=API_BASE_URL=... so the RunPod proxy can be reached."))
 k=y.w
 s=A.eA(d,k,y.b)
 J.au(s,"task_type","event_prompt_expansion")
 r=s
-s=A.bx(A.xU()+"/api/public/runpod/nlp/run",0,null)
+s=A.bx(A.xW()+"/api/public/runpod/nlp/run",0,null)
 j=A.N(["Content-Type","application/json"],k,k)
 i=y.y
 x=7
-return A.d(A.es(s,C.a6.cn(A.N(["input",r],k,i),null),null,j).cw(C.qz),$async$SB)
+return A.d(A.et(s,C.a6.cn(A.N(["input",r],k,i),null),null,j).cz(C.qz),$async$SB)
 case 7:q=a0
-if(q.b!==200)A.c6E(q)
+if(q.b!==200)A.c6M(q)
 s=q
 p=i.a(C.a6.bq(A.ch(A.cg(s.e)).b6(s.w),null))
 o=A.aap(J.t(p,"status"))
-n=A.cfc(p)
-if(o==="COMPLETED"||J.t(p,"output")!=null){s=B.ccn(B.cfd(p),e)
+n=A.cfl(p)
+if(o==="COMPLETED"||J.t(p,"output")!=null){s=B.ccw(B.cfm(p),e)
 v=s
 x=1
 break}s=o
-if(s==="FAILED"||s==="CANCELLED"){s=A.bB(A.aOw(p))
+if(s==="FAILED"||s==="CANCELLED"){s=A.bB(A.aOB(p))
 throw A.p(s)}if(n==null||n.length===0){s=A.bB("NLP prompt expansion did not return a job id.")
 throw A.p(s)}x=8
 return A.d(B.aaq(n),$async$SB)
 case 8:m=a0
-s=B.ccn(B.cfd(m),e)
+s=B.ccw(B.cfm(m),e)
 v=s
 x=1
 break
@@ -69,7 +69,7 @@ x=6
 break
 case 4:u=3
 g=t.pop()
-l=A.a5(g)
+l=A.a4(g)
 s=A.bB("Failed to expand event prompt: "+A.h(l))
 throw A.p(s)
 x=6
@@ -79,8 +79,8 @@ break
 case 6:case 1:return A.j(v,w)
 case 2:return A.i(t.at(-1),w)}})
 return A.k($async$SB,w)},
-aaq(d){return B.cvx(d)},
-cvx(d){var x=0,w=A.l(y.y),v,u=2,t=[],s,r,q,p,o,n,m,l,k,j,i,h,g,f,e
+aaq(d){return B.cvI(d)},
+cvI(d){var x=0,w=A.l(y.y),v,u=2,t=[],s,r,q,p,o,n,m,l,k,j,i,h,g,f,e
 var $async$aaq=A.m(function(a0,a1){if(a0===1){t.push(a1)
 x=u}for(;;)switch(x){case 0:g=0
 f=null
@@ -91,7 +91,7 @@ return A.d(A.fK(C.qA,null,l),$async$aaq)
 case 5:++g
 u=7
 x=10
-return A.d(A.fF(A.bx(A.xU()+"/api/public/runpod/nlp/status/"+A.eR(2,d,C.bc,!1),0,null),null).cw(C.fn),$async$aaq)
+return A.d(A.fF(A.bx(A.xW()+"/api/public/runpod/nlp/status/"+A.eR(2,d,C.bc,!1),0,null),null).cz(C.fn),$async$aaq)
 case 10:s=a1
 if(s.b===429){j=A.bB("Too many requests \u2014 wait a moment and try again.")
 throw A.p(j)}if(s.b===200){j=s
@@ -101,17 +101,17 @@ if(q==="COMPLETED"){j=r
 v=j
 x=1
 break}j=q
-if(j==="FAILED"||j==="CANCELLED"){j=A.bB(A.aOw(r))
-throw A.p(j)}}else A.c6E(s)
+if(j==="FAILED"||j==="CANCELLED"){j=A.bB(A.aOB(r))
+throw A.p(j)}}else A.c6M(s)
 u=2
 x=9
 break
 case 7:u=6
 e=t.pop()
-j=A.a5(e)
+j=A.a4(e)
 if(m.b(j)){p=j
 o=J.u(p)
-if(J.jk(o,"Job failed")||J.jk(o,"AI generation exceeded")||J.jk(o,"Worker returned"))throw e
+if(J.jj(o,"Job failed")||J.jj(o,"AI generation exceeded")||J.jj(o,"Worker returned"))throw e
 f=p
 A.a1A("NLP polling error (attempt "+A.h(g)+"): "+A.h(p))}else{n=j
 f=n
@@ -155,7 +155,7 @@ C=c[2]
 B=a.updateHolder(c[16],B)
 D=c[40]
 B.a50.prototype={
-avR(){var x,w,v=this,u=A.H(y.w,y.b)
+avU(){var x,w,v=this,u=A.H(y.w,y.b)
 u.j(0,"positive_prompt",v.a)
 x=v.b
 if(x.length!==0)u.j(0,"negative_prompt",x)
@@ -210,10 +210,10 @@ B.ayC.prototype={
 $1(d){var x
 y.d.a(d)
 x=d==null?C.bA:d
-x=J.c9(x,new B.ayD(),y.w).cB(0,new B.ayE())
+x=J.c5(x,new B.ayD(),y.w).cq(0,new B.ayE())
 x=A.v(x,x.$ti.i("r.E"))
 return x},
-$S:400}
+$S:317}
 B.ayD.prototype={
 $1(d){return C.e.l(A.h(d))},
 $S:14}
@@ -223,16 +223,16 @@ $S:4}
 B.ayB.prototype={
 $1(d){if(typeof d=="number")return d
 return A.bz(A.h(d))},
-$S:296}
+$S:297}
 B.ayz.prototype={
 $1(d){if(typeof d=="number")return C.i.aJ(d)
 return A.cd(A.h(d),null)},
-$S:1171}
+$S:1173}
 B.ayA.prototype={
 $1(d){if(y.B.b(d))return A.ax(d,y.w,y.b)
 return null},
-$S:419};(function inheritance(){var x=a.inherit,w=a.inheritMany
+$S:420};(function inheritance(){var x=a.inherit,w=a.inheritMany
 x(B.a50,A.a8)
 w(A.ht,[B.ayC,B.ayD,B.ayE,B.ayB,B.ayz,B.ayA])})()
-var y={q:A.ak("a50"),g:A.ak("cw"),y:A.ak("V<e,@>"),B:A.ak("V<@,@>"),w:A.ak("e"),b:A.ak("@"),d:A.ak("a_<@>?")};(function constants(){D.Ih=new A.al(57531,"MaterialIcons",!1)})()};
-(a=>{a["N1jaolL560hI+ZrWHFiaG9yvtVU="]=a.current})($__dart_deferred_initializers__);
+var y={q:A.ak("a50"),g:A.ak("cw"),y:A.ak("V<e,@>"),B:A.ak("V<@,@>"),w:A.ak("e"),b:A.ak("@"),d:A.ak("Z<@>?")};(function constants(){D.Ih=new A.al(57531,"MaterialIcons",!1)})()};
+(a=>{a["6M1uPse2vr5TsoI57yG8lmlS0o4="]=a.current})($__dart_deferred_initializers__);

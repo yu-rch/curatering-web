@@ -111,17 +111,47 @@ class _CompletedEventGalleryPickerBodyState
       final orders = await EventsApi.instance.listOrders(
         status: 'completed',
         roleType: 'manager',
+        includeActualImages: true,
       );
       final images = <_CompletedEventImage>[];
       for (final o in orders) {
         images.addAll(_imagesFromCompletedOrder(o));
       }
-      final types = images.map((e) => e.eventType).toSet().toList()..sort();
+      // If list still missed photos (older API), hydrate a few event orders by id.
+      if (images.every((e) => !e.label.endsWith(' · photo'))) {
+        final eventOrders = orders
+            .where(
+              (o) =>
+                  o.orderKind == 'event' ||
+                  o.orderType.contains('event') ||
+                  o.eventTitle.trim().isNotEmpty,
+            )
+            .take(24)
+            .toList();
+        for (final o in eventOrders) {
+          try {
+            final full = await EventsApi.instance.getEventOrder(
+              orderId: o.id,
+              roleType: 'manager',
+            );
+            images.addAll(_imagesFromCompletedOrder(full));
+          } catch (_) {}
+        }
+      }
+      final deduped = <_CompletedEventImage>[];
+      final seen = <String>{};
+      for (final img in images) {
+        final key = img.imageBase64.length > 120
+            ? img.imageBase64.substring(0, 120)
+            : img.imageBase64;
+        if (seen.add(key)) deduped.add(img);
+      }
+      final types = deduped.map((e) => e.eventType).toSet().toList()..sort();
       _tabs?.dispose();
       _tabs = types.isEmpty ? null : TabController(length: types.length, vsync: this);
       if (!mounted) return;
       setState(() {
-        _all = images;
+        _all = deduped;
         _types = types;
         _loading = false;
       });

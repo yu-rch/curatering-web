@@ -1850,11 +1850,22 @@ extension _ManageEventsTableExt on _ManageEventsState {
   }
 
   Future<void> _selectManageEventsOrder(EventOrderDto dto) async {
+    final previous = _selectedManageEventsOrder;
     // ignore: invalid_use_of_protected_member
     setState(() {
       _manageEventsDetailLoading = true;
       _manageEventsDetailError = null;
-      _selectedManageEventsOrder = dto;
+      // Keep already-loaded event photos while the full detail request is in flight.
+      if (previous != null &&
+          previous.id == dto.id &&
+          dto.actualEventImages.isEmpty &&
+          previous.actualEventImages.isNotEmpty) {
+        _selectedManageEventsOrder = dto.copyWith(
+          actualEventImages: previous.actualEventImages,
+        );
+      } else {
+        _selectedManageEventsOrder = dto;
+      }
     });
     try {
       final roleType =
@@ -1868,7 +1879,16 @@ extension _ManageEventsTableExt on _ManageEventsState {
       if (!mounted) return;
       // ignore: invalid_use_of_protected_member
       setState(() {
-        _selectedManageEventsOrder = raw;
+        // Prefer server photos; if the payload omitted them, keep what we already show.
+        final merged =
+            raw.actualEventImages.isNotEmpty
+                ? raw
+                : (previous != null &&
+                    previous.id == raw.id &&
+                    previous.actualEventImages.isNotEmpty)
+                ? raw.copyWith(actualEventImages: previous.actualEventImages)
+                : raw;
+        _selectedManageEventsOrder = merged;
         _manageEventsDetailLoading = false;
       });
       _startDetailLivePollIfNeeded();
