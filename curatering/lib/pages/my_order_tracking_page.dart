@@ -383,7 +383,7 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
               ),
               const SizedBox(height: 16),
               const Text(
-                'Track a guest order with your order number, or sign in to see all your orders.',
+                'Track a guest order with your order number, or sign up to see all your orders.',
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 20),

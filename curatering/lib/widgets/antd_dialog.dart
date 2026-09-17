@@ -21,20 +21,25 @@ class DialogOpenGuard {
   /// Clears all dialog locks (e.g. after abandoning a modal via navigation).
   static void clearAll() {
     _openKeys.clear();
+    _lastOpenedAt.clear();
   }
 
-  static bool _burstLocked = false;
+  static final Map<String, DateTime> _lastOpenedAt = <String, DateTime>{};
+  static const Duration _burstWindow = Duration(milliseconds: 400);
 
   /// Runs [open] only if [key] is free; releases when the future completes.
   static Future<T?> runOnce<T>(
     Future<T?> Function() open, {
     String key = 'global',
   }) async {
-    if (_burstLocked) return null;
-    _burstLocked = true;
-    Future<void>.delayed(const Duration(milliseconds: 400), () {
-      _burstLocked = false;
-    });
+    // Debounce per key. This used to be one shared flag, so any two guarded
+    // dialogs opened within the burst window cancelled each other and the
+    // second tap was dropped with no feedback at all.
+    final now = DateTime.now();
+    final last = _lastOpenedAt[key];
+    if (last != null && now.difference(last) < _burstWindow) return null;
+    _lastOpenedAt[key] = now;
+
     if (!tryAcquire(key)) return null;
     try {
       return await open();

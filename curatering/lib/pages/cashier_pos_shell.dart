@@ -130,23 +130,42 @@ class _CashierPosShellState extends State<CashierPosShell> {
     }
   }
 
-  Future<void> _refreshOnline() async {
+  Future<void> _refreshOnline({bool throwOnError = false}) async {
     try {
       final data = await CashierPosApi.instance.listOnlineOrders();
       if (mounted) {
         setState(() {
           _online = data;
-          // Update selected order with fresh data
-          if (_selectedOnlineOrder != null) {
-            final id = _selectedOnlineOrder!.orderNo;
-            final fresh = data.cast<Map<String, dynamic>>().where(
-              (r) => PosOrderView(r).orderNo == id,
-            );
-            _selectedOnlineOrder = fresh.isNotEmpty ? PosOrderView(fresh.first) : null;
+          // Re-resolve the open order by internal id first so the detail panel
+          // survives an order number changing shape between payloads.
+          final selected = _selectedOnlineOrder;
+          if (selected != null) {
+            final selectedId = _posOrderId(selected.raw);
+            final rows = data.cast<Map<String, dynamic>>();
+            Map<String, dynamic>? match;
+            if (selectedId != null) {
+              for (final row in rows) {
+                if (_posOrderId(row) == selectedId) {
+                  match = row;
+                  break;
+                }
+              }
+            }
+            if (match == null) {
+              for (final row in rows) {
+                if (PosOrderView(row).orderNo == selected.orderNo) {
+                  match = row;
+                  break;
+                }
+              }
+            }
+            _selectedOnlineOrder = match == null ? null : PosOrderView(match);
           }
         });
       }
-    } catch (_) {}
+    } catch (e) {
+      if (throwOnError) rethrow;
+    }
   }
 
   Future<void> _refreshWalkIn({bool throwOnError = false}) async {
@@ -920,8 +939,15 @@ class _CashierPosShellState extends State<CashierPosShell> {
     final initialPaid = _toMoney(raw['cashier_amount_received'] ?? raw['amount_paid'] ?? 0);
     final isBalanceReview = initialPaid > 0 && balanceProofB64.isNotEmpty;
 
+    // On a balance review the cashier only keys in the outstanding amount;
+    // what was already received stays booked against the initial payment.
+    final alreadyPaid = isBalanceReview ? initialPaid : 0.0;
+    final amountDue = (order.total - alreadyPaid) <= 0
+        ? 0.0
+        : order.total - alreadyPaid;
+
     final paidCtrl = TextEditingController(
-      text: order.total.toStringAsFixed(2),
+      text: (isBalanceReview ? amountDue : order.total).toStringAsFixed(2),
     );
 
     String? dialogAction;
@@ -931,8 +957,10 @@ class _CashierPosShellState extends State<CashierPosShell> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
           final entered = double.tryParse(paidCtrl.text) ?? 0;
-          final isInsufficient = entered > 0 && entered < order.total;
-          final isOverpayment = entered > order.total;
+          final totalReceived = alreadyPaid + entered;
+          final isInsufficient =
+              entered > 0 && totalReceived < order.total - 0.01;
+          final isOverpayment = totalReceived > order.total + 0.01;
 
           return AlertDialog(
             title: Text('Confirm Payment · ${order.orderNo}'),
@@ -1007,9 +1035,14 @@ class _CashierPosShellState extends State<CashierPosShell> {
                     TextField(
                       controller: paidCtrl,
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      decoration: const InputDecoration(
-                        labelText: 'Amount received',
-                        border: OutlineInputBorder(),
+                      decoration: InputDecoration(
+                        labelText: isBalanceReview
+                            ? 'Balance received'
+                            : 'Amount received',
+                        helperText: isBalanceReview
+                            ? 'Balance due: ₱${amountDue.toStringAsFixed(2)}'
+                            : null,
+                        border: const OutlineInputBorder(),
                       ),
                       onChanged: (_) => setDialogState(() {}),
                     ),
@@ -1019,7 +1052,7 @@ class _CashierPosShellState extends State<CashierPosShell> {
                       Padding(
                         padding: const EdgeInsets.only(top: 8),
                         child: Text(
-                          'Insufficient: ₱${(order.total - entered).toStringAsFixed(2)} short',
+                          'Insufficient: ₱${(order.total - totalReceived).toStringAsFixed(2)} short',
                           style: TextStyle(color: AntdTokens.error, fontWeight: FontWeight.w600, fontSize: 12),
                         ),
                       ),
@@ -1027,7 +1060,7 @@ class _CashierPosShellState extends State<CashierPosShell> {
                       Padding(
                         padding: const EdgeInsets.only(top: 8),
                         child: Text(
-                          'Overpayment: ₱${(entered - order.total).toStringAsFixed(2)} over',
+                          'Overpayment: ₱${(totalReceived - order.total).toStringAsFixed(2)} over',
                           style: TextStyle(color: AntdTokens.warning, fontWeight: FontWeight.w600, fontSize: 12),
                         ),
                       ),
@@ -1048,7 +1081,7 @@ class _CashierPosShellState extends State<CashierPosShell> {
                 ),
               if (isOverpayment)
                 OutlinedButton(
-                  onPressed: () { dialogAction = 'confirm'; Navigator.pop(ctx); },
+                  onPressed: () { dialogAction = 'overpayment'; Navigator.pop(ctx); },
                   style: OutlinedButton.styleFrom(foregroundColor: AntdTokens.warning),
                   child: const Text('Accept Overpayment'),
                 ),
@@ -1063,26 +1096,36 @@ class _CashierPosShellState extends State<CashierPosShell> {
       ),
     );
 
-    final paid = double.tryParse(paidCtrl.text) ?? order.total;
+    final paid = double.tryParse(paidCtrl.text) ?? (isBalanceReview ? amountDue : order.total);
     paidCtrl.dispose();
-    if (dialogAction == null) return;
+    final action = dialogAction;
+    if (action == null) return;
 
-    await _withStatusUpdate(() async {
-      await CashierPosApi.instance.reviewOnlineOrder(
-        _posOrderId(order.raw) ?? order.orderNo,
-        action: dialogAction!,
-        amountReceived: paid,
-      );
-      await _refreshOnline();
+    // `overpayment` has no supplemental branch server-side, so send the grand
+    // total there; `confirm`/`insufficient` keep initial and balance separate.
+    final sendsSupplemental = isBalanceReview && action != 'overpayment';
+
+    try {
+      await _withStatusUpdate(() async {
+        await CashierPosApi.instance.reviewOnlineOrder(
+          _posOrderId(order.raw) ?? order.orderNo,
+          action: action,
+          amountReceived: sendsSupplemental ? alreadyPaid : alreadyPaid + paid,
+          supplementalAmountReceived: sendsSupplemental ? paid : null,
+        );
+        await _refreshOnline(throwOnError: true);
+      });
       if (mounted) {
         await _snack(
-          dialogAction == 'insufficient'
+          action == 'insufficient'
               ? 'Marked as insufficient'
               : 'Payment confirmed',
-          success: dialogAction != 'insufficient',
+          success: action != 'insufficient',
         );
       }
-    });
+    } catch (e) {
+      if (mounted) await _snack('Could not confirm payment: $e');
+    }
   }
 
   Future<void> _showOutForDeliveryDialog(PosOrderView order) async {
@@ -1228,6 +1271,7 @@ class _CashierPosShellState extends State<CashierPosShell> {
       ),
     );
     if (yes != true) return;
+    var queueRefreshed = true;
     try {
       await _withStatusUpdate(() async {
         await CashierPosApi.instance.claimWalkIn(orderId);
@@ -1251,17 +1295,26 @@ class _CashierPosShellState extends State<CashierPosShell> {
             _walkInSubTab = 1;
           });
         }
-        await _refreshWalkIn(throwOnError: false);
+        try {
+          await _refreshWalkIn(throwOnError: true);
+        } catch (_) {
+          // The claim itself succeeded; flag the stale queue instead of
+          // reporting the whole action as failed.
+          queueRefreshed = false;
+        }
       });
       if (mounted) {
         await showCurateringSuccessDialog(
           context: context,
           title: 'Success',
-          body: 'Order claimed successfully.',
+          body: queueRefreshed
+              ? 'Order claimed successfully.'
+              : 'Order claimed successfully, but the queue could not be '
+                  'refreshed. Pull to refresh to see the latest list.',
         );
       }
     } catch (e) {
-      if (mounted) await _snack('$e');
+      if (mounted) await _snack('Could not claim order: $e');
     }
   }
 

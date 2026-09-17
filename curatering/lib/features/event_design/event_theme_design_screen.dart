@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import '../../utils/image_pick_limits.dart';
+import '../../utils/payment_proof_image.dart' show showPaymentProofLightbox;
 import 'event_design_categories.dart';
 import 'events_feature_api.dart';
 import 'runpod_service.dart';
@@ -501,17 +502,30 @@ class _EventThemeDesignScreenState extends State<EventThemeDesignScreen> {
                         scrollDirection: Axis.horizontal,
                         itemCount: _venuePhotosB64.length,
                         separatorBuilder: (_, __) => const SizedBox(width: 8),
-                        itemBuilder:
-                            (context, index) => Stack(
+                        itemBuilder: (context, index) {
+                          final bytes = base64Decode(_venuePhotosB64[index]);
+                          return Stack(
                               children: [
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Image.memory(
-                                    base64Decode(_venuePhotosB64[index]),
-                                    width: 92,
-                                    height: 92,
-                                    fit: BoxFit.cover,
-                                    gaplessPlayback: true,
+                                Tooltip(
+                                  message: 'Tap to enlarge',
+                                  child: MouseRegion(
+                                    cursor: SystemMouseCursors.click,
+                                    child: GestureDetector(
+                                      onTap: () => showPaymentProofLightbox(
+                                        context,
+                                        bytes,
+                                      ),
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: Image.memory(
+                                          bytes,
+                                          width: 92,
+                                          height: 92,
+                                          fit: BoxFit.cover,
+                                          gaplessPlayback: true,
+                                        ),
+                                      ),
+                                    ),
                                   ),
                                 ),
                                 if (inputsEnabled)
@@ -541,7 +555,8 @@ class _EventThemeDesignScreenState extends State<EventThemeDesignScreen> {
                                     ),
                                   ),
                               ],
-                            ),
+                          );
+                        },
                       ),
                     ),
                 ],

@@ -752,15 +752,13 @@ class _StatusTimeline extends StatelessWidget {
   ];
 
   int get _activeIndex {
-    final s = status.toLowerCase();
+    final s = status.toLowerCase().trim().replaceAll(' ', '_');
     if (s.contains('cancel')) return -1;
+    // 'out_for_delivery' also contains 'deliver', so the dispatched stage has
+    // to be matched before the delivered stage or it reads as delivered.
+    if (s.contains('out_for')) return 2;
     if (s.contains('deliver') || s.contains('complete')) return 3;
-    if (s.contains('out_for') || s.contains('out for')) return 2;
-    if (s.contains('prepar') ||
-        s.contains('confirm') ||
-        s.contains('in_preparation')) {
-      return 1;
-    }
+    if (s.contains('prepar') || s.contains('confirm')) return 1;
     return 0;
   }
 

@@ -12528,11 +12528,16 @@ async function registerRoutesAfterDbInit() {
           : roCols.has('status')
             ? 'status'
             : 'order_status';
+        // Staff tables list latest-modified first, so the LIMIT window must
+        // rank by last touch rather than creation time.
+        const orderByExpr = roCols.has('updated_at')
+          ? 'COALESCE(updated_at, created_at) DESC NULLS LAST'
+          : 'created_at DESC NULLS LAST';
 
         let query = `
           SELECT ${selectSql}
           FROM restaurant_orders
-          ORDER BY created_at DESC NULLS LAST
+          ORDER BY ${orderByExpr}
           LIMIT $1
         `;
         let params = [limit];
@@ -12544,7 +12549,7 @@ async function registerRoutesAfterDbInit() {
               SELECT ${selectSql}
               FROM restaurant_orders
               WHERE lower(${statusCol}::text) = $1
-              ORDER BY created_at DESC NULLS LAST
+              ORDER BY ${orderByExpr}
               LIMIT $2
             `;
             params = [statusValues[0], limit];
@@ -12553,7 +12558,7 @@ async function registerRoutesAfterDbInit() {
               SELECT ${selectSql}
               FROM restaurant_orders
               WHERE lower(${statusCol}::text) IN (${statusValues.map((_, i) => `$${i + 1}`).join(', ')})
-              ORDER BY created_at DESC NULLS LAST
+              ORDER BY ${orderByExpr}
               LIMIT $${statusValues.length + 1}
             `;
             params = [...statusValues, limit];

@@ -39,6 +39,7 @@ import '../widgets/event_venue_map_preview.dart';
 import '../utils/inquiry_pricing.dart';
 import '../widgets/antd_dialog.dart';
 import '../utils/image_download.dart';
+import '../utils/payment_proof_image.dart' show showPaymentProofLightbox;
 
 // ---------------------------------------------------------------------------
 // Layout helpers
@@ -4594,16 +4595,33 @@ class _InquirePageState extends State<InquirePage> {
           const SizedBox(height: 8),
           RepaintBoundary(
             key: const ValueKey('venue_photo'),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.memory(
-                base64Decode(_venuePhotoBase64!),
-                height: 120,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                gaplessPlayback: true,
+            child: Tooltip(
+              message: 'Tap to enlarge',
+              child: MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: GestureDetector(
+                  onTap: () => showPaymentProofLightbox(
+                    context,
+                    base64Decode(_venuePhotoBase64!),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.memory(
+                      base64Decode(_venuePhotoBase64!),
+                      height: 120,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      gaplessPlayback: true,
+                    ),
+                  ),
+                ),
               ),
             ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Tap the photo to view it full screen',
+            style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
           ),
         ],
               ],

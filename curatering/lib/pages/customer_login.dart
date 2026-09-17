@@ -19,6 +19,9 @@ Uri _apiUri(String path) {
 
 const _requestTimeout = Duration(seconds: 30);
 
+/// Wide enough to keep the longest label ('RE-TYPE PASSWORD') on one line.
+const double _fieldLabelWidth = 132;
+
 final _nameAlphabetPattern = RegExp(r'^[A-Za-z]+(?:\s+[A-Za-z]+)*$');
 final _emailPattern = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
 final _phMobilePattern = RegExp(r'^09\d{9}$');
@@ -424,7 +427,11 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: Container(
         constraints: BoxConstraints(
-          maxWidth: isMobileWidth(context) ? 340 : 420,
+          // Sign up carries the widest labels, so it needs more room than the
+          // login/OTP states to keep each field on a single line.
+          maxWidth: isMobileWidth(context)
+              ? 360
+              : (_isLoginMode || _showOtpField ? 420 : 520),
         ),
         padding: appPagePadding(context),
         child: Column(
@@ -516,7 +523,7 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
               Row(
                 children: [
                   const SizedBox(
-                    width: 100,
+                    width: _fieldLabelWidth,
                     child: Text(
                       'EMAIL ADDRESS',
                       style: TextStyle(fontSize: 11),
@@ -595,7 +602,7 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
               Row(
                 children: [
                   const SizedBox(
-                    width: 100,
+                    width: _fieldLabelWidth,
                     child: Text('RESET CODE', style: TextStyle(fontSize: 11)),
                   ),
                   Expanded(
@@ -624,7 +631,7 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
               Row(
                 children: [
                   const SizedBox(
-                    width: 100,
+                    width: _fieldLabelWidth,
                     child: Text('NEW PASSWORD', style: TextStyle(fontSize: 11)),
                   ),
                   Expanded(
@@ -805,7 +812,7 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                       Row(
                         children: [
                           const SizedBox(
-                            width: 100,
+                            width: _fieldLabelWidth,
                             child: Text(
                               'FULL NAME',
                               style: TextStyle(fontSize: 11),
@@ -841,7 +848,7 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                       Row(
                         children: [
                           const SizedBox(
-                            width: 100,
+                            width: _fieldLabelWidth,
                             child: Text(
                               'PHONE',
                               style: TextStyle(fontSize: 11),
@@ -881,7 +888,7 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                     Row(
                       children: [
                         const SizedBox(
-                          width: 100,
+                          width: _fieldLabelWidth,
                           child: Text(
                             'EMAIL ADDRESS',
                             style: TextStyle(fontSize: 11),
@@ -918,7 +925,7 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                     Row(
                       children: [
                         const SizedBox(
-                          width: 100,
+                          width: _fieldLabelWidth,
                           child: Text(
                             'PASSWORD',
                             style: TextStyle(fontSize: 11),
@@ -979,7 +986,7 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                       Row(
                         children: [
                           const SizedBox(
-                            width: 100,
+                            width: _fieldLabelWidth,
                             child: Text(
                               'RE-TYPE PASSWORD',
                               style: TextStyle(fontSize: 11),
@@ -1050,7 +1057,7 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                                 ),
                               )
                               : Text(
-                                _isLoginMode ? 'LOG IN' : 'SIGN IN',
+                                _isLoginMode ? 'LOG IN' : 'SIGN UP',
                                 style: const TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 12,
@@ -1092,7 +1099,7 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
                       _formKey.currentState?.reset();
                     }),
                     child: Text(
-                      _isLoginMode ? 'SIGN IN' : 'LOG IN',
+                      _isLoginMode ? 'SIGN UP' : 'LOG IN',
                       style: const TextStyle(
                         fontSize: 10,
                         color: Colors.blue,

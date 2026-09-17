@@ -107,9 +107,13 @@ function posStatusLabel(row) {
   }
   if (os === "IN_PREPARATION" || os === "OUT_FOR_DELIVERY") {
     const change = Number(row.change_given ?? 0);
-    if (change > 0.01 || paid + supplemental > total + 0.01) {
-      return "ORDER CONFIRMED WITH OVERPAYMENT";
+    const overpaid = change > 0.01 || paid + supplemental > total + 0.01;
+    // Out for delivery must report its own stage; collapsing it into
+    // "ORDER CONFIRMED" made dispatched orders look like they never left.
+    if (os === "OUT_FOR_DELIVERY") {
+      return overpaid ? "OUT FOR DELIVERY WITH OVERPAYMENT" : "OUT FOR DELIVERY";
     }
+    if (overpaid) return "ORDER CONFIRMED WITH OVERPAYMENT";
     return "ORDER CONFIRMED";
   }
   if (os === "DELIVERED") return "DELIVERED";
@@ -584,7 +588,7 @@ export function registerPosRoutes(app, {
                order_status = 'in_preparation',
                cashier_amount_received_initial = $2,
                cashier_amount_received_balance = $3,
-               amount_paid = $2,
+               amount_paid = $2::numeric + $3::numeric,
                change_given = $4,
                balance_proof_pending_review = FALSE,
                updated_at = now()
@@ -607,12 +611,16 @@ export function registerPosRoutes(app, {
       }
 
       if (action === "insufficient") {
+        const primary = Number.isFinite(amountReceived) ? amountReceived : 0;
+        const secondary = Number.isFinite(supplemental) ? supplemental : 0;
         await pool.query(
           `UPDATE restaurant_orders
            SET cashier_amount_received_initial = $2,
+               cashier_amount_received_balance = CASE WHEN $3::numeric > 0 THEN $3::numeric ELSE cashier_amount_received_balance END,
+               balance_proof_pending_review = FALSE,
                updated_at = now()
            WHERE id = $1`,
-          [order.id, Number.isFinite(amountReceived) ? amountReceived : 0],
+          [order.id, primary, secondary],
         );
         return res.json({ ok: true, status: "PAYMENT INSUFFICIENT" });
       }

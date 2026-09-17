@@ -181,25 +181,14 @@ class _LoginState extends State<Login> {
   }
 
   Widget _buildCurateringTitle() {
-    return ShaderMask(
-      blendMode: BlendMode.srcIn,
-      shaderCallback: (bounds) => const LinearGradient(
-        colors: [
-          Color(0xFFFFC024),
-          Color(0xFFFF8A1F),
-          Color(0xFFE53935),
-        ],
-      ).createShader(bounds),
-      child: const Text(
-        'CURATERING',
-        textAlign: TextAlign.center,
-        style: TextStyle(
-          fontSize: 34,
-          fontWeight: FontWeight.w800,
-          letterSpacing: 1.2,
-          height: 1.1,
-          color: Colors.white,
-        ),
+    return Semantics(
+      label: 'Curatering',
+      image: true,
+      child: Image.asset(
+        'lib/assets/login-2.png',
+        height: 44,
+        fit: BoxFit.contain,
+        excludeFromSemantics: true,
       ),
     );
   }

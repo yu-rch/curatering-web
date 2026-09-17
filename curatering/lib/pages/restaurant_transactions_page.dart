@@ -11,6 +11,8 @@ import '../widgets/antd_message.dart';
 import '../widgets/antd_buttons.dart';
 import '../widgets/antd_staff.dart';
 import '../widgets/antd_tokens.dart';
+import '../widgets/paginated_data_table.dart'
+    show TablePaginationBar, tablePageCount, tablePageSlice;
 
 class RestaurantTransactionsPage extends StatefulWidget {
   const RestaurantTransactionsPage({super.key});
@@ -33,6 +35,19 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
   String _orderTypeFilter = 'all'; // all | dine_in | delivery | pickup
   DateTime? _dateFrom;
   DateTime? _dateTo;
+
+  /// Manager order tables paginate at 15 rows per page.
+  static const int _ordersPageSize = 15;
+  int _confirmationPage = 0;
+  int _processingPage = 0;
+  int _completedPage = 0;
+
+  /// Any filter/search change invalidates the current page offsets.
+  void _resetOrderPages() {
+    _confirmationPage = 0;
+    _processingPage = 0;
+    _completedPage = 0;
+  }
 
   // Performance optimization: Cache last fetch time
   DateTime? _lastFetchTime;
@@ -333,14 +348,50 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     return true;
   }
 
+  /// Last modified timestamp, preferring `updated_at` over `created_at`.
+  DateTime? _orderLastModified(Map<String, dynamic> order) {
+    for (final key in const [
+      'updated_at',
+      'updatedAt',
+      'created_at',
+      'createdAt',
+    ]) {
+      final parsed = DateTime.tryParse((order[key] ?? '').toString());
+      if (parsed != null) return parsed;
+    }
+    return null;
+  }
+
+  /// Most recently modified first; undated rows sink to the bottom.
+  List<Map<String, dynamic>> _sortByLastModifiedDesc(
+    List<Map<String, dynamic>> orders,
+  ) {
+    final sorted = [...orders];
+    sorted.sort((a, b) {
+      final da = _orderLastModified(a);
+      final db = _orderLastModified(b);
+      if (da == null && db == null) return 0;
+      if (da == null) return 1;
+      if (db == null) return -1;
+      return db.compareTo(da);
+    });
+    return sorted;
+  }
+
   List<Map<String, dynamic>> get _filteredConfirmationOrders =>
-      _confirmationOrders.where(_matchesManagerFilters).toList();
+      _sortByLastModifiedDesc(
+        _confirmationOrders.where(_matchesManagerFilters).toList(),
+      );
 
   List<Map<String, dynamic>> get _filteredProcessingOrders =>
-      _processingOrders.where(_matchesManagerFilters).toList();
+      _sortByLastModifiedDesc(
+        _processingOrders.where(_matchesManagerFilters).toList(),
+      );
 
   List<Map<String, dynamic>> get _filteredCompletedOrders =>
-      _completedOrders.where(_matchesManagerFilters).toList();
+      _sortByLastModifiedDesc(
+        _completedOrders.where(_matchesManagerFilters).toList(),
+      );
 
   Future<void> _pickManagerDate({required bool isFrom}) async {
     final initial = isFrom ? (_dateFrom ?? DateTime.now()) : (_dateTo ?? DateTime.now());
@@ -357,6 +408,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
       } else {
         _dateTo = picked;
       }
+      _resetOrderPages();
     });
   }
 
@@ -546,6 +598,10 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
       // Add to appropriate new list with updated status
       final updatedOrder = Map<String, dynamic>.from(originalOrder);
       updatedOrder['status'] = newStatus;
+      updatedOrder['order_status'] = newStatus;
+      // Mirror the server's `updated_at = now()` so the row sorts to the top
+      // the same way it will after the next reload.
+      updatedOrder['updated_at'] = DateTime.now().toUtc().toIso8601String();
       if (deliveryUrl != null) {
         updatedOrder['delivery_tracking_url'] = deliveryUrl;
       }
@@ -670,11 +726,14 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                         controller: _searchCtrl,
                         hintText: 'Search order no, customer, phone, status',
                         width: 360,
-                        onChanged: (v) =>
-                            setState(() => _searchQuery = v.trim().toLowerCase()),
+                        onChanged: (v) => setState(() {
+                          _searchQuery = v.trim().toLowerCase();
+                          _resetOrderPages();
+                        }),
                         onClear: () => setState(() {
                           _searchCtrl.clear();
                           _searchQuery = '';
+                          _resetOrderPages();
                         }),
                       ),
                       AntdSelect<String>(
@@ -697,20 +756,29 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                         ],
                         onChanged: (v) {
                           if (v == null) return;
-                          setState(() => _orderTypeFilter = v);
+                          setState(() {
+                            _orderTypeFilter = v;
+                            _resetOrderPages();
+                          });
                         },
                       ),
                       _managerDateChip(
                         label: 'From',
                         value: _dateFrom,
                         onPick: () => _pickManagerDate(isFrom: true),
-                        onClear: () => setState(() => _dateFrom = null),
+                        onClear: () => setState(() {
+                          _dateFrom = null;
+                          _resetOrderPages();
+                        }),
                       ),
                       _managerDateChip(
                         label: 'To',
                         value: _dateTo,
                         onPick: () => _pickManagerDate(isFrom: false),
-                        onClear: () => setState(() => _dateTo = null),
+                        onClear: () => setState(() {
+                          _dateTo = null;
+                          _resetOrderPages();
+                        }),
                       ),
                       if (_dateFrom != null ||
                           _dateTo != null ||
@@ -725,6 +793,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                             _searchCtrl.clear();
                             _searchQuery = '';
                             _orderTypeFilter = 'all';
+                            _resetOrderPages();
                           }),
                         ),
                     ],
@@ -754,6 +823,11 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
 
   Widget _buildConfirmationTab() {
     final orders = _filteredConfirmationOrders;
+    final page = _confirmationPage.clamp(
+      0,
+      tablePageCount(orders.length, pageSize: _ordersPageSize) - 1,
+    );
+    final pageOrders = tablePageSlice(orders, page, pageSize: _ordersPageSize);
     if (orders.isEmpty) {
       return Center(
         child: Column(
@@ -834,13 +908,20 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                   ),
                 ),
                 // Table Rows
-                ...orders.asMap().entries.map((entry) {
+                ...pageOrders.asMap().entries.map((entry) {
                   final index = entry.key;
                   final order = entry.value;
                   return _buildOrderTableRow(order, index);
                 }),
               ],
             ),
+          ),
+          TablePaginationBar(
+            currentPage: page,
+            totalItems: orders.length,
+            pageSize: _ordersPageSize,
+            onPageChanged: (next) =>
+                setState(() => _confirmationPage = next),
           ),
           const SizedBox(height: 16),
         ],
@@ -850,6 +931,11 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
 
   Widget _buildProcessingTab() {
     final orders = _filteredProcessingOrders;
+    final page = _processingPage.clamp(
+      0,
+      tablePageCount(orders.length, pageSize: _ordersPageSize) - 1,
+    );
+    final pageOrders = tablePageSlice(orders, page, pageSize: _ordersPageSize);
     if (orders.isEmpty) {
       return Center(
         child: Column(
@@ -930,13 +1016,19 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                   ),
                 ),
                 // Table Rows
-                ...orders.asMap().entries.map((entry) {
+                ...pageOrders.asMap().entries.map((entry) {
                   final index = entry.key;
                   final order = entry.value;
                   return _buildProcessingOrderTableRow(order, index);
                 }),
               ],
             ),
+          ),
+          TablePaginationBar(
+            currentPage: page,
+            totalItems: orders.length,
+            pageSize: _ordersPageSize,
+            onPageChanged: (next) => setState(() => _processingPage = next),
           ),
           const SizedBox(height: 16),
         ],
@@ -946,6 +1038,11 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
 
   Widget _buildCompletedTab() {
     final orders = _filteredCompletedOrders;
+    final page = _completedPage.clamp(
+      0,
+      tablePageCount(orders.length, pageSize: _ordersPageSize) - 1,
+    );
+    final pageOrders = tablePageSlice(orders, page, pageSize: _ordersPageSize);
     if (orders.isEmpty) {
       return Center(
         child: Column(
@@ -1040,13 +1137,19 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                   ),
                 ),
                 // Table Rows
-                ...orders.asMap().entries.map((entry) {
+                ...pageOrders.asMap().entries.map((entry) {
                   final index = entry.key;
                   final order = entry.value;
                   return _buildCompletedOrderTableRow(order, index);
                 }),
               ],
             ),
+          ),
+          TablePaginationBar(
+            currentPage: page,
+            totalItems: orders.length,
+            pageSize: _ordersPageSize,
+            onPageChanged: (next) => setState(() => _completedPage = next),
           ),
           const SizedBox(height: 16),
         ],
@@ -1416,68 +1519,18 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                       order['payment_status'] as String? ?? 'pending',
                     ),
                     const SizedBox(width: 8),
-                    GestureDetector(
+                    _buildActionChip(
+                      label: 'Confirm payment',
+                      icon: Icons.check,
+                      color: Colors.green,
                       onTap: () => _showConfirmPaymentDialog(order),
-                      child: MouseRegion(
-                        cursor: SystemMouseCursors.click,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.green,
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.check, color: Colors.white, size: 16),
-                              SizedBox(width: 4),
-                              Text(
-                                'Confirm payment',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
                     ),
                     const SizedBox(width: 8),
-                    GestureDetector(
+                    _buildActionChip(
+                      label: 'Cancel order',
+                      icon: Icons.close,
+                      color: Colors.red,
                       onTap: () => _cancelOrder(_managerOrderId(order)),
-                      child: MouseRegion(
-                        cursor: SystemMouseCursors.click,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.red,
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.close, color: Colors.white, size: 16),
-                              SizedBox(width: 4),
-                              Text(
-                                'Cancel',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
                     ),
                   ],
                 ),
@@ -1510,11 +1563,52 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
         border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
       child: Text(
-        status.toUpperCase(),
+        status.toUpperCase().replaceAll('_', ' '),
         style: TextStyle(
           color: color,
           fontWeight: FontWeight.w600,
           fontSize: 11,
+        ),
+      ),
+    );
+  }
+
+  /// Actions column pill. Labelled with a verb and drawn solid so it reads as a
+  /// button rather than as one of the status badges sitting beside it.
+  Widget _buildActionChip({
+    required String label,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      // Opaque so the whole pill (including its padding) takes the tap instead
+      // of falling through to the row's own tap handler.
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: Colors.white, size: 16),
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1579,117 +1673,28 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                     ),
                     const SizedBox(width: 8),
                     if (isWalkIn) ...[
-                      GestureDetector(
+                      _buildActionChip(
+                        label: 'Mark claimed',
+                        icon: Icons.check_circle,
+                        color: Colors.green,
                         onTap: () => _claimWalkInOrder(order),
-                        child: MouseRegion(
-                          cursor: SystemMouseCursors.click,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.green,
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: const Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.check_circle,
-                                  color: Colors.white,
-                                  size: 16,
-                                ),
-                                SizedBox(width: 4),
-                                Text(
-                                  'Claim',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
                       ),
                     ] else if (isOnline) ...[
                       if (normalizedStatus == 'in_preparation') ...[
-                        GestureDetector(
-                          onTap:
-                              () => _showDeliveryUrlDialog(
-                                _managerOrderId(order),
-                              ),
-                          child: MouseRegion(
-                            cursor: SystemMouseCursors.click,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.orange,
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: const Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.local_shipping,
-                                    color: Colors.white,
-                                    size: 16,
-                                  ),
-                                  SizedBox(width: 4),
-                                  Text(
-                                    'For Delivery',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
+                        _buildActionChip(
+                          label: 'Mark out for delivery',
+                          icon: Icons.local_shipping,
+                          color: Colors.orange,
+                          onTap: () =>
+                              _showDeliveryUrlDialog(_managerOrderId(order)),
                         ),
                       ],
                       if (normalizedStatus == 'out_for_delivery') ...[
-                        GestureDetector(
+                        _buildActionChip(
+                          label: 'Mark delivered',
+                          icon: Icons.check_circle,
+                          color: Colors.green,
                           onTap: () => _markDelivered(_managerOrderId(order)),
-                          child: MouseRegion(
-                            cursor: SystemMouseCursors.click,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.green,
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: const Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.check_circle,
-                                    color: Colors.white,
-                                    size: 16,
-                                  ),
-                                  SizedBox(width: 4),
-                                  Text(
-                                    'Delivered',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
                         ),
                       ],
                     ],
@@ -2159,7 +2164,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                                       : () async {
                                         try {
                                           final token = await _getAuthToken();
-                                          await http.post(
+                                          final response = await http.post(
                                             Uri.parse(
                                               '$apiBaseUrl/api/manager/restaurant/orders/${Uri.encodeComponent(orderId)}/notify-insufficient-payment',
                                             ),
@@ -2175,6 +2180,12 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                                               'amountPaid': paid,
                                             }),
                                           );
+                                          if (response.statusCode < 200 ||
+                                              response.statusCode >= 300) {
+                                            throw Exception(
+                                              _responseErrorMessage(response),
+                                            );
+                                          }
                                           if (mounted) {
                                             showAntdMessage(
                                               context,
