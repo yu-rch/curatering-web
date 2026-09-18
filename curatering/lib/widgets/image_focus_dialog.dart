@@ -7,6 +7,7 @@ import '../utils/image_cache.dart';
 void showImageFocusDialog(
   BuildContext context, {
   required String? imageBase64,
+  String? imageUrl,
   required String title,
   String? description,
   List<MapEntry<String, String>> detailBlocks = const [],
@@ -15,7 +16,10 @@ void showImageFocusDialog(
   showDialog<void>(
     context: context,
     builder: (ctx) {
-      final hasImage = imageBase64 != null && imageBase64.trim().isNotEmpty;
+      final hasB64 = imageBase64 != null && imageBase64.trim().isNotEmpty;
+      final networkUrl = (imageUrl ?? '').trim();
+      final hasUrl = networkUrl.isNotEmpty;
+      final hasImage = hasB64 || hasUrl;
       return Dialog(
         insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
         child: ConstrainedBox(
@@ -45,10 +49,29 @@ void showImageFocusDialog(
                                   constraints: const BoxConstraints(
                                     maxHeight: 320,
                                   ),
-                                  child: CachedBase64Image(
-                                    base64String: imageBase64,
-                                    fit: BoxFit.contain,
-                                  ),
+                                  child:
+                                      hasUrl
+                                          ? Image.network(
+                                            networkUrl,
+                                            fit: BoxFit.contain,
+                                            errorBuilder:
+                                                (_, __, ___) =>
+                                                    hasB64
+                                                        ? CachedBase64Image(
+                                                          base64String:
+                                                              imageBase64,
+                                                          fit: BoxFit.contain,
+                                                        )
+                                                        : const Icon(
+                                                          Icons
+                                                              .broken_image_outlined,
+                                                          size: 48,
+                                                        ),
+                                          )
+                                          : CachedBase64Image(
+                                            base64String: imageBase64,
+                                            fit: BoxFit.contain,
+                                          ),
                                 ),
                               )
                               : Container(

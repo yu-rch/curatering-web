@@ -849,12 +849,13 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
                           const SizedBox(height: 4),
                           Text(
                             [
-                              if (item.selectedSauce?.trim().isNotEmpty == true)
-                                'Sauce: ${item.selectedSauce} × ${item.addOnQuantity}',
+                              if (item.addOns.isNotEmpty)
+                                'Add-ons: ${item.addOns.join(', ')}'
+                              else if (item.selectedSauce?.trim().isNotEmpty ==
+                                  true)
+                                'Sauce: ${item.selectedSauce}',
                               if (item.addonExtraSubtotal > 0)
                                 'Extra add-on fee: ₱${item.addonExtraSubtotal.toStringAsFixed(2)}',
-                              if (item.addOns.isNotEmpty)
-                                'Add-ons: ${item.addOns.join(', ')}',
                               if (item.specialInstructions?.trim().isNotEmpty ==
                                   true)
                                 'Note: ${item.specialInstructions}',
@@ -940,7 +941,7 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
 
   Future<void> _showAddToCartOptions(MenuDish dish) async {
     final showAddOns = dish.supportsAddOns && dish.sauces.isNotEmpty;
-    String? selectedSauce = showAddOns ? dish.sauces.first : null;
+    final selectedAddOns = <String>{};
     final noteController = TextEditingController();
     await showDialog<void>(
       context: context,
@@ -1005,15 +1006,36 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
                                   'Add-ons',
                                   style: TextStyle(fontWeight: FontWeight.bold),
                                 ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Select up to 2 (optional). '
+                                  '${selectedAddOns.length}/2 selected',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
                                 for (final sauce in dish.sauces)
-                                  RadioListTile<String>(
-                                    value: sauce,
-                                    groupValue: selectedSauce,
+                                  CheckboxListTile(
+                                    value: selectedAddOns.contains(sauce),
                                     title: Text(sauce),
+                                    controlAffinity:
+                                        ListTileControlAffinity.leading,
+                                    contentPadding: EdgeInsets.zero,
+                                    dense: true,
                                     onChanged:
-                                        (value) => setDialogState(
-                                          () => selectedSauce = value,
-                                        ),
+                                        selectedAddOns.contains(sauce) ||
+                                                selectedAddOns.length < 2
+                                            ? (checked) {
+                                              setDialogState(() {
+                                                if (checked == true) {
+                                                  selectedAddOns.add(sauce);
+                                                } else {
+                                                  selectedAddOns.remove(sauce);
+                                                }
+                                              });
+                                            }
+                                            : null,
                                   ),
                               ],
                               const SizedBox(height: 12),
@@ -1057,11 +1079,18 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
                     ),
                     FilledButton(
                       onPressed: () {
+                        final orderedAddOns =
+                            dish.sauces
+                                .where(selectedAddOns.contains)
+                                .toList();
                         CartStore.instance.addItem(
                           dish,
-                          selectedSauce: selectedSauce,
-                          addOnQuantity: selectedSauce == null ? 0 : 1,
-                          addOns: const [],
+                          selectedSauce:
+                              orderedAddOns.isEmpty
+                                  ? null
+                                  : orderedAddOns.first,
+                          addOnQuantity: orderedAddOns.length,
+                          addOns: orderedAddOns,
                           specialInstructions: noteController.text.trim(),
                         );
                         Navigator.of(context).pop();
@@ -1082,7 +1111,12 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
 
   Future<void> _showCustomizeCartItem(CartItem item) async {
     final showAddOns = item.dish.supportsAddOns && item.dish.sauces.isNotEmpty;
-    String? selectedSauce = item.selectedSauce;
+    final selectedAddOns = <String>{
+      ...item.addOns.map((e) => e.trim()).where((e) => e.isNotEmpty),
+      if (item.addOns.isEmpty &&
+          item.selectedSauce?.trim().isNotEmpty == true)
+        item.selectedSauce!.trim(),
+    };
     final noteController = TextEditingController(
       text: item.specialInstructions ?? '',
     );
@@ -1105,15 +1139,36 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
                               'Add-ons',
                               style: TextStyle(fontWeight: FontWeight.bold),
                             ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Select up to 2 (optional). '
+                              '${selectedAddOns.length}/2 selected',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
                             for (final sauce in item.dish.sauces)
-                              RadioListTile<String>(
-                                value: sauce,
-                                groupValue: selectedSauce,
+                              CheckboxListTile(
+                                value: selectedAddOns.contains(sauce),
                                 title: Text(sauce),
+                                controlAffinity:
+                                    ListTileControlAffinity.leading,
+                                contentPadding: EdgeInsets.zero,
+                                dense: true,
                                 onChanged:
-                                    (value) => setDialogState(
-                                      () => selectedSauce = value,
-                                    ),
+                                    selectedAddOns.contains(sauce) ||
+                                            selectedAddOns.length < 2
+                                        ? (checked) {
+                                          setDialogState(() {
+                                            if (checked == true) {
+                                              selectedAddOns.add(sauce);
+                                            } else {
+                                              selectedAddOns.remove(sauce);
+                                            }
+                                          });
+                                        }
+                                        : null,
                               ),
                             const SizedBox(height: 8),
                           ],
@@ -1143,11 +1198,18 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
                     ),
                     FilledButton(
                       onPressed: () {
+                        final orderedAddOns =
+                            item.dish.sauces
+                                .where(selectedAddOns.contains)
+                                .toList();
                         CartStore.instance.updateCartItemCustomizations(
                           item,
-                          selectedSauce: selectedSauce,
-                          addOnQuantity: selectedSauce == null ? 0 : 1,
-                          addOns: const [],
+                          selectedSauce:
+                              orderedAddOns.isEmpty
+                                  ? null
+                                  : orderedAddOns.first,
+                          addOnQuantity: orderedAddOns.length,
+                          addOns: orderedAddOns,
                           specialInstructions: noteController.text.trim(),
                         );
                         Navigator.of(context).pop();

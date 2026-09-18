@@ -395,7 +395,7 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  static const Duration _staffIdleTimeout = Duration(minutes: 5);
+  static const Duration _staffIdleTimeout = Duration(minutes: 15);
 
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   Timer? _staffIdleTimer;

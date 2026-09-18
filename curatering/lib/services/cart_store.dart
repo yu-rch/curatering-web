@@ -44,8 +44,13 @@ class CartItem {
   }
 
   double get addonExtraSubtotal {
-    if (selectedSauce?.trim().isNotEmpty != true) return 0;
-    final extraQty = addOnQuantity - 1;
+    final selectedCount =
+        addOns.map((e) => e.trim()).where((e) => e.isNotEmpty).length;
+    final count =
+        selectedCount > 0
+            ? selectedCount
+            : (selectedSauce?.trim().isNotEmpty == true ? addOnQuantity : 0);
+    final extraQty = count - 1;
     if (extraQty <= 0) return 0;
     return extraQty * addonExtraPerUnit * quantity;
   }
@@ -202,16 +207,26 @@ class CartStore extends ChangeNotifier {
     List<String> addOns = const [],
     String? specialInstructions,
   }) {
+    final normalizedAddOns =
+        addOns.map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    final normalizedSauce =
+        selectedSauce?.trim().isNotEmpty == true
+            ? selectedSauce!.trim()
+            : (normalizedAddOns.isEmpty ? null : normalizedAddOns.first);
     final normalizedAddOnQuantity =
-        selectedSauce?.trim().isNotEmpty == true ? addOnQuantity : 1;
+        normalizedAddOns.isNotEmpty
+            ? normalizedAddOns.length
+            : (normalizedSauce == null
+                ? 0
+                : (addOnQuantity < 0 ? 0 : addOnQuantity));
     final existingIndex = _items.indexWhere(
       (item) =>
           item.dish.id == dish.id &&
           _sameCustomizations(
             item,
-            selectedSauce,
+            normalizedSauce,
             normalizedAddOnQuantity,
-            addOns,
+            normalizedAddOns,
             specialInstructions,
           ),
     );
@@ -224,9 +239,9 @@ class CartStore extends ChangeNotifier {
       final previousItem = CartItem(
         dish: dish,
         quantity: _items[existingIndex].quantity - 1,
-        selectedSauce: selectedSauce,
+        selectedSauce: normalizedSauce,
         addOnQuantity: normalizedAddOnQuantity,
-        addOns: addOns,
+        addOns: normalizedAddOns,
         specialInstructions: specialInstructions,
       );
       addedLine = _items[existingIndex].snapshot();
@@ -243,9 +258,9 @@ class CartStore extends ChangeNotifier {
 
     addedLine = CartItem(
       dish: dish,
-      selectedSauce: selectedSauce,
+      selectedSauce: normalizedSauce,
       addOnQuantity: normalizedAddOnQuantity,
-      addOns: addOns,
+      addOns: normalizedAddOns,
       specialInstructions: specialInstructions,
     );
     _items.add(addedLine);
@@ -331,10 +346,20 @@ class CartStore extends ChangeNotifier {
     final existingIndex = _items.indexWhere((item) => identical(item, target));
     if (existingIndex < 0) return;
     final previousItem = _items[existingIndex].snapshot();
-    _items[existingIndex].selectedSauce = selectedSauce;
+    final normalizedAddOns =
+        addOns.map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    final normalizedSauce =
+        selectedSauce?.trim().isNotEmpty == true
+            ? selectedSauce!.trim()
+            : (normalizedAddOns.isEmpty ? null : normalizedAddOns.first);
+    _items[existingIndex].selectedSauce = normalizedSauce;
     _items[existingIndex].addOnQuantity =
-        selectedSauce?.trim().isNotEmpty == true ? addOnQuantity : 1;
-    _items[existingIndex].addOns = addOns;
+        normalizedAddOns.isNotEmpty
+            ? normalizedAddOns.length
+            : (normalizedSauce == null
+                ? 0
+                : (addOnQuantity < 0 ? 0 : addOnQuantity));
+    _items[existingIndex].addOns = normalizedAddOns;
     _items[existingIndex].specialInstructions = specialInstructions;
     final updatedItem = _items[existingIndex].snapshot();
     _saveCart();

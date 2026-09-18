@@ -319,6 +319,8 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
           popular.add({
             'name': name,
             'count': row['count'],
+            'category': (row['category'] ?? existing?['category'] ?? '')
+                .toString(),
             'imageBase64': lite
                 ? (existing?['imageBase64'] ?? '').toString()
                 : (row['imageBase64'] ?? '').toString(),
@@ -331,11 +333,41 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
         for (final row in rawDesigns) {
           if (row is! Map) continue;
           final image = (row['imageBase64'] ?? '').toString().trim();
+          final imageUrl = (row['imageUrl'] ?? row['image_url'] ?? '')
+              .toString()
+              .trim();
           final label = (row['label'] ?? 'Featured Event Design').toString();
-          if (!lite && image.isEmpty) continue;
-          if (lite && label.trim().isEmpty) continue;
+          if (!lite && image.isEmpty && imageUrl.isEmpty) continue;
+          if (lite &&
+              label.trim().isEmpty &&
+              image.isEmpty &&
+              imageUrl.isEmpty) {
+            continue;
+          }
+          Map<String, dynamic>? existing;
+          for (final r in _salesEventDesigns) {
+            final existingLabel =
+                (r['label'] ?? '').toString().trim().toLowerCase();
+            final existingUrl = (r['imageUrl'] ?? '').toString().trim();
+            if (imageUrl.isNotEmpty && existingUrl == imageUrl) {
+              existing = r;
+              break;
+            }
+            if (existingLabel == label.trim().toLowerCase() &&
+                existingLabel.isNotEmpty) {
+              existing = r;
+              break;
+            }
+          }
           designs.add({
-            'imageBase64': image,
+            'imageBase64':
+                image.isNotEmpty
+                    ? image
+                    : (existing?['imageBase64'] ?? '').toString(),
+            'imageUrl':
+                imageUrl.isNotEmpty
+                    ? imageUrl
+                    : (existing?['imageUrl'] ?? '').toString(),
             'label': label,
             'description': (row['description'] ?? '').toString(),
           });
@@ -2592,6 +2624,8 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     required String? imageB64,
     required String label,
     String? description,
+    String? category,
+    MenuDish? dish,
   }) {
     return _HoverZoomPhotoTile(
       imageB64: imageB64,
@@ -2603,9 +2637,19 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
       placeholderIcon: Icons.fastfood,
       onTap: () => Navigator.pushReplacementNamed(
         context,
-        customerRoute('/catering-menu'),
+        _popularDishTargetRoute(dish: dish, categoryHint: category),
       ),
     );
+  }
+
+  /// Restaurant dishes open `/restaurant`; everything else goes to catering menu.
+  String _popularDishTargetRoute({MenuDish? dish, String? categoryHint}) {
+    final cat =
+        (dish?.category ?? categoryHint ?? '').trim().toLowerCase();
+    if (cat == 'restaurant') {
+      return customerRoute('/restaurant');
+    }
+    return customerRoute('/catering-menu');
   }
 
   String _popularDishLabel(WebsiteContentStore w, int index) {
@@ -2638,6 +2682,23 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
         n.contains('customer will confirm menu') ||
         n == 'tba' ||
         n == 'tbd';
+  }
+
+  /// Prefer a menu match whose category matches [categoryHint] when both exist.
+  MenuDish? _menuDishForPopularLabel(String label, {String? categoryHint}) {
+    final name = label.trim().toLowerCase();
+    if (name.isEmpty) return null;
+    final hint = (categoryHint ?? '').trim().toLowerCase();
+    MenuDish? fallback;
+    for (final d in MenuStore.instance.activeDishes) {
+      if (d.name.trim().toLowerCase() != name) continue;
+      if (hint.isNotEmpty &&
+          d.category.trim().toLowerCase() == hint) {
+        return d;
+      }
+      fallback ??= d;
+    }
+    return fallback;
   }
 
   Widget _buildPopularDishesCarousel(WebsiteContentStore w) {
@@ -2684,14 +2745,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                           final description = (row['description'] ?? '')
                               .toString()
                               .trim();
-                          MenuDish? menuMatch;
-                          for (final d in MenuStore.instance.activeDishes) {
-                            if (d.name.trim().toLowerCase() ==
-                                name.toLowerCase()) {
-                              menuMatch = d;
-                              break;
-                            }
-                          }
+                          MenuDish? menuMatch = _menuDishForPopularLabel(
+                            name,
+                            categoryHint: (row['category'] ?? '').toString(),
+                          );
                           final resolvedImage =
                               image.isNotEmpty
                                   ? image
@@ -2709,6 +2766,8 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                         true
                                     ? menuMatch!.publicDescription.trim()
                                     : null),
+                            category: (row['category'] ?? '').toString(),
+                            dish: menuMatch,
                           );
                         }).toList()
                         : cmsCount > 0 ||
@@ -2721,14 +2780,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                           ].reduce(math.max),
                           (i) {
                           final label = _popularDishLabel(w, i);
-                          MenuDish? menuMatch;
-                          for (final d in MenuStore.instance.activeDishes) {
-                            if (d.name.trim().toLowerCase() ==
-                                label.trim().toLowerCase()) {
-                              menuMatch = d;
-                              break;
-                            }
-                          }
+                          final menuMatch = _menuDishForPopularLabel(label);
                           final cmsImage =
                               i < w.popularDishImageBase64.length
                                   ? w.popularDishImageBase64[i].trim()
@@ -2753,6 +2805,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                             label: label,
                             description:
                                 description.isNotEmpty ? description : null,
+                            dish: menuMatch,
                           );
                         })
                         : fallbackDishes.isNotEmpty
@@ -2768,6 +2821,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                     d.publicDescription.trim().isNotEmpty
                                         ? d.publicDescription.trim()
                                         : null,
+                                dish: d,
                               ),
                             )
                             .toList()
@@ -2824,6 +2878,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                             (row['description'] ?? '').toString().trim();
                         return _HoverZoomPhotoTile(
                           imageB64: (row['imageBase64'] ?? '').toString(),
+                          imageUrl: (row['imageUrl'] ?? '').toString(),
                           label:
                               label.isNotEmpty
                                   ? label
@@ -5221,6 +5276,7 @@ class _HomeKitchenDishCarouselState extends State<_HomeKitchenDishCarousel> {
 class _HoverZoomPhotoTile extends StatelessWidget {
   const _HoverZoomPhotoTile({
     required this.imageB64,
+    this.imageUrl,
     required this.label,
     this.description,
     required this.width,
@@ -5231,6 +5287,7 @@ class _HoverZoomPhotoTile extends StatelessWidget {
   });
 
   final String? imageB64;
+  final String? imageUrl;
   final String label;
   final String? description;
   final double width;
@@ -5239,23 +5296,20 @@ class _HoverZoomPhotoTile extends StatelessWidget {
   final IconData placeholderIcon;
   final VoidCallback? onTap;
 
-  Widget _image({BoxFit fit = BoxFit.cover}) {
-    final image = imageB64;
-    if (image != null && image.isNotEmpty) {
-      final normalized =
-          image
-              .replaceFirst(RegExp(r'^data:image\/[^;]+;base64,'), '')
-              .replaceAll('\n', '')
-              .trim();
-      return CachedBase64Image(
-        base64String: normalized,
-        fit: fit,
-        placeholder: Container(
-          color: Colors.grey.shade300,
-          child: const Icon(Icons.broken_image_outlined, size: 42),
-        ),
-      );
+  String? get _resolvedNetworkUrl {
+    final raw = imageUrl?.trim() ?? '';
+    if (raw.isEmpty) return null;
+    if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+    if (raw.startsWith('/')) {
+      final base = apiBaseUrl.endsWith('/')
+          ? apiBaseUrl.substring(0, apiBaseUrl.length - 1)
+          : apiBaseUrl;
+      return '$base$raw';
     }
+    return raw;
+  }
+
+  Widget _placeholder() {
     return Container(
       color: Colors.grey.shade300,
       child: Icon(
@@ -5266,15 +5320,70 @@ class _HoverZoomPhotoTile extends StatelessWidget {
     );
   }
 
+  Widget _image({BoxFit fit = BoxFit.cover}) {
+    final networkUrl = _resolvedNetworkUrl;
+    if (networkUrl != null) {
+      return Image.network(
+        networkUrl,
+        fit: fit,
+        gaplessPlayback: true,
+        filterQuality: FilterQuality.medium,
+        errorBuilder: (_, __, ___) {
+          final image = imageB64;
+          if (image != null && image.isNotEmpty) {
+            return _base64Image(image, fit: fit);
+          }
+          return _placeholder();
+        },
+        loadingBuilder: (context, child, progress) {
+          if (progress == null) return child;
+          return Container(
+            color: Colors.grey.shade200,
+            alignment: Alignment.center,
+            child: const SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          );
+        },
+      );
+    }
+    final image = imageB64;
+    if (image != null && image.isNotEmpty) {
+      return _base64Image(image, fit: fit);
+    }
+    return _placeholder();
+  }
+
+  Widget _base64Image(String image, {BoxFit fit = BoxFit.cover}) {
+    final normalized =
+        image
+            .replaceFirst(RegExp(r'^data:image\/[^;]+;base64,'), '')
+            .replaceAll('\n', '')
+            .trim();
+    return CachedBase64Image(
+      base64String: normalized,
+      fit: fit,
+      placeholder: Container(
+        color: Colors.grey.shade300,
+        child: const Icon(Icons.broken_image_outlined, size: 42),
+      ),
+    );
+  }
+
   void _openFocus(BuildContext context) {
     if (onTap != null) {
       onTap!();
       return;
     }
-    if (imageB64 == null || imageB64!.isEmpty) return;
+    final networkUrl = _resolvedNetworkUrl;
+    final hasB64 = imageB64 != null && imageB64!.trim().isNotEmpty;
+    if (networkUrl == null && !hasB64) return;
     showImageFocusDialog(
       context,
-      imageBase64: imageB64,
+      imageBase64: hasB64 ? imageB64 : null,
+      imageUrl: networkUrl,
       title: label.trim().isNotEmpty ? label : 'Photo',
       description: description,
     );

@@ -4,5 +4,5 @@ A=c[0]
 B=c[2]
 C=c[55]
 D=c[46]
-var z=a.updateTypes([]);(function constants(){C.B2=new A.bI(4,B.n7,D.Ei)})()};
-(a=>{a["+Q5+MPD4J8pweZ7QRy94n3Ey724="]=a.current})($__dart_deferred_initializers__);
+var z=a.updateTypes([]);(function constants(){C.B3=new A.bK(4,B.n8,D.Ej)})()};
+(a=>{a["0vUPiMdnXuVk3/k4XFapK4cLD54="]=a.current})($__dart_deferred_initializers__);

@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../features/event_design/event_theme_design_screen.dart';
+import '../features/event_design/theme_design_export.dart';
 import '../auth/action_permissions.dart';
 import '../auth/auth_session.dart';
 import '../config.dart';

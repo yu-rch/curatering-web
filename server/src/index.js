@@ -10419,6 +10419,84 @@ async function registerRoutesAfterDbInit() {
       }
     });
 
+    // Public completed-event photos for homepage / gallery cards.
+    // Returns binary image bytes so the homepage can avoid multi‑MB base64 JSON.
+    app.get(
+      '/api/public/completed-event-photo/:orderId/:photoIndex',
+      publicRateLimit,
+      async (req, res) => {
+        try {
+          const orderId = String(req.params.orderId || '').trim();
+          const photoIndex = Number(req.params.photoIndex);
+          if (
+            !/^[0-9a-f-]{36}$/i.test(orderId) ||
+            !Number.isInteger(photoIndex) ||
+            photoIndex < 0 ||
+            photoIndex > 39
+          ) {
+            return res.status(400).json({ error: 'Invalid photo reference' });
+          }
+          const eventCols = await getTableColumnNames('event_orders');
+          if (!eventCols.has('actual_event_images')) {
+            return res.status(404).json({ error: 'Photo not found' });
+          }
+          const result = await pool.query(
+            `SELECT actual_event_images
+             FROM event_orders
+             WHERE id = $1::uuid
+               AND lower(COALESCE(status, '')) = 'completed'
+             LIMIT 1`,
+            [orderId],
+          );
+          if (result.rowCount === 0) {
+            return res.status(404).json({ error: 'Photo not found' });
+          }
+          let images = result.rows[0].actual_event_images;
+          if (typeof images === 'string') {
+            try {
+              images = JSON.parse(images);
+            } catch {
+              images = [];
+            }
+          }
+          if (!Array.isArray(images) || photoIndex >= images.length) {
+            return res.status(404).json({ error: 'Photo not found' });
+          }
+          let raw = String(images[photoIndex] ?? '').trim();
+          raw = raw
+            .replace(/^data:image\/[^;]+;base64,/i, '')
+            .replace(/\s+/g, '');
+          if (!raw || raw.length < 32) {
+            return res.status(404).json({ error: 'Photo not found' });
+          }
+          let bytes;
+          try {
+            bytes = Buffer.from(raw, 'base64');
+          } catch {
+            return res.status(404).json({ error: 'Photo not found' });
+          }
+          if (!bytes.length) {
+            return res.status(404).json({ error: 'Photo not found' });
+          }
+          let contentType = 'image/jpeg';
+          if (raw.startsWith('iVBOR')) contentType = 'image/png';
+          else if (raw.startsWith('R0lGOD') || raw.startsWith('R0lGod')) {
+            contentType = 'image/gif';
+          } else if (raw.startsWith('UklGR')) contentType = 'image/webp';
+          else if (raw.startsWith('/9j/')) contentType = 'image/jpeg';
+          res.set({
+            'Content-Type': contentType,
+            'Cache-Control': 'public, max-age=86400, immutable',
+            'Content-Length': String(bytes.length),
+          });
+          return res.status(200).end(bytes);
+        } catch (e) {
+          console.error('completed-event-photo', e);
+          return res.status(500).json({ error: 'Failed to load photo' });
+        }
+      },
+    );
+
     // Homepage popular dishes + event designs from completed/successful orders.
     app.get('/api/public/homepage-highlights', async (req, res) => {
       try {
@@ -10470,7 +10548,7 @@ async function registerRoutesAfterDbInit() {
           : `'{}'::jsonb`;
 
         const eventOrders = await pool.query(
-          `SELECT menu, event_title, event_type, ${themeCol} AS theme_design,
+          `SELECT id, menu, event_title, event_type, ${themeCol} AS theme_design,
                   ${eventImageCol} AS actual_event_images
            FROM event_orders
            WHERE status = 'completed'
@@ -10557,11 +10635,14 @@ async function registerRoutesAfterDbInit() {
         for (const entry of topNames) {
           let imageBase64 = null;
           let description = '';
+          let category = null;
           if (menuCols.size > 0) {
             try {
               const selectParts = ['name'];
               if (hasImage) selectParts.push('image_base64');
               if (hasDesc) selectParts.push('public_description');
+              const hasCategory = menuCols.has('category');
+              if (hasCategory) selectParts.push('category');
               const dishRow = await pool.query(
                 `SELECT ${selectParts.join(', ')}
                  FROM menu_dishes
@@ -10576,6 +10657,9 @@ async function registerRoutesAfterDbInit() {
                 description = hasDesc
                   ? String(dishRow.rows[0].public_description || '')
                   : '';
+                category = hasCategory
+                  ? String(dishRow.rows[0].category || '').trim() || null
+                  : null;
               }
             } catch (_) {
               // skip enrichment
@@ -10584,6 +10668,7 @@ async function registerRoutesAfterDbInit() {
           popularDishes.push({
             name: entry.name,
             count: entry.count,
+            category,
             imageBase64:
               lite ||
               !imageBase64 ||
@@ -10657,10 +10742,15 @@ async function registerRoutesAfterDbInit() {
           return 'Featured Event Design';
         };
 
+        const looksLikeImageUrl = (value) => {
+          const s = String(value || '').trim();
+          return /^https?:\/\//i.test(s) || s.startsWith('/api/');
+        };
+
         const looksLikeImageBase64 = (value) => {
           const s = String(value || '').trim();
           if (!s) return false;
-          if (/^https?:\/\//i.test(s) || s.startsWith('/')) return false;
+          if (looksLikeImageUrl(s)) return false;
           if (/^data:image\//i.test(s)) return true;
           // Skip short non-image strings; keep large base64 payloads.
           return s.length > 256 && !/\s/.test(s.slice(0, 80));
@@ -10700,36 +10790,26 @@ async function registerRoutesAfterDbInit() {
           return out;
         };
 
-        const pushDesign = (image, label, description) => {
-          const img = String(image || '').trim();
-          if (!lite) {
-            if (
-              !img ||
-              !looksLikeImageBase64(img) ||
-              img.length > maxImageChars ||
-              eventDesigns.length >= maxDesigns
-            ) {
-              return;
-            }
-            const key = img.slice(0, 120);
-            if (seenDesignImages.has(key)) return;
-            seenDesignImages.add(key);
-            eventDesigns.push({
-              imageBase64: img,
-              label: String(label || '').trim() || 'Featured Event Design',
-              description: String(description || '').trim(),
-            });
-            return;
-          }
+        const pushDesign = ({ imageBase64 = null, imageUrl = null, label, description }) => {
           if (eventDesigns.length >= maxDesigns) return;
           const labelText =
             String(label || '').trim() || 'Featured Event Design';
           const descText = String(description || '').trim();
-          const key = `${labelText}|${descText}`;
+          const url = String(imageUrl || '').trim();
+          let img = String(imageBase64 || '').trim();
+          if (img && (!looksLikeImageBase64(img) || img.length > maxImageChars)) {
+            img = '';
+          }
+          // Lite responses skip inline base64; URLs still load in the browser.
+          if (lite) img = '';
+          if (!img && !url) return;
+
+          const key = url || (img ? img.slice(0, 120) : `${labelText}|${descText}`);
           if (seenDesignImages.has(key)) return;
           seenDesignImages.add(key);
           eventDesigns.push({
-            imageBase64: null,
+            imageBase64: img || null,
+            imageUrl: url || null,
             label: labelText,
             description: descText,
           });
@@ -10756,14 +10836,6 @@ async function registerRoutesAfterDbInit() {
             .filter(Boolean)
             .join(' · ');
 
-          // Prefer completed-event theme / AI design images over generic photos.
-          const themeImages = collectThemeDesignImages(theme).sort(
-            (a, b) => a.length - b.length,
-          );
-          for (const img of themeImages) {
-            pushDesign(img, label, description);
-          }
-
           let images = row.actual_event_images;
           if (typeof images === 'string') {
             try {
@@ -10772,15 +10844,53 @@ async function registerRoutesAfterDbInit() {
               images = [];
             }
           }
-          if (Array.isArray(images) && eventDesigns.length < maxDesigns) {
-            // Prefer smaller photos first so the response stays lightweight.
-            const ranked = images
-              .map((img) => String(img || '').trim())
-              .filter((img) => looksLikeImageBase64(img))
-              .sort((a, b) => a.length - b.length);
-            for (const img of ranked) {
-              pushDesign(img, label, description);
+          let pushedActual = false;
+          if (Array.isArray(images) && images.length > 0) {
+            // Prefer real completed-event photos. Serve via URL so oversized
+            // base64 payloads (often >400KB) still appear on the homepage.
+            for (let i = 0; i < images.length; i++) {
+              if (eventDesigns.length >= maxDesigns) break;
+              const img = String(images[i] || '').trim();
+              if (!looksLikeImageBase64(img)) continue;
+              const photoUrl = `/api/public/completed-event-photo/${row.id}/${i}`;
+              pushDesign({
+                imageBase64:
+                  !lite && img.length <= maxImageChars ? img : null,
+                imageUrl: photoUrl,
+                label,
+                description,
+              });
+              pushedActual = true;
             }
+          }
+
+          if (pushedActual) continue;
+
+          // Fall back to theme design URL / embedded images when no event photos.
+          const themeUrl = String(
+            theme.generatedImageUrl ||
+              theme.imageUrl ||
+              theme.url ||
+              '',
+          ).trim();
+          if (looksLikeImageUrl(themeUrl)) {
+            pushDesign({
+              imageUrl: themeUrl,
+              label,
+              description,
+            });
+            continue;
+          }
+
+          const themeImages = collectThemeDesignImages(theme).sort(
+            (a, b) => a.length - b.length,
+          );
+          for (const img of themeImages) {
+            pushDesign({
+              imageBase64: img,
+              label,
+              description,
+            });
           }
         }
 
@@ -11676,11 +11786,30 @@ async function registerRoutesAfterDbInit() {
             const dish = dishesById.get(dishId);
             if (!dish) return item;
             const price = Number(dish.price) || 0;
-            const dip = String(item.dip ?? item.selected_sauce ?? item.selectedSauce ?? '').trim();
-            const rawDipQty = Number(item.dip_qty ?? item.addOnQuantity ?? 1);
+            const rawAddOns = Array.isArray(item.addOns)
+              ? item.addOns
+              : Array.isArray(item.add_ons)
+                ? item.add_ons
+                : [];
+            const addOns = rawAddOns
+              .map((e) => String(e ?? '').trim())
+              .filter(Boolean)
+              .slice(0, 2);
+            const dip = String(
+              item.dip ?? item.selected_sauce ?? item.selectedSauce ?? addOns[0] ?? '',
+            ).trim();
+            const rawDipQty = Number(item.dip_qty ?? item.addOnQuantity ?? addOns.length ?? 1);
             const dipQty = dip
-              ? Math.max(0, Number.isFinite(rawDipQty) ? Math.floor(rawDipQty) : 1)
-              : 1;
+              ? Math.max(
+                  0,
+                  Math.min(
+                    2,
+                    addOns.length > 0
+                      ? addOns.length
+                      : (Number.isFinite(rawDipQty) ? Math.floor(rawDipQty) : 1),
+                  ),
+                )
+              : 0;
             const qty = Math.max(1, Number(item.qty ?? item.quantity ?? 1) || 1);
             const additionalCharge = Number(dish.menu_dishes_additional_charge_amount) || 0;
             const extraPerUnit = additionalCharge > 0 ? additionalCharge : 15;
@@ -11701,6 +11830,8 @@ async function registerRoutesAfterDbInit() {
               quantity: qty,
               dip,
               dip_qty: dipQty,
+              addOns,
+              add_ons: addOns,
               selectedSauce: dip || null,
               selected_sauce: dip || null,
               notes: item.notes ?? item.special_instructions ?? item.specialInstructions ?? '',

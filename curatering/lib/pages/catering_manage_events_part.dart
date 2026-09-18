@@ -178,6 +178,8 @@ extension _ManageEventsTableExt on _ManageEventsState {
             .where((s) => s.trim().isNotEmpty)
             .map((s) => s.trim())
             .toList();
+    final themeMap = _themeDesignMapFromOrder(dto);
+    final canDownloadDesign = imageUrl.isNotEmpty;
 
     Widget imageFromSource(String source, {BoxFit fit = BoxFit.cover}) {
       if (source.startsWith('http://') || source.startsWith('https://')) {
@@ -195,21 +197,50 @@ extension _ManageEventsTableExt on _ManageEventsState {
       }
     }
 
+    Widget downloadActions() {
+      if (!canDownloadDesign) return const SizedBox.shrink();
+      return Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            OutlinedButton.icon(
+              onPressed: () => _previewThemeDesignPdf(dto, themeMap),
+              icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
+              label: const Text('Preview PDF'),
+            ),
+            OutlinedButton.icon(
+              onPressed: () => _downloadThemeDesignImage(dto, themeMap),
+              icon: const Icon(Icons.download, size: 18),
+              label: const Text('Download image'),
+            ),
+          ],
+        ),
+      );
+    }
+
     // Supervisor: final design output only (no step/edit UI).
     if (_isSupervisor) {
       return _detailSection(
         'Event theme design',
         child: imageUrl.isNotEmpty
-            ? _zoomableThemeImage(
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: SizedBox(
-                    height: 220,
-                    width: double.infinity,
-                    child: imageFromSource(imageUrl, fit: BoxFit.contain),
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _zoomableThemeImage(
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: SizedBox(
+                        height: 220,
+                        width: double.infinity,
+                        child: imageFromSource(imageUrl, fit: BoxFit.contain),
+                      ),
+                    ),
+                    imageFromSource(imageUrl, fit: BoxFit.contain),
                   ),
-                ),
-                imageFromSource(imageUrl, fit: BoxFit.contain),
+                  downloadActions(),
+                ],
               )
             : Text(
                 picks.isNotEmpty
@@ -284,6 +315,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
                     ),
                     imageFromSource(imageUrl, fit: BoxFit.contain),
                   ),
+                  downloadActions(),
                   const SizedBox(height: 12),
                 ],
                 if (picks.isNotEmpty) ...[
@@ -349,6 +381,46 @@ extension _ManageEventsTableExt on _ManageEventsState {
         ],
       ),
     );
+  }
+
+  Future<void> _downloadThemeDesignImage(
+    EventOrderDto dto,
+    Map<String, dynamic> themeMap,
+  ) async {
+    try {
+      await saveThemeDesignImageToGallery(
+        context: context,
+        themeDesign: themeMap,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Theme design image downloaded.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not download theme design: $e')),
+      );
+    }
+  }
+
+  Future<void> _previewThemeDesignPdf(
+    EventOrderDto dto,
+    Map<String, dynamic> themeMap,
+  ) async {
+    try {
+      await previewThemeDesignPdf(
+        context: context,
+        themeDesign: themeMap,
+        eventTitle: dto.eventTitle,
+        transactionNo: dto.transactionNo,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not open theme design PDF: $e')),
+      );
+    }
   }
 
   List<AntdDescriptionItem> _orderDetailDescriptionItems(
@@ -1904,63 +1976,40 @@ extension _ManageEventsTableExt on _ManageEventsState {
   }
 
   Widget _eventInquiryColumnCell(EventOrderDto dto) {
+    final title = dto.eventTitle.trim();
     final eventType =
         dto.eventType.trim().isEmpty ? '—' : dto.eventType.trim();
-    final title = dto.eventTitle.trim().isEmpty
-        ? dto.customerName
-        : dto.eventTitle.trim();
+    final customer =
+        dto.customerName.trim().isEmpty ? '—' : dto.customerName.trim();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          title,
-          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-        ),
-        const SizedBox(height: 2),
-        Text('Type: $eventType', style: const TextStyle(fontSize: 11)),
-      ],
-    );
-  }
-
-  Widget _mergedInquiryColumnCell(EventOrderDto dto) {
-    if (_isCateringPlusEventOrder(dto)) {
-      return _eventInquiryColumnCell(dto);
-    }
-    final eventType =
-        dto.eventType.trim().isEmpty ? '—' : dto.eventType.trim();
-    final menuLine =
-        dto.menu.isEmpty
-            ? 'Menu: —'
-            : 'Menu: ${dto.menu.take(2).map((m) => m.dishName).join(', ')}${dto.menu.length > 2 ? ' +${dto.menu.length - 2} more' : ''}';
-    final allergensLine =
-        dto.allergens.trim().isEmpty ? 'Allergens: —' : 'Allergens: ${dto.allergens.trim()}';
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
+        if (title.isNotEmpty) ...[
+          Text(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+          ),
+          const SizedBox(height: 2),
+        ],
         Text(
           eventType,
-          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          'TXN: ${dto.transactionNo}',
-          style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
+          style: TextStyle(
+            fontWeight: title.isEmpty ? FontWeight.w700 : FontWeight.w500,
+            fontSize: title.isEmpty ? 13 : 12,
+          ),
         ),
         const SizedBox(height: 2),
-        Text(dto.customerName, style: const TextStyle(fontSize: 12)),
-        if (dto.contactPerson.trim().isNotEmpty &&
-            dto.contactPerson.trim() != dto.customerName.trim())
-          Text(dto.contactPerson, style: TextStyle(fontSize: 11, color: Colors.grey.shade700)),
-        const SizedBox(height: 2),
-        Text(menuLine, style: TextStyle(fontSize: 11, color: Colors.grey.shade700)),
-        Text(allergensLine, style: TextStyle(fontSize: 11, color: Colors.grey.shade700)),
+        Text(customer, style: const TextStyle(fontSize: 12)),
       ],
     );
   }
 
-  Widget _basicInquiryColumnCell(EventOrderDto dto) => _eventInquiryColumnCell(dto);
+  Widget _mergedInquiryColumnCell(EventOrderDto dto) =>
+      _eventInquiryColumnCell(dto);
+
+  Widget _basicInquiryColumnCell(EventOrderDto dto) =>
+      _eventInquiryColumnCell(dto);
 
   Widget _buildOrdersTablePanel({
     required String title,
