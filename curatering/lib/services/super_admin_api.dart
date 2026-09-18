@@ -371,6 +371,62 @@ class SuperAdminTodoDto {
   }
 }
 
+class SuperAdminMemberDto {
+  const SuperAdminMemberDto({
+    required this.id,
+    required this.email,
+    required this.fullName,
+    required this.archived,
+  });
+
+  final String id;
+  final String email;
+  final String fullName;
+  final bool archived;
+
+  factory SuperAdminMemberDto.fromJson(Map<String, dynamic> json) {
+    return SuperAdminMemberDto(
+      id: (json['id'] ?? '').toString(),
+      email: (json['email'] ?? '').toString(),
+      fullName: (json['fullName'] ?? json['full_name'] ?? '').toString(),
+      archived: _asBool(json['archived']),
+    );
+  }
+}
+
+class SuperAdminSecurityDto {
+  const SuperAdminSecurityDto({
+    required this.activeCount,
+    this.primarySuperAdminId,
+    this.superAdmins = const <SuperAdminMemberDto>[],
+  });
+
+  final int activeCount;
+  final String? primarySuperAdminId;
+  final List<SuperAdminMemberDto> superAdmins;
+
+  factory SuperAdminSecurityDto.fromJson(Map<String, dynamic> json) {
+    final raw = json['superAdmins'];
+    final members = <SuperAdminMemberDto>[];
+    if (raw is List) {
+      for (final item in raw) {
+        if (item is Map) {
+          members.add(
+            SuperAdminMemberDto.fromJson(Map<String, dynamic>.from(item)),
+          );
+        }
+      }
+    }
+    return SuperAdminSecurityDto(
+      activeCount: _numAsInt(json['activeCount']),
+      primarySuperAdminId:
+          json['primarySuperAdminId']?.toString() ??
+          json['primary_super_admin_id']?.toString(),
+      superAdmins: members,
+    );
+  }
+}
+
 class SuperAdminApi {
   SuperAdminApi._();
 
@@ -451,6 +507,7 @@ class SuperAdminApi {
     final decoded = await ApiClient.instance.getJson(
       '/api/super-admin/users',
       queryParameters: query.isEmpty ? null : query,
+      useCache: false,
     );
 
     final usersRaw = decoded['users'];
@@ -555,6 +612,28 @@ class SuperAdminApi {
       '/api/super-admin/users/$userId/archive',
       body: {
         'archived': archived,
+        if (superAdminPassword != null)
+          'superAdminPassword': superAdminPassword,
+      },
+    );
+  }
+
+  Future<SuperAdminSecurityDto> getSuperAdminSecurity() async {
+    final decoded = await ApiClient.instance.getJson(
+      '/api/super-admin/security',
+      useCache: false,
+    );
+    return SuperAdminSecurityDto.fromJson(decoded);
+  }
+
+  Future<void> transferPrimarySuperAdmin({
+    required String targetUserId,
+    String? superAdminPassword,
+  }) async {
+    await ApiClient.instance.postJson(
+      '/api/super-admin/transfer',
+      body: {
+        'targetUserId': targetUserId,
         if (superAdminPassword != null)
           'superAdminPassword': superAdminPassword,
       },

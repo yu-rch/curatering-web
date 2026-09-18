@@ -33,6 +33,7 @@ class _ManageAccountsState extends State<ManageAccounts> {
 
   List<UserDto> _users = const <UserDto>[];
   UserDto? _selectedUser;
+  SuperAdminSecurityDto? _security;
 
   /// Working copy for toggles; keys are routes from [PagePermissionRoutes.togglesForStaff].
   Map<String, dynamic> _pagePermissionDraft = {};
@@ -52,6 +53,50 @@ class _ManageAccountsState extends State<ManageAccounts> {
   }
 
   Role? _apiRoleFilter() => _roleFilter;
+
+  bool _isLastActiveSuperAdmin(UserDto user) {
+    if (user.role != Role.superAdmin || user.archived) return false;
+    return (_security?.activeCount ?? 0) == 1;
+  }
+
+  Future<void> _fetch() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final users = await SuperAdminApi.instance.listUsers(
+        search: _searchQuery,
+        role: _apiRoleFilter() == null ? null : roleToString(_apiRoleFilter()!),
+        archived: _archivedFilter,
+      );
+      SuperAdminSecurityDto? security = _security;
+      try {
+        security = await SuperAdminApi.instance.getSuperAdminSecurity();
+      } catch (_) {
+        // Keep last known snapshot; the users list is still usable.
+      }
+      // Client-side status guard in case API omits archived filtering.
+      final filtered =
+          _archivedFilter == null
+              ? users
+              : users.where((u) => u.archived == _archivedFilter).toList();
+      setState(() {
+        _users = filtered;
+        _security = security;
+        if (_selectedUser != null) {
+          final id = _selectedUser!.id;
+          final still = filtered.where((u) => u.id == id).toList();
+          _selectedUser = still.isEmpty ? null : still.first;
+          if (_selectedUser != null) _initPermissionDraft(_selectedUser!);
+        }
+      });
+    } catch (e) {
+      setState(() => _error = 'Failed to load users.');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
 
   void _initPermissionDraft(UserDto user) {
     final m = <String, dynamic>{};
@@ -114,38 +159,6 @@ class _ManageAccountsState extends State<ManageAccounts> {
         ],
       ),
     );
-  }
-
-  Future<void> _fetch() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    try {
-      final users = await SuperAdminApi.instance.listUsers(
-        search: _searchQuery,
-        role: _apiRoleFilter() == null ? null : roleToString(_apiRoleFilter()!),
-        archived: _archivedFilter,
-      );
-      // Client-side status guard in case API omits archived filtering.
-      final filtered =
-          _archivedFilter == null
-              ? users
-              : users.where((u) => u.archived == _archivedFilter).toList();
-      setState(() {
-        _users = filtered;
-        if (_selectedUser != null) {
-          final id = _selectedUser!.id;
-          final still = filtered.where((u) => u.id == id).toList();
-          _selectedUser = still.isEmpty ? null : still.first;
-          if (_selectedUser != null) _initPermissionDraft(_selectedUser!);
-        }
-      });
-    } catch (e) {
-      setState(() => _error = 'Failed to load users.');
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
   }
 
   Future<String?> _confirmSuperAdminPassword(String actionLabel) async {
@@ -218,13 +231,14 @@ class _ManageAccountsState extends State<ManageAccounts> {
     return result;
   }
 
-  Future<void> _createUser() async {
+  Future<void> _createUser({Role? presetRole}) async {
     final fullNameCtrl = TextEditingController();
     final emailCtrl = TextEditingController();
     final passwordCtrl = TextEditingController();
     final birthdayCtrl = TextEditingController();
     final contactNumberCtrl = TextEditingController();
-    Role role = Role.supervisor;
+    Role role = presetRole ?? Role.supervisor;
+    final lockRole = presetRole == Role.superAdmin;
     String employmentType = 'regular';
     String? errorMessage;
 
@@ -256,8 +270,8 @@ class _ManageAccountsState extends State<ManageAccounts> {
                     ),
                     const SizedBox(height: 8),
                     // Title
-                    const Text(
-                      'CREATE ACCOUNT',
+                    Text(
+                      lockRole ? 'ADD SUPER ADMIN' : 'CREATE ACCOUNT',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
@@ -429,7 +443,10 @@ class _ManageAccountsState extends State<ManageAccounts> {
                                     )
                                     .toList(),
                             onChanged:
-                                (v) => setStateDialog(() => role = v ?? role),
+                                lockRole
+                                    ? null
+                                    : (v) =>
+                                        setStateDialog(() => role = v ?? role),
                           ),
                           const SizedBox(height: 12),
                           const Text(
@@ -692,6 +709,7 @@ class _ManageAccountsState extends State<ManageAccounts> {
     Role role = user.role;
     String employmentType = user.employmentType ?? 'regular';
     String? errorMessage;
+    final lastSa = _isLastActiveSuperAdmin(user);
 
     final ok = await showDialog<bool>(
       context: context,
@@ -851,8 +869,21 @@ class _ManageAccountsState extends State<ManageAccounts> {
                                     )
                                     .toList(),
                             onChanged:
-                                (v) => setStateDialog(() => role = v ?? role),
+                                lastSa
+                                    ? null
+                                    : (v) =>
+                                        setStateDialog(() => role = v ?? role),
                           ),
+                          if (lastSa) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              'This account is the last active Super Admin. At least one active Super Admin must remain.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.orange.shade800,
+                              ),
+                            ),
+                          ],
                           const SizedBox(height: 12),
                           const Text(
                             'EMPLOYMENT TYPE:',
@@ -946,7 +977,156 @@ class _ManageAccountsState extends State<ManageAccounts> {
     if (ok == true) await _fetch();
   }
 
+  Future<void> _transferPrimary() async {
+    List<UserDto> candidates;
+    try {
+      candidates = await SuperAdminApi.instance.listUsers(archived: false);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not load accounts for transfer.')),
+      );
+      return;
+    }
+    final primaryId = _security?.primarySuperAdminId;
+    final options =
+        candidates.where((u) => !u.archived && u.id != primaryId).toList();
+    if (options.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Create another staff account before transferring.'),
+        ),
+      );
+      return;
+    }
+
+    String selectedId = options.first.id;
+    String? errorMessage;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 420),
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Align(
+                      alignment: Alignment.topRight,
+                      child: IconButton(
+                        onPressed: () => Navigator.of(context).pop(false),
+                        icon: const Icon(Icons.close, color: Colors.black),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                    ),
+                    const Text(
+                      'TRANSFER PRIMARY SUPER ADMIN',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'The current Super Admin keeps access. The selected account becomes primary and is promoted if needed.',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    if (errorMessage != null) ...[
+                      Text(
+                        errorMessage!,
+                        style: TextStyle(color: Colors.red.shade700),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    const Text('NEW PRIMARY', style: TextStyle(fontSize: 11)),
+                    DropdownButton<String>(
+                      isExpanded: true,
+                      value: selectedId,
+                      items:
+                          options
+                              .map(
+                                (u) => DropdownMenuItem(
+                                  value: u.id,
+                                  child: Text(
+                                    '${u.fullName} · ${u.role.displayName}',
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                      onChanged: (v) {
+                        if (v != null) setStateDialog(() => selectedId = v);
+                      },
+                    ),
+                    const SizedBox(height: 24),
+                    ElevatedButton(
+                      onPressed: () async {
+                        try {
+                          final password =
+                              await _confirmSuperAdminPassword(
+                            'transfer primary Super Admin',
+                          );
+                          if (password == null) return;
+                          await SuperAdminApi.instance.transferPrimarySuperAdmin(
+                            targetUserId: selectedId,
+                            superAdminPassword: password,
+                          );
+                          if (!context.mounted) return;
+                          Navigator.of(context).pop(true);
+                        } catch (e) {
+                          if (!context.mounted) return;
+                          setStateDialog(() {
+                            errorMessage =
+                                e is ApiError
+                                    ? e.message
+                                    : 'Failed to transfer primary Super Admin.';
+                          });
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFFFC024),
+                        foregroundColor: Colors.black,
+                      ),
+                      child: const Text(
+                        'TRANSFER',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (ok == true) await _fetch();
+  }
+
   Future<void> _toggleArchived(UserDto user, bool nextValue) async {
+    if (nextValue && _isLastActiveSuperAdmin(user)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Cannot archive the last active Super Admin.'),
+        ),
+      );
+      return;
+    }
     try {
       final password = await _confirmSuperAdminPassword(
         nextValue ? 'archive this account' : 'unarchive this account',
@@ -1189,6 +1369,143 @@ class _ManageAccountsState extends State<ManageAccounts> {
     );
   }
 
+  Widget _buildSuperAdminSecurityPanel() {
+    final security = _security;
+    final members = security?.superAdmins ?? const <SuperAdminMemberDto>[];
+    final count = security?.activeCount ?? members.length;
+    final primaryId = security?.primarySuperAdminId;
+
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.black.withValues(alpha: 0.08)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Super Admin Security',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Active Super Admins: $count',
+              style: TextStyle(color: Colors.grey.shade800),
+            ),
+            const SizedBox(height: 12),
+            if (members.isEmpty)
+              Text(
+                'No active Super Admins were returned.',
+                style: TextStyle(color: Colors.grey.shade600),
+              )
+            else
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 160),
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    for (final m in members)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              Icons.check_circle,
+                              size: 18,
+                              color: Colors.green.shade700,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Flexible(
+                                        child: Text(
+                                          m.fullName,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                      if (primaryId != null &&
+                                          primaryId == m.id) ...[
+                                        const SizedBox(width: 8),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFFFE0B2),
+                                            borderRadius: BorderRadius.circular(
+                                              10,
+                                            ),
+                                          ),
+                                          child: const Text(
+                                            'Primary',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                  Text(
+                                    m.email,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey.shade700,
+                                    ),
+                                  ),
+                                  Text(
+                                    m.archived ? 'Archived' : 'Active',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.green.shade800,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed:
+                      _loading
+                          ? null
+                          : () => _createUser(presetRole: Role.superAdmin),
+                  icon: const Icon(Icons.person_add_alt_1),
+                  label: const Text('Add Super Admin'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _loading ? null : _transferPrimary,
+                  icon: const Icon(Icons.swap_horiz),
+                  label: const Text('Transfer Primary Super Admin'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AppScaffold(
@@ -1215,6 +1532,8 @@ class _ManageAccountsState extends State<ManageAccounts> {
               'Create staff accounts and manage page-level permissions.',
               style: TextStyle(color: Colors.grey.shade700),
             ),
+            const SizedBox(height: 16),
+            _buildSuperAdminSecurityPanel(),
             const SizedBox(height: 16),
             Row(
               children: [
@@ -1321,9 +1640,10 @@ class _ManageAccountsState extends State<ManageAccounts> {
                                 Expanded(
                                   child: ListView.builder(
                                     itemCount: _users.length,
-                                    itemBuilder: (context, i) {
+                                      itemBuilder: (context, i) {
                                       final u = _users[i];
                                       final sel = _selectedUser?.id == u.id;
+                                      final lastSa = _isLastActiveSuperAdmin(u);
                                       return ListTile(
                                         selected: sel,
                                         selectedTileColor: Colors.grey.shade300,
@@ -1344,7 +1664,9 @@ class _ManageAccountsState extends State<ManageAccounts> {
                                             ),
                                             IconButton(
                                               tooltip:
-                                                  u.archived
+                                                  lastSa
+                                                      ? 'Cannot archive the last active Super Admin.'
+                                                      : u.archived
                                                       ? 'Unarchive'
                                                       : 'Archive',
                                               icon: Icon(
@@ -1354,10 +1676,12 @@ class _ManageAccountsState extends State<ManageAccounts> {
                                                 size: 20,
                                               ),
                                               onPressed:
-                                                  () => _toggleArchived(
-                                                    u,
-                                                    !u.archived,
-                                                  ),
+                                                  lastSa
+                                                      ? null
+                                                      : () => _toggleArchived(
+                                                        u,
+                                                        !u.archived,
+                                                      ),
                                             ),
                                           ],
                                         ),

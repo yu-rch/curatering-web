@@ -186,6 +186,29 @@ export async function ensureCustomerAccountsColumns() {
   }
 }
 
+export async function ensureSystemControlSchema() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS system_control (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      primary_super_admin_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      recovery_version INTEGER NOT NULL DEFAULT 1,
+      recovery_secret_hash TEXT,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`
+    ALTER TABLE system_control
+    ADD COLUMN IF NOT EXISTS primary_super_admin_id TEXT,
+    ADD COLUMN IF NOT EXISTS recovery_version INTEGER NOT NULL DEFAULT 1,
+    ADD COLUMN IF NOT EXISTS recovery_secret_hash TEXT,
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+  `);
+  await pool.query(`
+    INSERT INTO system_control (id) VALUES (1)
+    ON CONFLICT (id) DO NOTHING;
+  `);
+}
+
 /** Minimal tables for login/signup — runs in seconds so the API can accept auth before full initDb. */
 export async function ensureAuthSchemaQuick() {
   const cs = process.env.DATABASE_URL?.trim();
@@ -223,6 +246,8 @@ export async function ensureAuthSchemaQuick() {
   await pool.query(
     `ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_code_expires TIMESTAMPTZ`,
   );
+
+  await ensureSystemControlSchema();
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS id_counters (
@@ -388,6 +413,8 @@ export async function initDb() {
     ALTER TABLE users
     ADD COLUMN IF NOT EXISTS page_permissions JSONB NOT NULL DEFAULT '{}'::jsonb;
   `);
+
+  await ensureSystemControlSchema();
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS event_orders (

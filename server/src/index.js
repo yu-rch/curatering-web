@@ -79,6 +79,18 @@ import {
 import { customerIdFromRequest } from "./customer_auth.js";
 import { createPublicRateLimiter } from "./public_rate_limit.js";
 import {
+  requireActiveSuperAdminFromDb,
+  withSuperAdminSecurityLock,
+  assertNotLastActiveSuperAdmin,
+  ensurePrimarySuperAdmin,
+  getSuperAdminSecuritySnapshot,
+  sendSuperAdminSecurityError,
+  recoverySecretMatchesEnv,
+  assertRecoverySecretNotConsumed,
+  consumeRecoverySecret,
+  restoreOrCreateSuperAdmin,
+} from "./superAdminSecurity.js";
+import {
   ensureRestaurantPosColumns,
   registerPosRoutes,
 } from "./posApi.js";
@@ -3989,10 +4001,7 @@ function authRequired(req, res, next) {
 }
 
 function requireSuperAdmin(req, res, next) {
-  if (req.user?.role !== "super_admin") {
-    return res.status(403).json({ message: "Super Admin only" });
-  }
-  return next();
+  return requireActiveSuperAdminFromDb(req, res, next);
 }
 
 async function verifySuperAdminPassword(req) {
@@ -5161,98 +5170,122 @@ app.post("/api/super-admin/users", authRequired, requireSuperAdmin, async (req, 
       const otp = generateOTP();
       const expiry = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
       const normalizedEmail = String(email).trim().toLowerCase();
-      const existing = await pool.query(
-        `SELECT id, archived FROM users WHERE lower(trim(email::text)) = $1`,
-        [normalizedEmail],
-      );
 
-      if (existing.rows.length > 0 && !existing.rows[0].archived) {
-        return res.status(400).json({ message: "Email already exists" });
-      }
-
-      if (role !== "super_admin") {
-        const limits = await getRoleAccountLimits();
-        const cap = limits[role];
-        if (cap != null && Number.isFinite(Number(cap)) && Number(cap) > 0) {
-          const cnt = await pool.query(
-            `SELECT COUNT(*)::int AS n FROM users WHERE role = $1 AND archived = FALSE`,
-            [role],
-          );
-          if (cnt.rows[0].n >= Number(cap)) {
-            return res.status(400).json({
-              message: `Role limit reached: at most ${Number(cap)} active ${role} account(s). Raise the cap under Manage Accounts → Role limits.`,
-            });
-          }
-        }
-      }
-
-      if (existing.rows.length > 0 && existing.rows[0].archived) {
-        const userId = existing.rows[0].id;
-        await pool.query(
-          `UPDATE users SET
-             email = $1,
-             password_hash = $2,
-             full_name = $3,
-             role = $4,
-             birthday = $5,
-             contact_number = $6,
-             employment_type = $7,
-             archived = FALSE,
-             is_verified = FALSE,
-             otp_code = $8,
-             otp_expiry = $9
-           WHERE id = $10`,
-          [
-            normalizedEmail,
-            passwordHash,
-            fullName,
-            role,
-            birthday || null,
-            contactNumber || null,
-            employmentType || null,
-            otp,
-            expiry,
-            userId,
-          ],
+      const created = await withSuperAdminSecurityLock(async (client) => {
+        const existing = await client.query(
+          `SELECT id, archived FROM users WHERE lower(trim(email::text)) = $1`,
+          [normalizedEmail],
         );
 
-        await sendOtpEmail(normalizedEmail, otp);
+        if (existing.rows.length > 0 && !existing.rows[0].archived) {
+          const err = new Error("Email already exists");
+          err.status = 400;
+          err.name = "EmailExistsError";
+          throw err;
+        }
+
+        if (role !== "super_admin") {
+          const limits = await getRoleAccountLimits();
+          const cap = limits[role];
+          if (cap != null && Number.isFinite(Number(cap)) && Number(cap) > 0) {
+            const cnt = await client.query(
+              `SELECT COUNT(*)::int AS n FROM users WHERE role = $1 AND archived = FALSE`,
+              [role],
+            );
+            if (cnt.rows[0].n >= Number(cap)) {
+              const err = new Error(
+                `Role limit reached: at most ${Number(cap)} active ${role} account(s). Raise the cap under Manage Accounts → Role limits.`,
+              );
+              err.status = 400;
+              err.name = "RoleLimitError";
+              throw err;
+            }
+          }
+        }
+
+        let userId;
+        let reactivated = false;
+        if (existing.rows.length > 0 && existing.rows[0].archived) {
+          userId = existing.rows[0].id;
+          reactivated = true;
+          await client.query(
+            `UPDATE users SET
+               email = $1,
+               password_hash = $2,
+               full_name = $3,
+               role = $4,
+               birthday = $5,
+               contact_number = $6,
+               employment_type = $7,
+               archived = FALSE,
+               is_verified = FALSE,
+               otp_code = $8,
+               otp_expiry = $9
+             WHERE id = $10`,
+            [
+              normalizedEmail,
+              passwordHash,
+              fullName,
+              role,
+              birthday || null,
+              contactNumber || null,
+              employmentType || null,
+              otp,
+              expiry,
+              userId,
+            ],
+          );
+        } else {
+          userId = await allocateStaffUserId();
+          await client.query(
+            `INSERT INTO users
+            (id, email, password_hash, full_name, role, birthday, contact_number, employment_type, archived, is_verified, otp_code, otp_expiry)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, FALSE, FALSE, $9, $10);`,
+            [userId, normalizedEmail, passwordHash, fullName, role, birthday || null, contactNumber || null, employmentType || null, otp, expiry],
+          );
+        }
 
         await logAction({
+          client,
           userId: req.user.id,
           feature: "",
-          action: "reactivated archived account (OTP sent)",
-          other: { email: normalizedEmail, role },
+          action: reactivated
+            ? "reactivated archived account (OTP sent)"
+            : "created account (OTP sent)",
+          other: { email: normalizedEmail, role, targetUserId: userId },
         });
 
-        return res.json({
-          ok: true,
-          message: "Archived account was restored. OTP sent to email.",
-        });
-      }
+        if (role === "super_admin") {
+          await ensurePrimarySuperAdmin(client, userId);
+          await logAction({
+            client,
+            userId: req.user.id,
+            feature: "super_admin_security",
+            action: "SUPER_ADMIN_CREATED",
+            other: {
+              target_user_id: userId,
+              email: normalizedEmail,
+              reactivated,
+            },
+          });
+        }
 
-      const userId = await allocateStaffUserId();
-      await pool.query(
-        `INSERT INTO users 
-        (id, email, password_hash, full_name, role, birthday, contact_number, employment_type, archived, is_verified, otp_code, otp_expiry)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, FALSE, FALSE, $9, $10);`,
-        [userId, normalizedEmail, passwordHash, fullName, role, birthday || null, contactNumber || null, employmentType || null, otp, expiry],
-      );
+        return { reactivated };
+      });
 
       await sendOtpEmail(normalizedEmail, otp);
 
-      await logAction({
-        userId: req.user.id,
-        feature: "",
-        action: "created account (OTP sent)",
-        other: { email: normalizedEmail, role },
-      });
-
       return res.json({
         ok: true,
-        message: "User created. OTP sent to email.",
+        message: created.reactivated
+          ? "Archived account was restored. OTP sent to email."
+          : "User created. OTP sent to email.",
       });
     } catch (e) {
+      if (e?.name === "EmailExistsError" || e?.name === "RoleLimitError") {
+        return res.status(400).json({ message: e.message });
+      }
+      if (sendSuperAdminSecurityError(res, e)) return;
       console.error(e);
       return res.status(500).json({ message: "Failed to create user" });
     }
@@ -5316,22 +5349,64 @@ app.post(
         return res.status(400).json({ message: "Invalid role" });
       }
 
-      await pool.query(
-        `UPDATE users
-       SET full_name = $1, role = $2, birthday = $3, contact_number = $4, employment_type = $5
-       WHERE id = $6;`,
-        [fullName, role, birthday || null, contactNumber || null, employmentType || null, userId],
-      );
+      await withSuperAdminSecurityLock(async (client) => {
+        const current = await client.query(
+          `SELECT id, role, archived FROM users WHERE id = $1 FOR UPDATE`,
+          [userId],
+        );
+        if (current.rowCount === 0) {
+          const err = new Error("User not found");
+          err.status = 404;
+          err.name = "UserNotFoundError";
+          throw err;
+        }
+        const previousRole = current.rows[0].role;
+        const wasActiveSuperAdmin =
+          previousRole === "super_admin" && current.rows[0].archived !== true;
 
-      await logAction({
-        userId: req.user.id,
-        feature: "",
-        action: "updated account",
-        other: { userId, role },
+        if (wasActiveSuperAdmin && role !== "super_admin") {
+          await assertNotLastActiveSuperAdmin(client, userId);
+        }
+
+        await client.query(
+          `UPDATE users
+         SET full_name = $1, role = $2, birthday = $3, contact_number = $4, employment_type = $5
+         WHERE id = $6;`,
+          [fullName, role, birthday || null, contactNumber || null, employmentType || null, userId],
+        );
+
+        await logAction({
+          client,
+          userId: req.user.id,
+          feature: "",
+          action: "updated account",
+          other: { userId, role, previousRole },
+        });
+
+        if (previousRole === "super_admin" || role === "super_admin") {
+          if (previousRole !== role) {
+            await logAction({
+              client,
+              userId: req.user.id,
+              feature: "super_admin_security",
+              action: "SUPER_ADMIN_ROLE_CHANGED",
+              other: {
+                target_user_id: userId,
+                from_role: previousRole,
+                to_role: role,
+              },
+            });
+          }
+          await ensurePrimarySuperAdmin(
+            client,
+            role === "super_admin" ? userId : null,
+          );
+        }
       });
 
       return res.json({ ok: true });
     } catch (e) {
+      if (sendSuperAdminSecurityError(res, e)) return;
       return res.status(500).json({ message: "Failed to update user" });
     }
   },
@@ -5390,28 +5465,235 @@ app.post(
       const { archived } = req.body || {};
       const nextArchived = archived === true;
 
-      await pool.query(
-        `UPDATE users
-       SET archived = $1
-       WHERE id = $2;`,
-        [nextArchived, userId],
-      );
+      await withSuperAdminSecurityLock(async (client) => {
+        const current = await client.query(
+          `SELECT id, role, archived FROM users WHERE id = $1 FOR UPDATE`,
+          [userId],
+        );
+        if (current.rowCount === 0) {
+          const err = new Error("User not found");
+          err.status = 404;
+          err.name = "UserNotFoundError";
+          throw err;
+        }
+        const previous = current.rows[0];
+        const wasActiveSuperAdmin =
+          previous.role === "super_admin" && previous.archived !== true;
 
-      await logAction({
-        userId: req.user.id,
-        feature: "",
-        action: nextArchived ? "archived account" : "unarchived account",
-        other: { userId, archived: nextArchived },
+        if (nextArchived && wasActiveSuperAdmin) {
+          await assertNotLastActiveSuperAdmin(client, userId);
+        }
+
+        await client.query(
+          `UPDATE users
+         SET archived = $1
+         WHERE id = $2;`,
+          [nextArchived, userId],
+        );
+
+        await logAction({
+          client,
+          userId: req.user.id,
+          feature: "",
+          action: nextArchived ? "archived account" : "unarchived account",
+          other: { userId, archived: nextArchived },
+        });
+
+        if (previous.role === "super_admin") {
+          await logAction({
+            client,
+            userId: req.user.id,
+            feature: "super_admin_security",
+            action: nextArchived ? "SUPER_ADMIN_ARCHIVED" : "SUPER_ADMIN_UNARCHIVED",
+            other: { target_user_id: userId },
+          });
+          await ensurePrimarySuperAdmin(
+            client,
+            !nextArchived ? userId : null,
+          );
+        }
       });
 
       return res.json({ ok: true });
     } catch (e) {
-      return res
-        .status(500)
-        .json({ message: "Failed to update archive status" });
+      if (sendSuperAdminSecurityError(res, e)) return;
+      return res.status(500).json({ message: "Failed to update archive status" });
     }
   },
 );
+
+app.get(
+  "/api/super-admin/security",
+  authRequired,
+  requireActiveSuperAdminFromDb,
+  async (req, res) => {
+    try {
+      const snapshot = await getSuperAdminSecuritySnapshot();
+      return res.json(snapshot);
+    } catch (e) {
+      console.error("super-admin security snapshot", e);
+      return res.status(500).json({ message: "Failed to load Super Admin security status" });
+    }
+  },
+);
+
+app.post(
+  "/api/super-admin/transfer",
+  authRequired,
+  requireActiveSuperAdminFromDb,
+  async (req, res) => {
+    try {
+      if (!(await requireSuperAdminPassword(req, res))) return;
+      const targetUserId = String(req.body?.targetUserId || "").trim();
+      if (!targetUserId) {
+        return res.status(400).json({ message: "targetUserId is required" });
+      }
+
+      const result = await withSuperAdminSecurityLock(async (client) => {
+        const ctrl = await client.query(
+          `SELECT primary_super_admin_id FROM system_control WHERE id = 1`,
+        );
+        const fromUserId = ctrl.rows[0]?.primary_super_admin_id || req.user.id;
+
+        const target = await client.query(
+          `SELECT id, role, archived, email, full_name
+           FROM users WHERE id = $1 FOR UPDATE`,
+          [targetUserId],
+        );
+        if (target.rowCount === 0) {
+          const err = new Error("User not found");
+          err.status = 404;
+          err.name = "UserNotFoundError";
+          throw err;
+        }
+        if (target.rows[0].archived === true) {
+          const err = new Error("Cannot transfer to an archived account");
+          err.status = 400;
+          err.name = "RoleLimitError";
+          throw err;
+        }
+
+        const previousRole = target.rows[0].role;
+        if (previousRole !== "super_admin") {
+          await client.query(
+            `UPDATE users SET role = 'super_admin' WHERE id = $1`,
+            [targetUserId],
+          );
+          await logAction({
+            client,
+            userId: req.user.id,
+            feature: "super_admin_security",
+            action: "SUPER_ADMIN_ROLE_CHANGED",
+            other: {
+              target_user_id: targetUserId,
+              from_role: previousRole,
+              to_role: "super_admin",
+              reason: "transfer_primary",
+            },
+          });
+        }
+
+        await client.query(
+          `UPDATE system_control
+           SET primary_super_admin_id = $1, updated_at = now()
+           WHERE id = 1`,
+          [targetUserId],
+        );
+
+        await logAction({
+          client,
+          userId: req.user.id,
+          feature: "super_admin_security",
+          action: "SUPER_ADMIN_TRANSFERRED",
+          other: {
+            from_user_id: fromUserId,
+            to_user_id: targetUserId,
+          },
+        });
+
+        return { fromUserId, toUserId: targetUserId };
+      });
+
+      return res.json({ ok: true, ...result });
+    } catch (e) {
+      if (e?.name === "RoleLimitError") {
+        return res.status(400).json({ message: e.message });
+      }
+      if (sendSuperAdminSecurityError(res, e)) return;
+      console.error("super-admin transfer", e);
+      return res.status(500).json({ message: "Failed to transfer primary Super Admin" });
+    }
+  },
+);
+
+/*
+ * Break-glass recovery (Railway / infrastructure only — never call from Flutter).
+ *
+ * 1. Set SUPER_ADMIN_RECOVERY_SECRET in Railway.
+ * 2. POST /api/internal/super-admin/recovery
+ *      Header: X-Recovery-Secret: <secret>
+ *      Body:   { "email": "...", "password": "...", "fullName": "..." }
+ * 3. Immediately rotate SUPER_ADMIN_RECOVERY_SECRET. The used secret hash is
+ *    stored and the same value cannot be reused.
+ *
+ * curl -X POST "$API_URL/api/internal/super-admin/recovery" \
+ *   -H "Content-Type: application/json" \
+ *   -H "X-Recovery-Secret: $SUPER_ADMIN_RECOVERY_SECRET" \
+ *   -d '{"email":"admin@example.com","password":"...","fullName":"Super Admin"}'
+ */
+app.post("/api/internal/super-admin/recovery", async (req, res) => {
+  try {
+    const provided =
+      req.get("x-recovery-secret") || req.headers["x-recovery-secret"];
+    if (!recoverySecretMatchesEnv(provided)) {
+      return res.status(403).json({ error: "Invalid recovery credentials." });
+    }
+
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    const password = String(req.body?.password || "");
+    const fullName = String(req.body?.fullName || "").trim();
+    if (!email || !password || !fullName) {
+      return res
+        .status(400)
+        .json({ message: "email, password, and fullName are required" });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const recovered = await withSuperAdminSecurityLock(async (client) => {
+      const secretHash = await assertRecoverySecretNotConsumed(client, provided);
+      const { userId, created } = await restoreOrCreateSuperAdmin(client, {
+        email,
+        passwordHash,
+        fullName,
+      });
+      await consumeRecoverySecret(client, secretHash, userId);
+      await logAction({
+        client,
+        userId,
+        feature: "super_admin_security",
+        action: "SUPER_ADMIN_RECOVERY",
+        other: {
+          target_user_id: userId,
+          email,
+          created,
+        },
+      });
+      return { userId, created };
+    });
+
+    return res.json({
+      ok: true,
+      message: recovered.created
+        ? "Super Admin created. Rotate SUPER_ADMIN_RECOVERY_SECRET now."
+        : "Super Admin restored. Rotate SUPER_ADMIN_RECOVERY_SECRET now.",
+      userId: recovered.userId,
+    });
+  } catch (e) {
+    if (sendSuperAdminSecurityError(res, e)) return;
+    console.error("super-admin recovery", e);
+    return res.status(500).json({ message: "Recovery failed" });
+  }
+});
 
 // Super Admin: Help Requests
 app.get(
@@ -8933,44 +9215,51 @@ async function seedSuperAdminIfNeeded() {
       console.warn(
         "[startup] SEED_SUPER_ADMIN_EMAIL/PASSWORD not set — skipping default admin seed in production",
       );
-      return;
+    } else {
+      const testEmail = "admin@curatering.test";
+      const testPassword = "admin123";
+      const testFullName = "Test Super Admin";
+      const existing = await pool.query(
+        `SELECT id FROM users WHERE email = $1 LIMIT 1;`,
+        [testEmail],
+      );
+
+      if (existing.rowCount === 0) {
+        const passwordHash = await bcrypt.hash(testPassword, 10);
+        const userId = await allocateStaffUserId();
+        await pool.query(
+          `INSERT INTO users (id, email, password_hash, full_name, role, archived, is_verified)
+           VALUES ($1, $2, $3, $4, 'super_admin', FALSE, TRUE);`,
+          [userId, testEmail, passwordHash, testFullName],
+        );
+        console.warn(
+          "[startup] Created dev super-admin admin@curatering.test / admin123 — set SEED_SUPER_ADMIN_* in production",
+        );
+      }
     }
-    const testEmail = "admin@curatering.test";
-    const testPassword = "admin123";
-    const testFullName = "Test Super Admin";
+  } else {
     const existing = await pool.query(
       `SELECT id FROM users WHERE email = $1 LIMIT 1;`,
-      [testEmail],
+      [email],
     );
-
     if (existing.rowCount === 0) {
-      const passwordHash = await bcrypt.hash(testPassword, 10);
+      const passwordHash = await bcrypt.hash(password, 10);
       const userId = await allocateStaffUserId();
       await pool.query(
-        `INSERT INTO users (id, email, password_hash, full_name, role, archived, is_verified)
-         VALUES ($1, $2, $3, $4, 'super_admin', FALSE, TRUE);`,
-        [userId, testEmail, passwordHash, testFullName],
-      );
-      console.warn(
-        "[startup] Created dev super-admin admin@curatering.test / admin123 — set SEED_SUPER_ADMIN_* in production",
+        `INSERT INTO users (id, email, password_hash, full_name, role, archived)
+         VALUES ($1, $2, $3, $4, 'super_admin', FALSE);`,
+        [userId, email, passwordHash, fullName],
       );
     }
-    return;
   }
 
-  const existing = await pool.query(
-    `SELECT id FROM users WHERE email = $1 LIMIT 1;`,
-    [email],
-  );
-  if (existing.rowCount > 0) return;
-
-  const passwordHash = await bcrypt.hash(password, 10);
-  const userId = await allocateStaffUserId();
-  await pool.query(
-    `INSERT INTO users (id, email, password_hash, full_name, role, archived)
-     VALUES ($1, $2, $3, $4, 'super_admin', FALSE);`,
-    [userId, email, passwordHash, fullName],
-  );
+  try {
+    await withSuperAdminSecurityLock(async (client) => {
+      await ensurePrimarySuperAdmin(client);
+    });
+  } catch (e) {
+    console.warn("[startup] system_control primary Super Admin:", e.message);
+  }
 }
 
 function parseRestaurantCoord(value) {
