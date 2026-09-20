@@ -2271,13 +2271,6 @@ class _MenuState extends State<Menu> {
             icon: Icons.filter_alt_off,
             label: 'Clear',
           ),
-        if (showPerGuestPrice)
-          AntdSecondaryButton(
-            onPressed: _showCateringPerGuestPriceDialog,
-            icon: Icons.payments_outlined,
-            label:
-                '₱${CateringPricingStore.instance.pricePerGuest.toStringAsFixed(0)}/guest',
-          ),
       ],
       trailing: [
         if (showViewToggle)
@@ -2310,6 +2303,13 @@ class _MenuState extends State<Menu> {
             tooltip: 'Apply one price to all catering dishes',
             onPressed: _showBulkCateringPriceDialog,
             icon: const Icon(Icons.price_change_outlined),
+          ),
+        if (showPerGuestPrice)
+          AntdSecondaryButton(
+            onPressed: _showCateringPerGuestPriceDialog,
+            icon: Icons.payments_outlined,
+            label:
+                '₱${CateringPricingStore.instance.pricePerGuest.toStringAsFixed(0)}/guest',
           ),
         ElevatedButton.icon(
           onPressed: onAddDish,

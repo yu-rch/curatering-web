@@ -370,6 +370,18 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                     : (existing?['imageUrl'] ?? '').toString(),
             'label': label,
             'description': (row['description'] ?? '').toString(),
+            'eventType': (row['eventType'] ?? existing?['eventType'] ?? '')
+                .toString(),
+            'style': (row['style'] ?? existing?['style'] ?? '').toString(),
+            'mood': (row['mood'] ?? existing?['mood'] ?? '').toString(),
+            'formality':
+                (row['formality'] ?? existing?['formality'] ?? '').toString(),
+            'setting':
+                (row['setting'] ?? existing?['setting'] ?? '').toString(),
+            'colorPalette':
+                row['colorPalette'] ?? existing?['colorPalette'] ?? const [],
+            'decorElements':
+                row['decorElements'] ?? existing?['decorElements'] ?? const [],
           });
         }
       }
@@ -2348,6 +2360,12 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
           ),
           const SizedBox(height: 10),
           _buildEtdAdvertCard(compact: true),
+          const SizedBox(height: 10),
+          const Text(
+            'Have a more specified idea? Inquire our catering service to experience this full feature!',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.white70, fontSize: 11, height: 1.35),
+          ),
           const SizedBox(height: 8),
           Align(
             alignment: Alignment.center,
@@ -2876,6 +2894,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                             (row['label'] ?? '').toString().trim();
                         final description =
                             (row['description'] ?? '').toString().trim();
+                        final detailBlocks = _eventDesignDetailBlocks(row);
                         return _HoverZoomPhotoTile(
                           imageB64: (row['imageBase64'] ?? '').toString(),
                           imageUrl: (row['imageUrl'] ?? '').toString(),
@@ -2884,7 +2903,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                   ? label
                                   : 'Featured Event Design',
                           description:
-                              description.isNotEmpty ? description : null,
+                              detailBlocks.isEmpty && description.isNotEmpty
+                                  ? description
+                                  : null,
+                          detailBlocks: detailBlocks,
                           width: 200,
                           height: 160,
                           margin: const EdgeInsets.only(right: 8),
@@ -2938,6 +2960,32 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
         );
       },
     );
+  }
+
+  List<MapEntry<String, String>> _eventDesignDetailBlocks(Map row) {
+    final out = <MapEntry<String, String>>[];
+    void add(String label, dynamic value) {
+      if (value == null) return;
+      if (value is List) {
+        final joined = value
+            .map((e) => e.toString().trim())
+            .where((e) => e.isNotEmpty)
+            .join(', ');
+        if (joined.isNotEmpty) out.add(MapEntry(label, joined));
+        return;
+      }
+      final text = value.toString().trim();
+      if (text.isNotEmpty) out.add(MapEntry(label, text));
+    }
+
+    add('Event type', row['eventType'] ?? row['event_type'] ?? row['type']);
+    add('Style', row['style']);
+    add('Mood & lighting', row['mood']);
+    add('Formality', row['formality']);
+    add('Setting', row['setting'] ?? row['eventSetting']);
+    add('Color palette', row['colorPalette'] ?? row['color_palette']);
+    add('Decor', row['decorElements'] ?? row['decor_elements']);
+    return out;
   }
 
   Widget _collageTile(
@@ -4094,6 +4142,20 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                 ),
               ),
               const SizedBox(height: 24),
+              if (_selectedRestaurantType.trim().toUpperCase() != 'ALL' &&
+                  _selectedRestaurantType.trim().isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Text(
+                    _selectedRestaurantType.trim().toUpperCase(),
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.4,
+                      color: Color(0xFF1E1E1E),
+                    ),
+                  ),
+                ),
                   // Dishes grid
                   if (dishes.isEmpty)
                     const Center(
@@ -5279,6 +5341,7 @@ class _HoverZoomPhotoTile extends StatelessWidget {
     this.imageUrl,
     required this.label,
     this.description,
+    this.detailBlocks = const [],
     required this.width,
     required this.height,
     required this.margin,
@@ -5290,6 +5353,7 @@ class _HoverZoomPhotoTile extends StatelessWidget {
   final String? imageUrl;
   final String label;
   final String? description;
+  final List<MapEntry<String, String>> detailBlocks;
   final double width;
   final double height;
   final EdgeInsets margin;
@@ -5386,6 +5450,7 @@ class _HoverZoomPhotoTile extends StatelessWidget {
       imageUrl: networkUrl,
       title: label.trim().isNotEmpty ? label : 'Photo',
       description: description,
+      detailBlocks: detailBlocks,
     );
   }
 

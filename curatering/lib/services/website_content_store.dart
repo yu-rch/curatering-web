@@ -55,20 +55,34 @@ class GalleryImageData {
   final String id;
   String imageBase64;
   String? mediaId;
+  String? imageUrl;
   List<String> tags;
+
+  /// Preference / metadata lines for the detail dialog
+  /// (event type, style, mood & lighting, etc.).
+  Map<String, String> details;
 
   GalleryImageData({
     required this.id,
     this.imageBase64 = '',
     this.mediaId,
+    this.imageUrl,
     List<String>? tags,
-  }) : tags = tags ?? [];
+    Map<String, String>? details,
+  }) : tags = tags ?? [],
+       details = details ?? {};
+
+  bool get hasVisual =>
+      imageBase64.trim().isNotEmpty ||
+      (imageUrl != null && imageUrl!.trim().isNotEmpty);
 
   Map<String, dynamic> toJson() => {
     'id': id,
     if (mediaId != null && mediaId!.isNotEmpty) 'mediaId': mediaId,
+    if (imageUrl != null && imageUrl!.isNotEmpty) 'imageUrl': imageUrl,
     'imageBase64': imageBase64,
     'tags': tags,
+    if (details.isNotEmpty) 'details': details,
   };
 
   factory GalleryImageData.fromJson(dynamic raw) {
@@ -80,12 +94,21 @@ class GalleryImageData {
     }
     final m = Map<String, dynamic>.from(raw as Map);
     final tagsRaw = m['tags'];
+    final detailsRaw = m['details'];
+    final details = <String, String>{};
+    if (detailsRaw is Map) {
+      for (final e in detailsRaw.entries) {
+        final v = e.value?.toString().trim() ?? '';
+        if (v.isNotEmpty) details[e.key.toString()] = v;
+      }
+    }
     return GalleryImageData(
       id:
           (m['id'] ?? 'img_${DateTime.now().microsecondsSinceEpoch}')
               .toString(),
       imageBase64: (m['imageBase64'] ?? m['image'] ?? '').toString(),
       mediaId: (m['mediaId'] ?? m['media_id'])?.toString(),
+      imageUrl: (m['imageUrl'] ?? m['image_url'])?.toString(),
       tags:
           tagsRaw is List
               ? tagsRaw
@@ -93,6 +116,7 @@ class GalleryImageData {
                   .where((e) => e.isNotEmpty)
                   .toList()
               : [],
+      details: details,
     );
   }
 

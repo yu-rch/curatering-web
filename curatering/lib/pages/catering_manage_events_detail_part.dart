@@ -1380,6 +1380,12 @@ extension _ManageEventsDetailExt on _ManageEventsState {
 
   Map<String, dynamic> _themeDesignMap(EventOrderDto order) {
     final td = order.themeDesign;
+    final palette =
+        td.colorPalette.isNotEmpty
+            ? td.colorPalette
+            : (td.macrinaColorPalette == null
+                ? const <String>[]
+                : [td.macrinaColorPalette!]);
     return {
       'picksBase64': td.picksBase64,
       'tintEnabled': td.tintEnabled,
@@ -1390,10 +1396,13 @@ extension _ManageEventsDetailExt on _ManageEventsState {
       if (td.generatedImageUrl != null) 'generatedImageUrl': td.generatedImageUrl,
       if (td.customInstructions != null) 'customInstructions': td.customInstructions,
       if (td.eventDesignSource != null) 'eventDesignSource': td.eventDesignSource,
+      'style': td.style ?? td.macrinaTheme,
+      if (td.mood != null) 'mood': td.mood,
+      'colorPalette': palette,
+      'decorElements': td.decorElements,
+      if (td.customerNote != null) 'customerNote': td.customerNote,
       if (td.macrinaColorPalette != null) 'macrinaColorPalette': td.macrinaColorPalette,
       if (td.macrinaTheme != null) 'macrinaTheme': td.macrinaTheme,
-      if (td.macrinaTheme != null) 'style': td.macrinaTheme,
-      if (td.macrinaColorPalette != null) 'colorPalette': [td.macrinaColorPalette],
     };
   }
 

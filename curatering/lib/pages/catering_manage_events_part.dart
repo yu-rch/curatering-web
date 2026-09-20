@@ -143,12 +143,8 @@ extension _ManageEventsTableExt on _ManageEventsState {
         td.customerThemeRequest!.trim().isNotEmpty) {
       parts.add(td.customerThemeRequest!.trim());
     }
-    if (td.macrinaColorPalette != null &&
-        td.macrinaColorPalette!.trim().isNotEmpty) {
-      parts.add('Palette: ${td.macrinaColorPalette}');
-    }
-    if (td.macrinaTheme != null && td.macrinaTheme!.trim().isNotEmpty) {
-      parts.add('Macrina theme: ${td.macrinaTheme}');
+    if (td.customerNote != null && td.customerNote!.trim().isNotEmpty) {
+      parts.add('Note: ${td.customerNote!.trim()}');
     }
     if (td.generatedImageUrl != null &&
         td.generatedImageUrl!.trim().isNotEmpty) {
@@ -160,6 +156,55 @@ extension _ManageEventsTableExt on _ManageEventsState {
     return parts.isEmpty ? '—' : parts.join('\n');
   }
 
+  /// Preference selections for theme design detail (style, mood, palette, etc.).
+  List<MapEntry<String, String>> _themePreferenceRows(EventOrderDto dto) {
+    final td = dto.themeDesign;
+    final rows = <MapEntry<String, String>>[];
+    void add(String label, String? value) {
+      final text = (value ?? '').trim();
+      if (text.isNotEmpty) rows.add(MapEntry(label, text));
+    }
+
+    add('Event type', dto.eventType);
+    add('Formality', dto.formalityLevel);
+    add('Style', td.style ?? td.macrinaTheme);
+    add('Mood & lighting', td.mood);
+    final palette =
+        td.colorPalette
+            .map((e) => e.trim())
+            .where((e) => e.isNotEmpty)
+            .toList();
+    if (palette.isEmpty &&
+        (td.macrinaColorPalette?.trim().isNotEmpty ?? false)) {
+      palette.add(td.macrinaColorPalette!.trim());
+    }
+    if (palette.isNotEmpty) {
+      rows.add(MapEntry('Color palette', palette.join(', ')));
+    }
+    final decor =
+        td.decorElements
+            .map((e) => e.trim())
+            .where((e) => e.isNotEmpty)
+            .toList();
+    if (decor.isNotEmpty) {
+      rows.add(MapEntry('Decor', decor.join(', ')));
+    }
+    return rows;
+  }
+
+  /// Compact summary used in description lists (prefs + notes).
+  String _themeSummaryLine(EventOrderDto dto) {
+    final prefs = _themePreferenceRows(dto)
+        .map((e) => '${e.key}: ${e.value}')
+        .toList();
+    final extras = _themeExtrasLine(dto);
+    final parts = <String>[
+      ...prefs,
+      if (extras != '—') extras,
+    ];
+    return parts.isEmpty ? '—' : parts.join('\n');
+  }
+
   bool _orderHasEventDesign(EventOrderDto dto) {
     final td = dto.themeDesign;
     return td.picksBase64.isNotEmpty ||
@@ -167,6 +212,12 @@ extension _ManageEventsTableExt on _ManageEventsState {
         (td.customInstructions?.trim().isNotEmpty ?? false) ||
         (td.colorPrompt?.trim().isNotEmpty ?? false) ||
         (td.customerThemeRequest?.trim().isNotEmpty ?? false) ||
+        (td.style?.trim().isNotEmpty ?? false) ||
+        (td.mood?.trim().isNotEmpty ?? false) ||
+        (td.macrinaTheme?.trim().isNotEmpty ?? false) ||
+        (td.macrinaColorPalette?.trim().isNotEmpty ?? false) ||
+        td.colorPalette.isNotEmpty ||
+        td.decorElements.isNotEmpty ||
         td.wantsCustomDesign;
   }
 
@@ -358,10 +409,58 @@ extension _ManageEventsTableExt on _ManageEventsState {
           ),
           const SizedBox(height: 10),
           stepBlock(
-            'Step 2 - Style notes',
-            Text(
-              _themeExtrasLine(dto),
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade800),
+            'Step 2 - Preferences & style notes',
+            Builder(
+              builder: (context) {
+                final prefs = _themePreferenceRows(dto);
+                final extras = _themeExtrasLine(dto);
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (prefs.isNotEmpty) ...[
+                      ...prefs.map(
+                        (row) => Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              SizedBox(
+                                width: 120,
+                                child: Text(
+                                  row.key,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.grey.shade700,
+                                  ),
+                                ),
+                              ),
+                              Expanded(
+                                child: Text(
+                                  row.value,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.grey.shade900,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      if (extras != '—') const SizedBox(height: 8),
+                    ],
+                    if (extras != '—' || prefs.isEmpty)
+                      Text(
+                        extras,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey.shade800,
+                        ),
+                      ),
+                  ],
+                );
+              },
             ),
           ),
           const SizedBox(height: 10),
@@ -501,7 +600,7 @@ extension _ManageEventsTableExt on _ManageEventsState {
       ),
       AntdDescriptionItem(
         label: 'Theme / notes',
-        value: _themeExtrasLine(dto),
+        value: _themeSummaryLine(dto),
         span: cols >= 2 ? 2 : 1,
       ),
       if (!_isSupervisor) ...[

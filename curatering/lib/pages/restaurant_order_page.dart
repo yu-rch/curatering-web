@@ -256,50 +256,110 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
                       ? 'Order from our delicious restaurant menu'
                       : content.restaurantPageSubtitle,
                   titleFontSize: isMobile(context) ? 28 : 36,
-                  filters: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      TextField(
-                        controller: _searchController,
-                        decoration: InputDecoration(
-                          hintText: 'Search restaurant menu',
-                          prefixIcon: const Icon(Icons.search),
-                          suffixIcon: _searchQuery.isEmpty
-                              ? null
-                              : IconButton(
-                                  icon: const Icon(Icons.close),
-                                  onPressed: () => setState(() {
-                                    _searchController.clear();
-                                    _searchQuery = '';
-                                  }),
-                                ),
-                          filled: true,
-                          fillColor: Colors.white,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: BorderSide(color: Colors.grey.shade300),
-                          ),
-                          focusedBorder: const OutlineInputBorder(
-                            borderRadius: BorderRadius.all(Radius.circular(8)),
-                            borderSide: BorderSide(
-                              color: CustomerAntdPageHero.accentYellow,
-                              width: 1.5,
+                  filters: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final narrow = constraints.maxWidth < 560;
+                      final searchField = SizedBox(
+                        width: narrow ? constraints.maxWidth : 240,
+                        height: 36,
+                        child: TextField(
+                          controller: _searchController,
+                          style: const TextStyle(fontSize: 13, height: 1.2),
+                          decoration: InputDecoration(
+                            hintText: 'Search restaurant menu',
+                            hintStyle: TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey.shade500,
+                            ),
+                            prefixIcon: const Icon(Icons.search, size: 18),
+                            prefixIconConstraints: const BoxConstraints(
+                              minWidth: 36,
+                              minHeight: 36,
+                            ),
+                            suffixIcon:
+                                _searchQuery.isEmpty
+                                    ? null
+                                    : IconButton(
+                                      icon: const Icon(Icons.close, size: 16),
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(
+                                        minWidth: 32,
+                                        minHeight: 32,
+                                      ),
+                                      onPressed: () => setState(() {
+                                        _searchController.clear();
+                                        _searchQuery = '';
+                                      }),
+                                    ),
+                            isDense: true,
+                            filled: true,
+                            fillColor: Colors.white,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 8,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(18),
+                              borderSide: BorderSide(
+                                color: Colors.grey.shade300,
+                              ),
+                            ),
+                            focusedBorder: const OutlineInputBorder(
+                              borderRadius: BorderRadius.all(
+                                Radius.circular(18),
+                              ),
+                              borderSide: BorderSide(
+                                color: CustomerAntdPageHero.accentYellow,
+                                width: 1.5,
+                              ),
                             ),
                           ),
+                          onChanged:
+                              (value) => setState(
+                                () =>
+                                    _searchQuery = value.trim().toLowerCase(),
+                              ),
                         ),
-                        onChanged: (value) => setState(
-                          () => _searchQuery = value.trim().toLowerCase(),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      _buildCategoryTabs(restaurantDishes),
-                    ],
+                      );
+                      final chips = _buildCategoryTabs(restaurantDishes);
+                      if (narrow) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            searchField,
+                            const SizedBox(height: 8),
+                            chips,
+                          ],
+                        );
+                      }
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          searchField,
+                          const SizedBox(width: 12),
+                          Expanded(child: chips),
+                        ],
+                      );
+                    },
                   ),
                 ),
                 const SizedBox(height: 24),
+                if (_selectedRestaurantType.trim().toUpperCase() != 'ALL')
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Text(
+                      _selectedRestaurantType.trim().toUpperCase(),
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.4,
+                        color: Color(0xFF1E1E1E),
+                      ),
+                    ),
+                  ),
                 Expanded(
                   child:
                       dishes.isEmpty
@@ -482,17 +542,20 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
         if (t != 'ALL') t: t,
     };
 
-    return CustomerAntdFilterChips(
-      options: options,
-      selected: _selectedRestaurantType.toUpperCase() == 'ALL'
-          ? ''
-          : _selectedRestaurantType,
-      allLabel: 'All',
-      onSelected: (value) {
-        setState(() {
-          _selectedRestaurantType = value.isEmpty ? 'ALL' : value;
-        });
-      },
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: CustomerAntdFilterChips(
+        options: options,
+        selected: _selectedRestaurantType.toUpperCase() == 'ALL'
+            ? ''
+            : _selectedRestaurantType,
+        allLabel: 'All',
+        onSelected: (value) {
+          setState(() {
+            _selectedRestaurantType = value.isEmpty ? 'ALL' : value;
+          });
+        },
+      ),
     );
   }
 

@@ -20,7 +20,8 @@ class ManageAccounts extends StatefulWidget {
   State<ManageAccounts> createState() => _ManageAccountsState();
 }
 
-class _ManageAccountsState extends State<ManageAccounts> {
+class _ManageAccountsState extends State<ManageAccounts>
+    with SingleTickerProviderStateMixin {
   final TextEditingController _searchController = TextEditingController();
 
   Timer? _debounce;
@@ -39,17 +40,51 @@ class _ManageAccountsState extends State<ManageAccounts> {
   Map<String, dynamic> _pagePermissionDraft = {};
   bool _savingPermissions = false;
 
+  late final TabController _accountsTabController;
+
+  bool get _isSuperAdminTab => _accountsTabController.index == 1;
+
+  List<UserDto> get _visibleUsers {
+    if (_isSuperAdminTab) {
+      return _users.where((u) => u.role == Role.superAdmin).toList();
+    }
+    return _users.where((u) => u.role != Role.superAdmin).toList();
+  }
+
   @override
   void initState() {
     super.initState();
+    _accountsTabController = TabController(length: 2, vsync: this);
+    _accountsTabController.addListener(_onAccountsTabChanged);
     _fetch();
   }
 
   @override
   void dispose() {
+    _accountsTabController.removeListener(_onAccountsTabChanged);
+    _accountsTabController.dispose();
     _debounce?.cancel();
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _onAccountsTabChanged() {
+    if (_accountsTabController.indexIsChanging) return;
+    setState(() {
+      if (_isSuperAdminTab) {
+        _roleFilter = Role.superAdmin;
+      } else if (_roleFilter == Role.superAdmin) {
+        _roleFilter = null;
+      }
+      final selected = _selectedUser;
+      if (selected != null) {
+        final selectedIsSa = selected.role == Role.superAdmin;
+        if (selectedIsSa != _isSuperAdminTab) {
+          _selectedUser = null;
+        }
+      }
+    });
+    _fetch();
   }
 
   Role? _apiRoleFilter() => _roleFilter;
@@ -231,7 +266,10 @@ class _ManageAccountsState extends State<ManageAccounts> {
     return result;
   }
 
-  Future<void> _createUser({Role? presetRole}) async {
+  Future<void> _createUser({
+    Role? presetRole,
+    bool staffOnly = false,
+  }) async {
     final fullNameCtrl = TextEditingController();
     final emailCtrl = TextEditingController();
     final passwordCtrl = TextEditingController();
@@ -435,6 +473,11 @@ class _ManageAccountsState extends State<ManageAccounts> {
                             items:
                                 Role.values
                                     .where((r) => r != Role.manager)
+                                    .where(
+                                      (r) =>
+                                          !staffOnly ||
+                                          r != Role.superAdmin,
+                                    )
                                     .map(
                                       (r) => DropdownMenuItem(
                                         value: r,
@@ -1508,6 +1551,7 @@ class _ManageAccountsState extends State<ManageAccounts> {
 
   @override
   Widget build(BuildContext context) {
+    final visible = _visibleUsers;
     return AppScaffold(
       showSearch: true,
       searchController: _searchController,
@@ -1529,36 +1573,56 @@ class _ManageAccountsState extends State<ManageAccounts> {
             ),
             const SizedBox(height: 6),
             Text(
-              'Create staff accounts and manage page-level permissions.',
+              _isSuperAdminTab
+                  ? 'Manage Super Admin accounts and primary ownership.'
+                  : 'Create staff accounts and manage page-level permissions.',
               style: TextStyle(color: Colors.grey.shade700),
             ),
-            const SizedBox(height: 16),
-            _buildSuperAdminSecurityPanel(),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
+            TabBar(
+              controller: _accountsTabController,
+              labelColor: Colors.black,
+              unselectedLabelColor: Colors.grey.shade600,
+              indicatorColor: const Color(0xFFFFA726),
+              tabs: const [
+                Tab(text: 'Staff accounts'),
+                Tab(text: 'Super Admin accounts'),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (_isSuperAdminTab) ...[
+              _buildSuperAdminSecurityPanel(),
+              const SizedBox(height: 12),
+            ],
             Row(
               children: [
-                DropdownButton<Role?>(
-                  value: _roleFilter,
-                  items: [
-                    const DropdownMenuItem<Role?>(
-                      value: null,
-                      child: Text('All Roles'),
-                    ),
-                    ...Role.values
-                        .where((r) => r != Role.manager)
-                        .map(
-                          (r) => DropdownMenuItem<Role?>(
-                            value: r,
-                            child: Text(r.displayName),
+                if (!_isSuperAdminTab) ...[
+                  DropdownButton<Role?>(
+                    value: _roleFilter == Role.superAdmin ? null : _roleFilter,
+                    items: [
+                      const DropdownMenuItem<Role?>(
+                        value: null,
+                        child: Text('All staff roles'),
+                      ),
+                      ...Role.values
+                          .where(
+                            (r) =>
+                                r != Role.manager && r != Role.superAdmin,
+                          )
+                          .map(
+                            (r) => DropdownMenuItem<Role?>(
+                              value: r,
+                              child: Text(r.displayName),
+                            ),
                           ),
-                        ),
-                  ],
-                  onChanged: (v) {
-                    setState(() => _roleFilter = v);
-                    _fetch();
-                  },
-                ),
-                const SizedBox(width: 12),
+                    ],
+                    onChanged: (v) {
+                      setState(() => _roleFilter = v);
+                      _fetch();
+                    },
+                  ),
+                  const SizedBox(width: 12),
+                ],
                 DropdownButton<bool?>(
                   value: _archivedFilter,
                   items: const [
@@ -1581,23 +1645,25 @@ class _ManageAccountsState extends State<ManageAccounts> {
                   },
                 ),
                 const Spacer(),
-                OutlinedButton.icon(
-                  onPressed: _loading ? null : _editRoleLimits,
-                  icon: const Icon(Icons.groups_outlined),
-                  label: const Text('Role limits'),
-                ),
-                const SizedBox(width: 8),
-                ElevatedButton.icon(
-                  onPressed: _createUser,
-                  icon: const Icon(Icons.add),
-                  label: const Text('Create Account'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFFFA726),
+                if (!_isSuperAdminTab) ...[
+                  OutlinedButton.icon(
+                    onPressed: _loading ? null : _editRoleLimits,
+                    icon: const Icon(Icons.groups_outlined),
+                    label: const Text('Role limits'),
                   ),
-                ),
+                  const SizedBox(width: 8),
+                  ElevatedButton.icon(
+                    onPressed: () => _createUser(staffOnly: true),
+                    icon: const Icon(Icons.add),
+                    label: const Text('Create Account'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFFFA726),
+                    ),
+                  ),
+                ],
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             if (_error != null) ...[
               Text(_error!, style: const TextStyle(color: Colors.redAccent)),
               const SizedBox(height: 12),
@@ -1606,131 +1672,127 @@ class _ManageAccountsState extends State<ManageAccounts> {
               child:
                   _loading && _users.isEmpty
                       ? const Center(child: CircularProgressIndicator())
-                      : _users.isEmpty
+                      : visible.isEmpty
                       ? Center(
                         child: Text(
-                          'No users found.',
+                          _isSuperAdminTab
+                              ? 'No Super Admin accounts found.'
+                              : 'No staff accounts found.',
                           style: TextStyle(color: Colors.grey.shade600),
                         ),
                       )
-                      : LayoutBuilder(
-                        builder: (context, c) {
-                          final wide = c.maxWidth >= 900;
-                          final list = Card(
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              side: BorderSide(
-                                color: Colors.black.withValues(alpha: 0.08),
-                              ),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                const Padding(
-                                  padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-                                  child: Text(
-                                    'USER ACCOUNTS',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                                const Divider(height: 1),
-                                Expanded(
-                                  child: ListView.builder(
-                                    itemCount: _users.length,
-                                      itemBuilder: (context, i) {
-                                      final u = _users[i];
-                                      final sel = _selectedUser?.id == u.id;
-                                      final lastSa = _isLastActiveSuperAdmin(u);
-                                      return ListTile(
-                                        selected: sel,
-                                        selectedTileColor: Colors.grey.shade300,
-                                        title: Text(u.fullName),
-                                        subtitle: Text(
-                                          '${u.role.displayName} · ${u.email}',
-                                        ),
-                                        trailing: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            IconButton(
-                                              tooltip: 'Edit',
-                                              icon: const Icon(
-                                                Icons.edit,
-                                                size: 20,
-                                              ),
-                                              onPressed: () => _editUser(u),
-                                            ),
-                                            IconButton(
-                                              tooltip:
-                                                  lastSa
-                                                      ? 'Cannot archive the last active Super Admin.'
-                                                      : u.archived
-                                                      ? 'Unarchive'
-                                                      : 'Archive',
-                                              icon: Icon(
-                                                u.archived
-                                                    ? Icons.restore
-                                                    : Icons.archive,
-                                                size: 20,
-                                              ),
-                                              onPressed:
-                                                  lastSa
-                                                      ? null
-                                                      : () => _toggleArchived(
-                                                        u,
-                                                        !u.archived,
-                                                      ),
-                                            ),
-                                          ],
-                                        ),
-                                        onTap: () {
-                                          setState(() {
-                                            _selectedUser = u;
-                                            _initPermissionDraft(u);
-                                          });
-                                        },
-                                      );
-                                    },
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-
-                          final detail = _buildUserAccessPanel();
-
-                          if (!wide) {
-                            return SingleChildScrollView(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  SizedBox(height: 400, child: list),
-                                  const SizedBox(height: 16),
-                                  detail,
-                                ],
-                              ),
-                            );
-                          }
-
-                          return Row(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              Expanded(flex: 5, child: list),
-                              const SizedBox(width: 20),
-                              Expanded(
-                                flex: 6,
-                                child: SingleChildScrollView(child: detail),
-                              ),
-                            ],
-                          );
-                        },
-                      ),
+                      : _buildAccountsSplit(visible),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildAccountsSplit(List<UserDto> users) {
+    return LayoutBuilder(
+      builder: (context, c) {
+        final wide = c.maxWidth >= 900;
+        final list = Card(
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(color: Colors.black.withValues(alpha: 0.08)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: Text(
+                  _isSuperAdminTab
+                      ? 'SUPER ADMIN ACCOUNTS'
+                      : 'STAFF ACCOUNTS',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: users.length,
+                  itemBuilder: (context, i) {
+                    final u = users[i];
+                    final sel = _selectedUser?.id == u.id;
+                    final lastSa = _isLastActiveSuperAdmin(u);
+                    return ListTile(
+                      selected: sel,
+                      selectedTileColor: Colors.grey.shade300,
+                      title: Text(u.fullName),
+                      subtitle: Text(
+                        '${u.role.displayName} · ${u.email}',
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            tooltip: 'Edit',
+                            icon: const Icon(Icons.edit, size: 20),
+                            onPressed: () => _editUser(u),
+                          ),
+                          IconButton(
+                            tooltip:
+                                lastSa
+                                    ? 'Cannot archive the last active Super Admin.'
+                                    : u.archived
+                                    ? 'Unarchive'
+                                    : 'Archive',
+                            icon: Icon(
+                              u.archived ? Icons.restore : Icons.archive,
+                              size: 20,
+                            ),
+                            onPressed:
+                                lastSa
+                                    ? null
+                                    : () => _toggleArchived(u, !u.archived),
+                          ),
+                        ],
+                      ),
+                      onTap: () {
+                        setState(() {
+                          _selectedUser = u;
+                          _initPermissionDraft(u);
+                        });
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+
+        final detail = _buildUserAccessPanel();
+
+        if (!wide) {
+          return SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SizedBox(height: 400, child: list),
+                const SizedBox(height: 16),
+                detail,
+              ],
+            ),
+          );
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(flex: 5, child: list),
+            const SizedBox(width: 20),
+            Expanded(
+              flex: 6,
+              child: SingleChildScrollView(child: detail),
+            ),
+          ],
+        );
+      },
     );
   }
 }

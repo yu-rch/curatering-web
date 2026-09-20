@@ -32,7 +32,8 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
 
   final _searchCtrl = TextEditingController();
   String _searchQuery = '';
-  String _orderTypeFilter = 'all'; // all | dine_in | delivery | pickup
+  String _orderTypeFilter = 'all'; // all | online | walk_in
+  String _processingStatusFilter = 'all'; // all | in_preparation | out_for_delivery
   DateTime? _dateFrom;
   DateTime? _dateTo;
 
@@ -310,7 +311,11 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     return DateTime.tryParse(raw);
   }
 
-  bool _matchesManagerFilters(Map<String, dynamic> order) {
+  bool _matchesManagerFilters(
+    Map<String, dynamic> order, {
+    bool applyDate = false,
+    String statusFilter = 'all',
+  }) {
     if (_orderTypeFilter == 'online' && !_isOnlineOrder(order)) return false;
     if (_orderTypeFilter == 'walk_in' && !_isWalkInOrder(order)) return false;
 
@@ -329,21 +334,39 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
       if (!hay.contains(q)) return false;
     }
 
-    final dt = _orderDate(order);
-    if (_dateFrom != null && dt != null) {
-      final from = DateTime(_dateFrom!.year, _dateFrom!.month, _dateFrom!.day);
-      if (dt.isBefore(from)) return false;
+    if (statusFilter != 'all') {
+      final status = _normalizedStatus(order['status']);
+      if (statusFilter == 'in_preparation') {
+        if (status != 'in_preparation' &&
+            status != 'confirmed' &&
+            status != 'preparing' &&
+            status != 'order_confirmed') {
+          return false;
+        }
+      } else if (statusFilter == 'out_for_delivery') {
+        if (status != 'out_for_delivery') return false;
+      } else if (status != statusFilter) {
+        return false;
+      }
     }
-    if (_dateTo != null && dt != null) {
-      final to = DateTime(
-        _dateTo!.year,
-        _dateTo!.month,
-        _dateTo!.day,
-        23,
-        59,
-        59,
-      );
-      if (dt.isAfter(to)) return false;
+
+    if (applyDate) {
+      final dt = _orderDate(order);
+      if (_dateFrom != null && dt != null) {
+        final from = DateTime(_dateFrom!.year, _dateFrom!.month, _dateFrom!.day);
+        if (dt.isBefore(from)) return false;
+      }
+      if (_dateTo != null && dt != null) {
+        final to = DateTime(
+          _dateTo!.year,
+          _dateTo!.month,
+          _dateTo!.day,
+          23,
+          59,
+          59,
+        );
+        if (dt.isAfter(to)) return false;
+      }
     }
     return true;
   }
@@ -385,12 +408,21 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
 
   List<Map<String, dynamic>> get _filteredProcessingOrders =>
       _sortByLastModifiedDesc(
-        _processingOrders.where(_matchesManagerFilters).toList(),
+        _processingOrders
+            .where(
+              (o) => _matchesManagerFilters(
+                o,
+                statusFilter: _processingStatusFilter,
+              ),
+            )
+            .toList(),
       );
 
   List<Map<String, dynamic>> get _filteredCompletedOrders =>
       _sortByLastModifiedDesc(
-        _completedOrders.where(_matchesManagerFilters).toList(),
+        _completedOrders
+            .where((o) => _matchesManagerFilters(o, applyDate: true))
+            .toList(),
       );
 
   Future<void> _pickManagerDate({required bool isFrom}) async {
@@ -408,7 +440,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
       } else {
         _dateTo = picked;
       }
-      _resetOrderPages();
+      _completedPage = 0;
     });
   }
 
@@ -712,11 +744,6 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                       ),
                     ],
                   ),
-                  const SizedBox(height: 10),
-                  Text(
-                    'Track confirmations, delivery progress, and completed orders.',
-                    style: TextStyle(color: AntdTokens.textSecondary),
-                  ),
                   const SizedBox(height: 12),
                   AntdToolbar(
                     elevated: false,
@@ -762,34 +789,11 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                           });
                         },
                       ),
-                      _managerDateChip(
-                        label: 'From',
-                        value: _dateFrom,
-                        onPick: () => _pickManagerDate(isFrom: true),
-                        onClear: () => setState(() {
-                          _dateFrom = null;
-                          _resetOrderPages();
-                        }),
-                      ),
-                      _managerDateChip(
-                        label: 'To',
-                        value: _dateTo,
-                        onPick: () => _pickManagerDate(isFrom: false),
-                        onClear: () => setState(() {
-                          _dateTo = null;
-                          _resetOrderPages();
-                        }),
-                      ),
-                      if (_dateFrom != null ||
-                          _dateTo != null ||
-                          _searchQuery.isNotEmpty ||
-                          _orderTypeFilter != 'all')
+                      if (_searchQuery.isNotEmpty || _orderTypeFilter != 'all')
                         AntdSecondaryButton(
                           label: 'Clear filters',
                           icon: Icons.filter_alt_off,
                           onPressed: () => setState(() {
-                            _dateFrom = null;
-                            _dateTo = null;
                             _searchCtrl.clear();
                             _searchQuery = '';
                             _orderTypeFilter = 'all';
@@ -851,7 +855,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     }
 
     return SingleChildScrollView(
-      padding: appPagePadding(context),
+      padding: appPagePadding(context).copyWith(top: 8, bottom: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -864,7 +868,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                 Icons.receipt_long,
                 Colors.blue,
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 8),
               _buildSummaryCard(
                 'Pending Revenue',
                 '$_currencySymbol${orders.fold<num>(0, (sum, order) => sum + _parseAmount(order['total_amount'])).toStringAsFixed(2)}',
@@ -873,7 +877,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
               ),
             ],
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 8),
 
           // Orders Table
           Container(
@@ -923,7 +927,7 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
             onPageChanged: (next) =>
                 setState(() => _confirmationPage = next),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 8),
         ],
       ),
     );
@@ -936,101 +940,140 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
       tablePageCount(orders.length, pageSize: _ordersPageSize) - 1,
     );
     final pageOrders = tablePageSlice(orders, page, pageSize: _ordersPageSize);
-    if (orders.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.local_shipping, size: 64, color: AntdTokens.labelMuted),
-            const SizedBox(height: 16),
-            Text(
-              _processingOrders.isEmpty
-                  ? 'No orders in processing'
-                  : 'No processing orders match your filters',
-              style: TextStyle(
-                color: AntdTokens.textSecondary,
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
 
     return SingleChildScrollView(
-      padding: appPagePadding(context),
+      padding: appPagePadding(context).copyWith(top: 8, bottom: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Summary Cards
-          Row(
-            children: [
-              _buildSummaryCard(
-                'Processing Orders',
-                '${orders.length}',
-                Icons.local_shipping,
-                Colors.orange,
-              ),
-              const SizedBox(width: 16),
-              _buildSummaryCard(
-                'Processing Revenue',
-                '$_currencySymbol${orders.fold<num>(0, (sum, order) => sum + _parseAmount(order['total_amount'])).toStringAsFixed(2)}',
-                Icons.attach_money,
-                Colors.green,
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-
-          // Orders Table
-          Container(
-            decoration: BoxDecoration(
-              color: AntdTokens.cardBg,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AntdTokens.borderSubtle),
-            ),
-            child: Column(
-              children: [
-                // Table Header
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AntdTokens.tableHeaderBg,
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(12),
-                      topRight: Radius.circular(12),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(flex: 1, child: _buildTableHeader('Order ID')),
-                      Expanded(flex: 2, child: _buildTableHeader('Customer')),
-                      Expanded(flex: 1, child: _buildTableHeader('Order type')),
-                      Expanded(flex: 1, child: _buildTableHeader('Status')),
-                      Expanded(flex: 1, child: _buildTableHeader('Items')),
-                      Expanded(flex: 1, child: _buildTableHeader('Total')),
-                      Expanded(flex: 1, child: _buildTableHeader('Date')),
-                      Expanded(flex: 2, child: _buildTableHeader('Actions')),
-                    ],
-                  ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: AntdSelect<String>(
+              label: 'Status',
+              width: 200,
+              value: _processingStatusFilter,
+              items: const [
+                DropdownMenuItem(value: 'all', child: Text('All statuses')),
+                DropdownMenuItem(
+                  value: 'in_preparation',
+                  child: Text('In preparation'),
                 ),
-                // Table Rows
-                ...pageOrders.asMap().entries.map((entry) {
-                  final index = entry.key;
-                  final order = entry.value;
-                  return _buildProcessingOrderTableRow(order, index);
-                }),
+                DropdownMenuItem(
+                  value: 'out_for_delivery',
+                  child: Text('Out for delivery'),
+                ),
+              ],
+              onChanged: (v) {
+                if (v == null) return;
+                setState(() {
+                  _processingStatusFilter = v;
+                  _processingPage = 0;
+                });
+              },
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (orders.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 48),
+              child: Center(
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.local_shipping,
+                      size: 48,
+                      color: AntdTokens.labelMuted,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      _processingOrders.isEmpty
+                          ? 'No orders in processing'
+                          : 'No processing orders match your filters',
+                      style: TextStyle(
+                        color: AntdTokens.textSecondary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else ...[
+            Row(
+              children: [
+                _buildSummaryCard(
+                  'Processing Orders',
+                  '${orders.length}',
+                  Icons.local_shipping,
+                  Colors.orange,
+                ),
+                const SizedBox(width: 8),
+                _buildSummaryCard(
+                  'Processing Revenue',
+                  '$_currencySymbol${orders.fold<num>(0, (sum, order) => sum + _parseAmount(order['total_amount'])).toStringAsFixed(2)}',
+                  Icons.attach_money,
+                  Colors.green,
+                ),
               ],
             ),
-          ),
-          TablePaginationBar(
-            currentPage: page,
-            totalItems: orders.length,
-            pageSize: _ordersPageSize,
-            onPageChanged: (next) => setState(() => _processingPage = next),
-          ),
-          const SizedBox(height: 16),
+            const SizedBox(height: 8),
+            Container(
+              decoration: BoxDecoration(
+                color: AntdTokens.cardBg,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AntdTokens.borderSubtle),
+              ),
+              child: Column(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: AntdTokens.tableHeaderBg,
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(12),
+                        topRight: Radius.circular(12),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          flex: 1,
+                          child: _buildTableHeader('Order ID'),
+                        ),
+                        Expanded(
+                          flex: 2,
+                          child: _buildTableHeader('Customer'),
+                        ),
+                        Expanded(
+                          flex: 1,
+                          child: _buildTableHeader('Order type'),
+                        ),
+                        Expanded(flex: 1, child: _buildTableHeader('Phone')),
+                        Expanded(flex: 1, child: _buildTableHeader('Items')),
+                        Expanded(flex: 1, child: _buildTableHeader('Total')),
+                        Expanded(flex: 1, child: _buildTableHeader('Status')),
+                        Expanded(flex: 1, child: _buildTableHeader('Date')),
+                        Expanded(flex: 2, child: _buildTableHeader('Actions')),
+                      ],
+                    ),
+                  ),
+                  ...pageOrders.asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final order = entry.value;
+                    return _buildProcessingOrderTableRow(order, index);
+                  }),
+                ],
+              ),
+            ),
+            TablePaginationBar(
+              currentPage: page,
+              totalItems: orders.length,
+              pageSize: _ordersPageSize,
+              onPageChanged: (next) => setState(() => _processingPage = next),
+            ),
+            const SizedBox(height: 8),
+          ],
         ],
       ),
     );
@@ -1043,119 +1086,161 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
       tablePageCount(orders.length, pageSize: _ordersPageSize) - 1,
     );
     final pageOrders = tablePageSlice(orders, page, pageSize: _ordersPageSize);
-    if (orders.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.check_circle_outline,
-              size: 64,
-              color: AntdTokens.labelMuted,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              _completedOrders.isEmpty
-                  ? 'No completed orders yet'
-                  : 'No completed orders match your filters',
-              style: TextStyle(
-                color: AntdTokens.textSecondary,
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
 
     return SingleChildScrollView(
-      padding: appPagePadding(context),
+      padding: appPagePadding(context).copyWith(top: 8, bottom: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Summary Cards
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              _buildSummaryCard(
-                'Completed Orders',
-                '${orders.where((o) => _isCompletedStatus(_normalizedStatus(o['status']))).length}',
-                Icons.check_circle,
-                Colors.green,
+              _managerDateChip(
+                label: 'From',
+                value: _dateFrom,
+                onPick: () => _pickManagerDate(isFrom: true),
+                onClear: () => setState(() {
+                  _dateFrom = null;
+                  _completedPage = 0;
+                }),
               ),
-              const SizedBox(width: 16),
-              _buildSummaryCard(
-                'Cancelled Orders',
-                '${orders.where((o) => _isCancelledStatus(_normalizedStatus(o['status']))).length}',
-                Icons.cancel,
-                Colors.red,
+              _managerDateChip(
+                label: 'To',
+                value: _dateTo,
+                onPick: () => _pickManagerDate(isFrom: false),
+                onClear: () => setState(() {
+                  _dateTo = null;
+                  _completedPage = 0;
+                }),
               ),
-              const SizedBox(width: 16),
-              _buildSummaryCard(
-                'Total Revenue',
-                '$_currencySymbol${orders.where((o) => _isCompletedStatus(_normalizedStatus(o['status']))).fold<num>(0, (sum, order) => sum + _parseAmount(order['total_amount'])).toStringAsFixed(2)}',
-                Icons.attach_money,
-                Colors.green,
-              ),
+              if (_dateFrom != null || _dateTo != null)
+                AntdSecondaryButton(
+                  label: 'Clear dates',
+                  icon: Icons.filter_alt_off,
+                  onPressed: () => setState(() {
+                    _dateFrom = null;
+                    _dateTo = null;
+                    _completedPage = 0;
+                  }),
+                ),
             ],
           ),
-          const SizedBox(height: 24),
-
-          // Orders Table
-          Container(
-            decoration: BoxDecoration(
-              color: AntdTokens.cardBg,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AntdTokens.borderSubtle),
-            ),
-            child: Column(
-              children: [
-                // Table Header
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AntdTokens.tableHeaderBg,
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(12),
-                      topRight: Radius.circular(12),
+          const SizedBox(height: 8),
+          if (orders.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 48),
+              child: Center(
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.check_circle_outline,
+                      size: 48,
+                      color: AntdTokens.labelMuted,
                     ),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(flex: 1, child: _buildTableHeader('Order ID')),
-                      Expanded(flex: 2, child: _buildTableHeader('Customer')),
-                      Expanded(flex: 1, child: _buildTableHeader('Order type')),
-                      Expanded(flex: 1, child: _buildTableHeader('Status')),
-                      Expanded(flex: 1, child: _buildTableHeader('Items')),
-                      Expanded(flex: 1, child: _buildTableHeader('Total')),
-                      Expanded(flex: 1, child: _buildTableHeader('Date')),
-                      Expanded(
-                        flex: 2,
-                        child: _buildTableHeader('Payment Status'),
+                    const SizedBox(height: 12),
+                    Text(
+                      _completedOrders.isEmpty
+                          ? 'No completed orders yet'
+                          : 'No completed orders match your filters',
+                      style: TextStyle(
+                        color: AntdTokens.textSecondary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                // Table Rows
-                ...pageOrders.asMap().entries.map((entry) {
-                  final index = entry.key;
-                  final order = entry.value;
-                  return _buildCompletedOrderTableRow(order, index);
-                }),
+              ),
+            )
+          else ...[
+            Row(
+              children: [
+                _buildSummaryCard(
+                  'Completed Orders',
+                  '${orders.where((o) => _isCompletedStatus(_normalizedStatus(o['status']))).length}',
+                  Icons.check_circle,
+                  Colors.green,
+                ),
+                const SizedBox(width: 8),
+                _buildSummaryCard(
+                  'Cancelled Orders',
+                  '${orders.where((o) => _isCancelledStatus(_normalizedStatus(o['status']))).length}',
+                  Icons.cancel,
+                  Colors.red,
+                ),
+                const SizedBox(width: 8),
+                _buildSummaryCard(
+                  'Total Revenue',
+                  '$_currencySymbol${orders.where((o) => _isCompletedStatus(_normalizedStatus(o['status']))).fold<num>(0, (sum, order) => sum + _parseAmount(order['total_amount'])).toStringAsFixed(2)}',
+                  Icons.attach_money,
+                  Colors.green,
+                ),
               ],
             ),
-          ),
-          TablePaginationBar(
-            currentPage: page,
-            totalItems: orders.length,
-            pageSize: _ordersPageSize,
-            onPageChanged: (next) => setState(() => _completedPage = next),
-          ),
-          const SizedBox(height: 16),
+            const SizedBox(height: 8),
+            Container(
+              decoration: BoxDecoration(
+                color: AntdTokens.cardBg,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AntdTokens.borderSubtle),
+              ),
+              child: Column(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: AntdTokens.tableHeaderBg,
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(12),
+                        topRight: Radius.circular(12),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          flex: 1,
+                          child: _buildTableHeader('Order ID'),
+                        ),
+                        Expanded(
+                          flex: 2,
+                          child: _buildTableHeader('Customer'),
+                        ),
+                        Expanded(
+                          flex: 1,
+                          child: _buildTableHeader('Order type'),
+                        ),
+                        Expanded(flex: 1, child: _buildTableHeader('Phone')),
+                        Expanded(flex: 1, child: _buildTableHeader('Items')),
+                        Expanded(flex: 1, child: _buildTableHeader('Total')),
+                        Expanded(flex: 1, child: _buildTableHeader('Status')),
+                        Expanded(flex: 1, child: _buildTableHeader('Date')),
+                        Expanded(flex: 1, child: _buildTableHeader('Actions')),
+                      ],
+                    ),
+                  ),
+                  ...pageOrders.asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final order = entry.value;
+                    return _buildCompletedOrderTableRow(order, index);
+                  }),
+                ],
+              ),
+            ),
+            TablePaginationBar(
+              currentPage: page,
+              totalItems: orders.length,
+              pageSize: _ordersPageSize,
+              onPageChanged: (next) => setState(() => _completedPage = next),
+            ),
+            const SizedBox(height: 8),
+          ],
         ],
       ),
     );
   }
+
 
   List<Map<String, dynamic>> _itemsForDialog(Map<String, dynamic> order) {
     final directItems = order['items'] ?? order['tray_items'];
@@ -1397,47 +1482,53 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
     IconData icon,
     Color color,
   ) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withValues(alpha: 0.2)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(8),
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: color.withValues(alpha: 0.2)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Icon(icon, color: Colors.white, size: 18),
             ),
-            child: Icon(icon, color: Colors.white, size: 24),
-          ),
-          const SizedBox(width: 16),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: TextStyle(
-                  color: AntdTokens.textSecondary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      color: AntdTokens.textSecondary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    value,
+                    style: TextStyle(
+                      color: color,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ),
-              const SizedBox(height: 4),
-              Text(
-                value,
-                style: TextStyle(
-                  color: color,
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }

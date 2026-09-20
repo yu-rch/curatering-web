@@ -332,7 +332,7 @@ class _HomeEtdSamplerState extends State<HomeEtdSampler> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Text(
-            'Event Theme Design',
+            'Event Theme Design Sampler',
             style: TextStyle(
               color: _accentYellow,
               fontWeight: FontWeight.w700,
@@ -354,38 +354,6 @@ class _HomeEtdSamplerState extends State<HomeEtdSampler> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Text(
-                    'Style',
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  _chipRow(
-                    options: _styles,
-                    selected: _selectedStyle,
-                    enabled: inputsEnabled,
-                    onSelected: (v) => setState(() => _selectedStyle = v),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Mood',
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  _chipRow(
-                    options: _moods,
-                    selected: _selectedMood,
-                    enabled: inputsEnabled,
-                    onSelected: (v) => setState(() => _selectedMood = v),
-                  ),
-                  const SizedBox(height: 8),
                   const Text(
                     'Select venue photo',
                     style: TextStyle(
@@ -449,6 +417,38 @@ class _HomeEtdSamplerState extends State<HomeEtdSampler> {
                       ),
                       padding: const EdgeInsets.symmetric(vertical: 10),
                     ),
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Style',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  _chipRow(
+                    options: _styles,
+                    selected: _selectedStyle,
+                    enabled: inputsEnabled,
+                    onSelected: (v) => setState(() => _selectedStyle = v),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Mood',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  _chipRow(
+                    options: _moods,
+                    selected: _selectedMood,
+                    enabled: inputsEnabled,
+                    onSelected: (v) => setState(() => _selectedMood = v),
                   ),
                 ],
               ),

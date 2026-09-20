@@ -56,7 +56,6 @@ class _GalleryPageState extends State<GalleryPage> {
   int? _galleryDetailIndex;
   String _gallerySearchQuery = '';
   String _selectedGalleryCategoryId = 'ALL';
-  String _selectedGalleryTag = 'ALL';
   List<GalleryCategoryData> _fallbackCategories = const [];
 
   @override
@@ -118,7 +117,10 @@ class _GalleryPageState extends State<GalleryPage> {
       for (final item in rawDesigns) {
         if (item is! Map) continue;
         final image = (item['imageBase64'] ?? '').toString().trim();
-        if (image.isEmpty) continue;
+        final imageUrl = (item['imageUrl'] ?? item['image_url'] ?? '')
+            .toString()
+            .trim();
+        if (image.isEmpty && imageUrl.isEmpty) continue;
         final label = (item['label'] ?? item['eventType'] ?? 'Event').toString();
         final eventType =
             (item['eventType'] ?? item['type'] ?? 'Completed Events')
@@ -131,7 +133,9 @@ class _GalleryPageState extends State<GalleryPage> {
           GalleryImageData(
             id: 'fallback-${list.length}-${key.hashCode}',
             imageBase64: image,
+            imageUrl: imageUrl.isEmpty ? null : imageUrl,
             tags: [label],
+            details: _eventDesignDetailsFromMap(item),
           ),
         );
       }
@@ -192,11 +196,118 @@ class _GalleryPageState extends State<GalleryPage> {
 
   List<GalleryCategoryData> _effectiveCategories(WebsiteContentStore w) {
     final cmsResolved = w.galleryCategories.any(
-      (c) => c.images.any((img) => img.imageBase64.trim().isNotEmpty),
+      (c) => c.images.any((img) => img.hasVisual),
     );
     if (cmsResolved || widget.contentEditable) return w.galleryCategories;
     if (_fallbackCategories.isNotEmpty) return _fallbackCategories;
     return w.galleryCategories;
+  }
+
+  Map<String, String> _eventDesignDetailsFromMap(Map raw) {
+    final out = <String, String>{};
+    void add(String label, dynamic value) {
+      if (value == null) return;
+      if (value is List) {
+        final joined = value
+            .map((e) => e.toString().trim())
+            .where((e) => e.isNotEmpty)
+            .join(', ');
+        if (joined.isNotEmpty) out[label] = joined;
+        return;
+      }
+      final text = value.toString().trim();
+      if (text.isNotEmpty) out[label] = text;
+    }
+
+    add('Event type', raw['eventType'] ?? raw['event_type'] ?? raw['type']);
+    add('Style', raw['style']);
+    add('Mood & lighting', raw['mood']);
+    add('Formality', raw['formality']);
+    add('Setting', raw['setting'] ?? raw['eventSetting']);
+    add('Color palette', raw['colorPalette'] ?? raw['color_palette']);
+    add('Decor', raw['decorElements'] ?? raw['decor_elements']);
+    return out;
+  }
+
+  String? _resolvedGalleryImageUrl(String? raw) {
+    final url = (raw ?? '').trim();
+    if (url.isEmpty) return null;
+    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    if (url.startsWith('/')) {
+      final base = apiBaseUrl.endsWith('/')
+          ? apiBaseUrl.substring(0, apiBaseUrl.length - 1)
+          : apiBaseUrl;
+      return '$base$url';
+    }
+    return url;
+  }
+
+  Widget _galleryImageVisual(GalleryImageData imgData, {BoxFit fit = BoxFit.cover}) {
+    final networkUrl = _resolvedGalleryImageUrl(imgData.imageUrl);
+    if (networkUrl != null) {
+      return Image.network(
+        networkUrl,
+        fit: fit,
+        gaplessPlayback: true,
+        errorBuilder: (_, __, ___) {
+          if (imgData.imageBase64.trim().isNotEmpty) {
+            return _galleryImage(imgData.imageBase64, fit: fit);
+          }
+          return Container(
+            color: Colors.grey.shade300,
+            child: const Icon(Icons.broken_image_outlined, color: Colors.grey),
+          );
+        },
+      );
+    }
+    return _galleryImage(imgData.imageBase64, fit: fit);
+  }
+
+  Widget _galleryImage(String? b64, {BoxFit fit = BoxFit.cover}) {
+    return CachedBase64Image(
+      base64String: b64,
+      fit: fit,
+      placeholder: Container(
+        color: Colors.grey.shade300,
+        child: const Icon(Icons.image_outlined, color: Colors.grey),
+      ),
+    );
+  }
+
+  void _showGalleryImageDetail(
+    GalleryImageData imgData, {
+    required String categoryLabel,
+  }) {
+    if (!imgData.hasVisual) return;
+    final tags =
+        imgData.tags.where((t) => t.trim().isNotEmpty).toList(growable: false);
+    final title =
+        tags.isNotEmpty
+            ? tags.first
+            : categoryLabel.trim().isNotEmpty
+            ? categoryLabel
+            : 'Gallery photo';
+    final description =
+        tags.length > 1
+            ? tags.sublist(1).join(', ')
+            : tags.isEmpty && categoryLabel.trim().isNotEmpty
+            ? categoryLabel
+            : null;
+    final detailBlocks = <MapEntry<String, String>>[
+      ...imgData.details.entries,
+      if (tags.isNotEmpty && imgData.details.isEmpty)
+        MapEntry('Tags', tags.join(', ')),
+    ];
+
+    showImageFocusDialog(
+      context,
+      imageBase64:
+          imgData.imageBase64.trim().isEmpty ? null : imgData.imageBase64,
+      imageUrl: _resolvedGalleryImageUrl(imgData.imageUrl),
+      title: title,
+      description: description,
+      detailBlocks: detailBlocks,
+    );
   }
 
   @override
@@ -290,70 +401,13 @@ class _GalleryPageState extends State<GalleryPage> {
     );
   }
 
-  List<String> _allGalleryTags(Iterable<GalleryCategoryData> categories) {
-    final tags = <String>{};
-    for (final cat in categories) {
-      for (final image in cat.images) {
-        for (final tag in image.tags) {
-          final trimmed = tag.trim();
-          if (trimmed.isNotEmpty) tags.add(trimmed);
-        }
-      }
-    }
-    final sorted =
-        tags.toList()
-          ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-    return sorted;
-  }
-
   bool _matchesSelectedCategory(GalleryCategoryData cat) {
     return _selectedGalleryCategoryId == 'ALL' ||
         cat.id == _selectedGalleryCategoryId;
   }
 
-  bool _matchesSelectedTag(GalleryCategoryData cat) {
-    if (_selectedGalleryTag == 'ALL') return true;
-    final selected = _selectedGalleryTag.toLowerCase();
-    return cat.images.any(
-      (image) => image.tags.any((tag) => tag.toLowerCase() == selected),
-    );
-  }
-
   List<GalleryImageData> _filteredGalleryImages(GalleryCategoryData cat) {
-    final bySearch = filterGalleryImages(cat, _gallerySearchQuery);
-    if (_selectedGalleryTag == 'ALL') return bySearch;
-    final selected = _selectedGalleryTag.toLowerCase();
-    return bySearch
-        .where(
-          (image) => image.tags.any((tag) => tag.toLowerCase() == selected),
-        )
-        .toList();
-  }
-
-  Widget _buildFilterDropdown({
-    required String title,
-    required String value,
-    required List<DropdownMenuItem<String>> items,
-    required ValueChanged<String?> onChanged,
-  }) {
-    return DropdownButtonFormField<String>(
-      value: value,
-      isExpanded: true,
-      isDense: true,
-      style: const TextStyle(fontSize: 12, color: Color(0xFF1E1E1E)),
-      decoration: InputDecoration(
-        labelText: title,
-        labelStyle: const TextStyle(fontSize: 11),
-        isDense: true,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 4,
-          vertical: 4,
-        ),
-      ),
-      items: items,
-      onChanged: onChanged,
-    );
+    return filterGalleryImages(cat, _gallerySearchQuery);
   }
 
   Widget _buildGallerySearchField({required String hintText}) {
@@ -375,45 +429,6 @@ class _GalleryPageState extends State<GalleryPage> {
           ),
         ),
       ),
-    );
-  }
-
-  Widget _galleryImage(String? b64, {BoxFit fit = BoxFit.cover}) {
-    return CachedBase64Image(
-      base64String: b64,
-      fit: fit,
-      placeholder: Container(
-        color: Colors.grey.shade300,
-        child: const Icon(Icons.image_outlined, color: Colors.grey),
-      ),
-    );
-  }
-
-  void _showGalleryImageDetail(
-    GalleryImageData imgData, {
-    required String categoryLabel,
-  }) {
-    if (imgData.imageBase64.trim().isEmpty) return;
-    final tags =
-        imgData.tags.where((t) => t.trim().isNotEmpty).toList(growable: false);
-    final title =
-        tags.isNotEmpty ? tags.first : categoryLabel.trim().isNotEmpty ? categoryLabel : 'Gallery photo';
-    final description =
-        tags.length > 1
-            ? tags.sublist(1).join(', ')
-            : tags.isEmpty && categoryLabel.trim().isNotEmpty
-            ? categoryLabel
-            : null;
-
-    showImageFocusDialog(
-      context,
-      imageBase64: imgData.imageBase64,
-      title: title,
-      description: description,
-      detailBlocks:
-          tags.isNotEmpty
-              ? [MapEntry('Tags', tags.join(', '))]
-              : const [],
     );
   }
 
@@ -447,12 +462,10 @@ class _GalleryPageState extends State<GalleryPage> {
 
   Widget _buildGallery(WebsiteContentStore w) {
     final source = _effectiveCategories(w);
-    final allTags = _allGalleryTags(source);
     final categories =
         source
             .where((c) => galleryCategoryMatchesSearch(c, _gallerySearchQuery))
             .where(_matchesSelectedCategory)
-            .where(_matchesSelectedTag)
             .toList();
 
     return Column(
@@ -467,27 +480,9 @@ class _GalleryPageState extends State<GalleryPage> {
           titleFontSize: isMobile(context) ? 28 : 36,
           filters: _buildGalleryToolbar(
             searchField: _buildGallerySearchField(
-              hintText: 'SEARCH BY TAG OR CATEGORY',
+              hintText: 'SEARCH BY CATEGORY',
             ),
             filters: [
-              CustomerAntdFilterSelect<String>(
-                label: 'Filter by tags',
-                value: allTags.any(
-                      (tag) =>
-                          tag.toLowerCase() ==
-                          _selectedGalleryTag.toLowerCase(),
-                    )
-                    ? _selectedGalleryTag
-                    : 'ALL',
-                items: [
-                  const DropdownMenuItem(value: 'ALL', child: Text('All tags')),
-                  ...allTags.map(
-                    (tag) => DropdownMenuItem(value: tag, child: Text(tag)),
-                  ),
-                ],
-                onChanged: (tag) =>
-                    setState(() => _selectedGalleryTag = tag ?? 'ALL'),
-              ),
               CustomerAntdFilterSelect<String>(
                 label: 'Filter by category',
                 value: source.any((cat) => cat.id == _selectedGalleryCategoryId)
@@ -551,7 +546,8 @@ class _GalleryPageState extends State<GalleryPage> {
             itemBuilder: (context, index) {
               final cat = categories[index];
               final realIndex = source.indexOf(cat);
-              final visibleCount = _filteredGalleryImages(cat).length;
+              final visibleCount =
+                  _filteredGalleryImages(cat).where((img) => img.hasVisual).length;
 
               return GestureDetector(
                 onTap: () => setState(() => _galleryDetailIndex = realIndex),
@@ -563,11 +559,16 @@ class _GalleryPageState extends State<GalleryPage> {
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      _galleryImage(
-                        cat.images.isNotEmpty
-                            ? cat.images.first.imageBase64
-                            : null,
-                      ),
+                      if (cat.images.isNotEmpty && cat.images.first.hasVisual)
+                        _galleryImageVisual(cat.images.first)
+                      else
+                        Container(
+                          color: Colors.grey.shade300,
+                          child: const Icon(
+                            Icons.image_outlined,
+                            color: Colors.grey,
+                          ),
+                        ),
                       Container(
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(12),
@@ -620,7 +621,11 @@ class _GalleryPageState extends State<GalleryPage> {
 
   Widget _buildGalleryDetail(WebsiteContentStore w, GalleryCategoryData cat) {
     final filteredImages = _filteredGalleryImages(cat);
-    final allTags = _allGalleryTags([cat]);
+    final galleryTitle =
+        w.galleryTitle.trim().isEmpty ? 'Gallery' : w.galleryTitle.trim();
+    final categoryTitle =
+        cat.label.trim().isEmpty ? 'Category' : cat.label.trim();
+    final photoCount = filteredImages.where((img) => img.hasVisual).length;
 
     return Column(
       children: [
@@ -653,39 +658,26 @@ class _GalleryPageState extends State<GalleryPage> {
             ],
           ],
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 20),
+        Text(
+          '$galleryTitle | $categoryTitle',
+          style: CustomerFonts.getFont(
+            _primaryFont,
+            fontSize: isMobile(context) ? 26 : 32,
+            fontWeight: FontWeight.w800,
+            color: const Color(0xFF1E1E1E),
+            letterSpacing: 0.6,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          '$photoCount photo${photoCount == 1 ? '' : 's'}',
+          style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+        ),
+        const SizedBox(height: 20),
         _buildGalleryToolbar(
-          searchField: _buildGallerySearchField(hintText: 'SEARCH BY TAG'),
-          filters:
-              allTags.isEmpty
-                  ? const []
-                  : [
-                    _buildFilterDropdown(
-                      title: 'TAGS',
-                      value:
-                          allTags.any(
-                                (tag) =>
-                                    tag.toLowerCase() ==
-                                    _selectedGalleryTag.toLowerCase(),
-                              )
-                              ? _selectedGalleryTag
-                              : 'ALL',
-                      items: [
-                        const DropdownMenuItem(
-                          value: 'ALL',
-                          child: Text('ALL'),
-                        ),
-                        ...allTags.map(
-                          (tag) =>
-                              DropdownMenuItem(value: tag, child: Text(tag)),
-                        ),
-                      ],
-                      onChanged:
-                          (tag) => setState(
-                            () => _selectedGalleryTag = tag ?? 'ALL',
-                          ),
-                    ),
-                  ],
+          searchField: _buildGallerySearchField(hintText: 'SEARCH PHOTOS'),
+          filters: const [],
         ),
         const SizedBox(height: 32),
         if (filteredImages.isEmpty)
@@ -726,7 +718,7 @@ class _GalleryPageState extends State<GalleryPage> {
               final fullIndex = cat.images.indexOf(imgData);
               return GestureDetector(
                 onTap:
-                    imgData.imageBase64.isNotEmpty
+                    imgData.hasVisual
                         ? () => _showGalleryImageDetail(
                           imgData,
                           categoryLabel: cat.label,
@@ -741,8 +733,8 @@ class _GalleryPageState extends State<GalleryPage> {
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      if (imgData.imageBase64.isNotEmpty)
-                        _galleryImage(imgData.imageBase64)
+                      if (imgData.hasVisual)
+                        _galleryImageVisual(imgData)
                       else
                         Container(color: Colors.grey.shade300),
                     if (imgData.tags.isNotEmpty)

@@ -10790,7 +10790,51 @@ async function registerRoutesAfterDbInit() {
           return out;
         };
 
-        const pushDesign = ({ imageBase64 = null, imageUrl = null, label, description }) => {
+        const extractPreferences = (theme, eventType) => {
+          const t = theme && typeof theme === 'object' ? theme : {};
+          const paletteRaw = Array.isArray(t.colorPalette)
+            ? t.colorPalette
+            : Array.isArray(t.color_palette)
+              ? t.color_palette
+              : t.macrinaColorPalette
+                ? [t.macrinaColorPalette]
+                : [];
+          const decorRaw = Array.isArray(t.decorElements)
+            ? t.decorElements
+            : Array.isArray(t.decor_elements)
+              ? t.decor_elements
+              : [];
+          const lighting = String(t.lighting || t.lightingMood || '').trim();
+          const mood = String(t.mood || '').trim();
+          const moodLighting = [mood, lighting].filter(Boolean).join(' · ');
+          return {
+            eventType:
+              String(
+                t.event_type || t.eventDesignEventType || eventType || '',
+              ).trim() || null,
+            style:
+              String(t.style || t.macrinaTheme || t.theme || '').trim() || null,
+            mood: moodLighting || null,
+            formality:
+              String(t.formality_level || t.formality || '').trim() || null,
+            setting:
+              String(t.event_setting || t.setting || '').trim() || null,
+            colorPalette: paletteRaw
+              .map((e) => String(e ?? '').trim())
+              .filter(Boolean),
+            decorElements: decorRaw
+              .map((e) => String(e ?? '').trim())
+              .filter(Boolean),
+          };
+        };
+
+        const pushDesign = ({
+          imageBase64 = null,
+          imageUrl = null,
+          label,
+          description,
+          preferences = null,
+        }) => {
           if (eventDesigns.length >= maxDesigns) return;
           const labelText =
             String(label || '').trim() || 'Featured Event Design';
@@ -10807,11 +10851,24 @@ async function registerRoutesAfterDbInit() {
           const key = url || (img ? img.slice(0, 120) : `${labelText}|${descText}`);
           if (seenDesignImages.has(key)) return;
           seenDesignImages.add(key);
+          const prefs =
+            preferences && typeof preferences === 'object' ? preferences : {};
           eventDesigns.push({
             imageBase64: img || null,
             imageUrl: url || null,
             label: labelText,
             description: descText,
+            eventType: prefs.eventType || null,
+            style: prefs.style || null,
+            mood: prefs.mood || null,
+            formality: prefs.formality || null,
+            setting: prefs.setting || null,
+            colorPalette: Array.isArray(prefs.colorPalette)
+              ? prefs.colorPalette
+              : [],
+            decorElements: Array.isArray(prefs.decorElements)
+              ? prefs.decorElements
+              : [],
           });
         };
 
@@ -10828,9 +10885,12 @@ async function registerRoutesAfterDbInit() {
           }
           if (!theme || typeof theme !== 'object') theme = {};
 
+          const preferences = extractPreferences(theme, type);
           const label = buildEventDesignName(theme, title, type);
           const description = [
-            type,
+            preferences.eventType || type,
+            preferences.style,
+            preferences.mood,
             String(theme.note || '').trim(),
           ]
             .filter(Boolean)
@@ -10859,6 +10919,7 @@ async function registerRoutesAfterDbInit() {
                 imageUrl: photoUrl,
                 label,
                 description,
+                preferences,
               });
               pushedActual = true;
             }
@@ -10878,6 +10939,7 @@ async function registerRoutesAfterDbInit() {
               imageUrl: themeUrl,
               label,
               description,
+              preferences,
             });
             continue;
           }
@@ -10890,6 +10952,7 @@ async function registerRoutesAfterDbInit() {
               imageBase64: img,
               label,
               description,
+              preferences,
             });
           }
         }

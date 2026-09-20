@@ -145,7 +145,8 @@ class CustomerAntdFilterChips extends StatelessWidget {
     return Wrap(
       spacing: 8,
       runSpacing: 8,
-      alignment: WrapAlignment.center,
+      alignment: WrapAlignment.start,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         for (final e in entries)
           FilterChip(
@@ -165,6 +166,8 @@ class CustomerAntdFilterChips extends StatelessWidget {
             ),
             visualDensity: VisualDensity.compact,
             materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            labelPadding: const EdgeInsets.symmetric(horizontal: 6),
           ),
       ],
     );
