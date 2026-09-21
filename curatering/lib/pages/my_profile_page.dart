@@ -369,7 +369,7 @@ class _MyProfilePageState extends State<MyProfilePage> {
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Container(
-                    constraints: const BoxConstraints(maxWidth: 420),
+                    constraints: const BoxConstraints(maxWidth: 480),
                     padding: const EdgeInsets.all(24),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
@@ -440,9 +440,12 @@ class _MyProfilePageState extends State<MyProfilePage> {
                               Row(
                                 children: [
                                   const SizedBox(
-                                    width: 100,
+                                    width: 150,
                                     child: Text(
                                       'CURRENT PASSWORD',
+                                      maxLines: 1,
+                                      softWrap: false,
+                                      overflow: TextOverflow.visible,
                                       style: TextStyle(fontSize: 11),
                                     ),
                                   ),
@@ -476,9 +479,12 @@ class _MyProfilePageState extends State<MyProfilePage> {
                               Row(
                                 children: [
                                   const SizedBox(
-                                    width: 100,
+                                    width: 150,
                                     child: Text(
                                       'NEW PASSWORD',
+                                      maxLines: 1,
+                                      softWrap: false,
+                                      overflow: TextOverflow.visible,
                                       style: TextStyle(fontSize: 11),
                                     ),
                                   ),
@@ -513,9 +519,12 @@ class _MyProfilePageState extends State<MyProfilePage> {
                               Row(
                                 children: [
                                   const SizedBox(
-                                    width: 100,
+                                    width: 150,
                                     child: Text(
                                       'CONFIRM PASSWORD',
+                                      maxLines: 1,
+                                      softWrap: false,
+                                      overflow: TextOverflow.visible,
                                       style: TextStyle(fontSize: 11),
                                     ),
                                   ),

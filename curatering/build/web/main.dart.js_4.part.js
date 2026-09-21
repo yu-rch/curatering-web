@@ -378,7 +378,7 @@ J=c[1]
 A=c[0]
 C=c[2]
 B=a.updateHolder(c[29],B)
-D=c[44]
+D=c[63]
 B.m7.prototype={
 X(){var x=$.W()
 return new B.VW(new A.bw(null,y.w),new A.af(C.a3,x),new A.af(C.a3,x),new A.af(C.a3,x),new A.af(C.a3,x),new A.af(C.a3,x),new A.af(C.a3,x),new A.af(C.a3,x),new A.af(C.a3,x))}}
@@ -683,39 +683,39 @@ v=n.dy
 if(v!=null){s=n.fr
 r=s?C.fm:C.de
 q=A.C(8)
-p=A.aS(s?C.qj:C.em,C.z,1)
-o=s?C.r5:C.f8
+p=A.aS(s?C.qk:C.em,C.z,1)
+o=s?C.r6:C.f8
 o=A.aQ(o,s?C.fF:C.bt,m,16)
 C.f.t(u,A.a([A.Q(m,A.K(A.a([o,C.aj,A.F(A.c(v,m,m,m,m,A.A(m,m,s?C.fF:C.bt,m,m,m,m,m,m,m,m,12,m,m,m,m,m,!0,m,m,m,m,m,m,m,m),m,m,m),1)],t),C.u,C.k,C.p,0,m),C.v,m,m,new A.a9(r,m,p,q,m,m,C.H),m,m,m,m,C.cn,m,m,m),C.R],t))}if(n.ay){v=A.c("Enter your email to receive a reset code",m,m,m,m,A.A(m,m,C.ag,m,m,m,m,m,m,m,m,12,m,m,m,m,m,!0,m,m,m,m,m,m,m,m),C.aF,m,m)
-s=A.K(A.a([D.a1_,A.F(A.dx(!1,n.e,m,A.cA(m,new A.bK(4,A.C(6),C.c8),m,C.cn,m,m,m,m,!0,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,!0,m,m,m,!0,!0,!1,m,m,m,m,m,m,m,m,m,m,m,m,m,m),!0,!1,m,m,m,C.fh,m,1,!1,m,m,m,m,m,C.bP,C.L,C.S,m,m),1)],t),C.u,C.k,C.p,0,m)
+s=A.K(A.a([D.a10,A.F(A.dx(!1,n.e,m,A.cA(m,new A.bK(4,A.C(6),C.c8),m,C.cn,m,m,m,m,!0,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,!0,m,m,m,!0,!0,!1,m,m,m,m,m,m,m,m,m,m,m,m,m,m),!0,!1,m,m,m,C.fh,m,1,!1,m,m,m,m,m,C.bP,C.L,C.S,m,m),1)],t),C.u,C.k,C.p,0,m)
 r=n.at?m:n.gaTT()
 q=A.bo(m,m,C.T,m,m,m,m,m,m,C.W,m,m,C.h9,m,new A.aw(A.C(8),C.K),m,m,m,m,m)
-C.f.t(u,A.a([v,C.cG,s,C.aL,A.bI(n.at?C.fg:D.bGj,r,q),C.R,A.dq(m,C.D8,C.A,!1,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,new B.bap(n),m,m,m,m,m,m,!1,C.bv)],t))}else if(n.ch){v=A.c("Enter the 6-digit code sent to "+A.h(n.dx),m,m,m,m,A.A(m,m,C.ag,m,m,m,m,m,m,m,m,12,m,m,m,m,m,!0,m,m,m,m,m,m,m,m),C.aF,m,m)
-s=A.K(A.a([D.br5,A.F(A.dx(!1,n.z,m,A.cA(m,new A.bK(4,A.C(6),C.c8),m,C.cn,m,m,"",m,!0,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,!0,m,m,m,!0,!0,!1,m,m,m,m,m,m,m,m,m,m,m,m,m,m),m,!1,m,m,m,C.bW,6,1,!1,m,m,m,m,m,C.bP,C.L,C.S,m,m),1)],t),C.u,C.k,C.p,0,m)
+C.f.t(u,A.a([v,C.cG,s,C.aL,A.bI(n.at?C.fg:D.bGl,r,q),C.R,A.dq(m,C.Da,C.A,!1,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,new B.bap(n),m,m,m,m,m,m,!1,C.bv)],t))}else if(n.ch){v=A.c("Enter the 6-digit code sent to "+A.h(n.dx),m,m,m,m,A.A(m,m,C.ag,m,m,m,m,m,m,m,m,12,m,m,m,m,m,!0,m,m,m,m,m,m,m,m),C.aF,m,m)
+s=A.K(A.a([D.br2,A.F(A.dx(!1,n.z,m,A.cA(m,new A.bK(4,A.C(6),C.c8),m,C.cn,m,m,"",m,!0,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,!0,m,m,m,!0,!0,!1,m,m,m,m,m,m,m,m,m,m,m,m,m,m),m,!1,m,m,m,C.bW,6,1,!1,m,m,m,m,m,C.bP,C.L,C.S,m,m),1)],t),C.u,C.k,C.p,0,m)
 r=n.cy
 q=A.C(6)
-r=A.K(A.a([D.bqZ,A.F(A.dx(!1,n.Q,m,A.cA(m,new A.bK(4,q,C.c8),m,C.cn,m,m,m,m,!0,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,!0,m,m,m,!0,!0,!1,m,m,m,m,m,m,m,m,A.aO(m,m,m,A.aQ(r?C.jh:C.jg,m,m,18),m,m,new B.baq(n),m,m,m,m,m),m,m,m,m,m),m,!1,m,m,m,m,m,1,r,m,m,m,m,m,C.bP,C.L,C.S,m,m),1)],t),C.u,C.k,C.p,0,m)
+r=A.K(A.a([D.bqX,A.F(A.dx(!1,n.Q,m,A.cA(m,new A.bK(4,q,C.c8),m,C.cn,m,m,m,m,!0,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,!0,m,m,m,!0,!0,!1,m,m,m,m,m,m,m,m,A.aO(m,m,m,A.aQ(r?C.jh:C.jg,m,m,18),m,m,new B.baq(n),m,m,m,m,m),m,m,m,m,m),m,!1,m,m,m,m,m,1,r,m,m,m,m,m,C.bP,C.L,C.S,m,m),1)],t),C.u,C.k,C.p,0,m)
 q=n.at?m:n.gaVK()
 p=A.bo(m,m,C.T,m,m,m,m,m,m,C.W,m,m,C.h9,m,new A.aw(A.C(8),C.K),m,m,m,m,m)
 o=n.at
-q=A.bI(o?C.fg:D.bB_,q,p)
-C.f.t(u,A.a([v,C.cG,s,C.J,r,C.aL,q,C.J,A.bt(D.bIk,m,m,m,o?m:new B.baw(n),m,m),C.D,A.dq(m,C.D8,C.A,!1,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,new B.bax(n),m,m,m,m,m,m,!1,C.bv)],t))}else if(n.ax){v=A.dx(!1,n.x,m,A.cA(m,new A.bK(4,A.C(8),C.c8),m,C.dq,m,m,m,m,!0,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,"Enter 6-digit OTP",m,m,m,m,m,m,m,m,m,!0,!0,!1,m,m,m,m,m,m,m,m,m,m,m,m,m,m),m,!1,m,m,m,C.bW,6,1,!1,m,m,m,m,m,m,C.aF,C.S,m,new B.bay())
+q=A.bI(o?C.fg:D.bAZ,q,p)
+C.f.t(u,A.a([v,C.cG,s,C.J,r,C.aL,q,C.J,A.bt(D.bIm,m,m,m,o?m:new B.baw(n),m,m),C.D,A.dq(m,C.Da,C.A,!1,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,new B.bax(n),m,m,m,m,m,m,!1,C.bv)],t))}else if(n.ax){v=A.dx(!1,n.x,m,A.cA(m,new A.bK(4,A.C(8),C.c8),m,C.dq,m,m,m,m,!0,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,"Enter 6-digit OTP",m,m,m,m,m,m,m,m,m,!0,!0,!1,m,m,m,m,m,m,m,m,m,m,m,m,m,m),m,!1,m,m,m,C.bW,6,1,!1,m,m,m,m,m,m,C.aF,C.S,m,new B.bay())
 s=n.at?m:n.gaXn()
-r=A.bo(m,m,C.T,m,m,m,m,m,m,C.W,m,m,C.xW,m,new A.aw(A.C(8),C.K),m,m,m,m,m)
-C.f.t(u,A.a([v,C.aL,A.bI(n.at?C.fg:D.bFF,s,r)],t))}else{v=A.a([],t)
+r=A.bo(m,m,C.T,m,m,m,m,m,m,C.W,m,m,C.xY,m,new A.aw(A.C(8),C.K),m,m,m,m,m)
+C.f.t(u,A.a([v,C.aL,A.bI(n.at?C.fg:D.bFG,s,r)],t))}else{v=A.a([],t)
 if(!n.as){s=y.V
 r=A.a([new A.qW(A.b6("[A-Za-z\\s]",!0,!1,!1),!0,"")],s)
-r=A.K(A.a([D.bqY,A.F(A.dx(!1,n.r,m,B.apK("Letters only"),m,!1,m,m,r,m,m,1,!1,m,m,m,m,m,C.bP,C.L,C.pb,m,new B.baz()),1)],t),C.u,C.k,C.p,0,m)
+r=A.K(A.a([D.bqW,A.F(A.dx(!1,n.r,m,B.apK("Letters only"),m,!1,m,m,r,m,m,1,!1,m,m,m,m,m,C.bP,C.L,C.pb,m,new B.baz()),1)],t),C.u,C.k,C.p,0,m)
 s=A.a([$.mN(),new A.kq(11,m)],s)
-C.f.t(v,A.a([r,C.J,A.K(A.a([D.brk,A.F(A.dx(!1,n.w,m,B.apK("11 digits max").bgt(""),m,!1,m,m,s,C.bW,11,1,!1,m,m,m,m,m,C.bP,C.L,C.S,m,new B.baA()),1)],t),C.u,C.k,C.p,0,m),C.J],t))}v.push(A.K(A.a([D.a1_,A.F(A.dx(!1,n.e,m,B.apK(m),m,!1,m,m,m,C.fh,m,1,!1,m,m,m,m,m,C.bP,C.L,C.S,m,new B.baB(n)),1)],t),C.u,C.k,C.p,0,m))
+C.f.t(v,A.a([r,C.J,A.K(A.a([D.brj,A.F(A.dx(!1,n.w,m,B.apK("11 digits max").bgt(""),m,!1,m,m,s,C.bW,11,1,!1,m,m,m,m,m,C.bP,C.L,C.S,m,new B.baA()),1)],t),C.u,C.k,C.p,0,m),C.J],t))}v.push(A.K(A.a([D.a10,A.F(A.dx(!1,n.e,m,B.apK(m),m,!1,m,m,m,C.fh,m,1,!1,m,m,m,m,m,C.bP,C.L,C.S,m,new B.baB(n)),1)],t),C.u,C.k,C.p,0,m))
 v.push(C.J)
 s=n.CW
 r=B.apK(m)
-v.push(A.K(A.a([D.br0,A.F(A.dx(!1,n.f,m,r.aqQ(A.aO(m,m,m,A.aQ(n.CW?C.jh:C.jg,m,m,18),m,m,new B.baC(n),m,m,m,m,m)),!0,!1,m,m,m,m,m,1,s,m,m,new B.baD(n),m,m,C.bP,C.L,C.S,C.pc,new B.bar(n)),1)],t),C.u,C.k,C.p,0,m))
+v.push(A.K(A.a([D.bqZ,A.F(A.dx(!1,n.f,m,r.aqQ(A.aO(m,m,m,A.aQ(n.CW?C.jh:C.jg,m,m,18),m,m,new B.baC(n),m,m,m,m,m)),!0,!1,m,m,m,m,m,1,s,m,m,new B.baD(n),m,m,C.bP,C.L,C.S,C.pc,new B.bar(n)),1)],t),C.u,C.k,C.p,0,m))
 v.push(C.J)
 if(!n.as){s=n.cx
 r=B.apK(m)
-C.f.t(v,A.a([A.K(A.a([D.br_,A.F(A.dx(!1,n.y,m,r.aqQ(A.aO(m,m,m,A.aQ(n.cx?C.jh:C.jg,m,m,18),m,m,new B.bas(n),m,m,m,m,m)),m,!1,m,m,m,m,m,1,s,m,m,m,m,m,C.bP,C.L,C.S,m,new B.bat(n)),1)],t),C.u,C.k,C.p,0,m),C.cG],t))}else C.f.t(v,A.a([C.cG],t))
+C.f.t(v,A.a([A.K(A.a([D.bqY,A.F(A.dx(!1,n.y,m,r.aqQ(A.aO(m,m,m,A.aQ(n.cx?C.jh:C.jg,m,m,18),m,m,new B.bas(n),m,m,m,m,m)),m,!1,m,m,m,m,m,1,s,m,m,m,m,m,C.bP,C.L,C.S,m,new B.bat(n)),1)],t),C.u,C.k,C.p,0,m),C.cG],t))}else C.f.t(v,A.a([C.cG],t))
 if(n.at)s=m
 else s=n.as?n.gaUv():n.gaWx()
 r=A.bo(m,m,C.T,m,m,m,m,m,m,C.W,m,m,C.h9,m,new A.aw(A.C(8),C.K),m,m,m,m,m)
@@ -723,11 +723,11 @@ if(n.at)q=C.fg
 else q=A.c(n.as?l:k,m,m,m,m,C.cq,m,m,m)
 v.push(A.bI(q,s,r))
 v=A.a([A.OD(m,A.x(v,C.u,C.k,C.a2,0,C.t),n.d),C.J],t)
-if(n.as)v.push(A.dq(m,D.bFr,C.A,!1,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,new B.bau(n),m,m,m,m,m,m,!1,C.bv))
+if(n.as)v.push(A.dq(m,D.bFs,C.A,!1,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,new B.bau(n),m,m,m,m,m,m,!1,C.bv))
 v.push(C.R)
 s=n.as?"DON'T HAVE AN ACCOUNT? ":"ALREADY HAVE AN ACCOUNT? "
 s=A.c(s,m,m,m,m,A.A(m,m,C.ag,m,m,m,m,m,m,m,m,10,m,m,m,m,m,!0,m,m,m,m,m,m,m,m),m,m,m)
-v.push(A.K(A.a([s,A.dq(m,A.c(n.as?k:l,m,m,m,m,C.CQ,m,m,m),C.A,!1,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,new B.bav(n),m,m,m,m,m,m,!1,C.bv)],t),C.u,C.ck,C.p,0,m))
+v.push(A.K(A.a([s,A.dq(m,A.c(n.as?k:l,m,m,m,m,C.CS,m,m,m),C.A,!1,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,m,new B.bav(n),m,m,m,m,m,m,!1,C.bv)],t),C.u,C.ck,C.p,0,m))
 C.f.t(u,v)}return A.e7(m,m,A.Q(m,A.x(u,C.u,C.k,C.a2,0,C.t),C.v,m,new A.am(0,x,0,1/0),m,m,m,m,m,w,m,m,m),m,m,m,m,C.bV,m,new A.aw(j,C.K),m)}}
 B.f5.prototype={
 tz(){var x=this
@@ -1295,7 +1295,7 @@ u=u==null?x:J.u(u)
 if(u==null){w=v.h(w,"message")
 w=w==null?x:J.u(w)}else w=u
 w=A.c(w==null?"You have reached the limit for failed login attempts. Try again after 15 minutes.":w,x,x,x,x,x,x,x,x)
-return A.cL(A.a([A.bt(C.hs,x,x,x,new B.b9P(d),x,x)],y.p),x,x,x,w,x,x,x,C.a2W,x)},
+return A.cL(A.a([A.bt(C.hs,x,x,x,new B.b9P(d),x,x)],y.p),x,x,x,w,x,x,x,C.a2V,x)},
 $S:10}
 B.b9P.prototype={
 $0(){return A.R(this.a,!1).b1()},
@@ -1794,25 +1794,25 @@ x(B.cM,A.kL)
 w(A.kM,[B.at0,B.at3])})()
 A.k9(b.typeUniverse,JSON.parse('{"m7":{"a7":[],"f":[]},"VW":{"a6":["m7"]},"cM":{"aJ":[]}}'))
 var y=(function rtii(){var x=A.ak
-return{e:x("f5"),I:x("G<f5>"),t:x("G<U<e,@>>"),s:x("G<e>"),V:x("G<q3>"),p:x("G<f>"),w:x("bw<wM>"),j:x("Y<@>"),a:x("U<e,@>"),f:x("U<@,@>"),l:x("i2"),i:x("d8"),P:x("c5"),K:x("a8"),N:x("e"),d:x("de<f5>"),z:x("@"),W:x("f5?"),g:x("Y<@>?"),T:x("e?"),H:x("~")}})();(function constants(){D.a2M=new A.o("NEW PASSWORD",null,C.cd,null,null,null,null,null,null,null,null)
-D.bIL=new A.o("EMAIL ADDRESS",null,C.cd,null,null,null,null,null,null,null,null)
-D.a1_=new A.bk(132,null,D.bIL,null)
-D.bqY=new A.bk(132,null,C.a2l,null)
-D.bqZ=new A.bk(132,null,D.a2M,null)
-D.bCB=new A.o("RE-TYPE PASSWORD",null,C.cd,null,null,null,null,null,null,null,null)
-D.br_=new A.bk(132,null,D.bCB,null)
-D.br0=new A.bk(132,null,C.a39,null)
-D.bEP=new A.o("RESET CODE",null,C.cd,null,null,null,null,null,null,null,null)
-D.br5=new A.bk(132,null,D.bEP,null)
-D.bJK=new A.o("PHONE",null,C.cd,null,null,null,null,null,null,null,null)
-D.brk=new A.bk(132,null,D.bJK,null)
-D.bB_=new A.o("RESET PASSWORD",null,C.cq,null,null,null,null,null,null,null,null)
-D.bFr=new A.o("FORGOT PASSWORD?",null,C.CQ,null,null,null,null,null,null,null,null)
-D.bFF=new A.o("VERIFY",null,C.bd,null,null,null,null,null,null,null,null)
-D.bGj=new A.o("SEND RESET CODE",null,C.cq,null,null,null,null,null,null,null,null)
-D.bIk=new A.o("Resend OTP",null,null,null,null,null,null,null,null,null,null)})();(function staticFields(){$.b4=null
+return{e:x("f5"),I:x("G<f5>"),t:x("G<U<e,@>>"),s:x("G<e>"),V:x("G<q3>"),p:x("G<f>"),w:x("bw<wM>"),j:x("Y<@>"),a:x("U<e,@>"),f:x("U<@,@>"),l:x("i2"),i:x("d8"),P:x("c5"),K:x("a8"),N:x("e"),d:x("de<f5>"),z:x("@"),W:x("f5?"),g:x("Y<@>?"),T:x("e?"),H:x("~")}})();(function constants(){D.bIM=new A.o("EMAIL ADDRESS",null,C.cc,null,null,null,null,null,null,null,null)
+D.a10=new A.bk(132,null,D.bIM,null)
+D.bqW=new A.bk(132,null,C.a2l,null)
+D.bGa=new A.o("NEW PASSWORD",null,C.cc,null,null,null,null,null,null,null,null)
+D.bqX=new A.bk(132,null,D.bGa,null)
+D.bCA=new A.o("RE-TYPE PASSWORD",null,C.cc,null,null,null,null,null,null,null,null)
+D.bqY=new A.bk(132,null,D.bCA,null)
+D.bqZ=new A.bk(132,null,C.a38,null)
+D.bEQ=new A.o("RESET CODE",null,C.cc,null,null,null,null,null,null,null,null)
+D.br2=new A.bk(132,null,D.bEQ,null)
+D.bJL=new A.o("PHONE",null,C.cc,null,null,null,null,null,null,null,null)
+D.brj=new A.bk(132,null,D.bJL,null)
+D.bAZ=new A.o("RESET PASSWORD",null,C.cq,null,null,null,null,null,null,null,null)
+D.bFs=new A.o("FORGOT PASSWORD?",null,C.CS,null,null,null,null,null,null,null,null)
+D.bFG=new A.o("VERIFY",null,C.bd,null,null,null,null,null,null,null,null)
+D.bGl=new A.o("SEND RESET CODE",null,C.cq,null,null,null,null,null,null,null,null)
+D.bIm=new A.o("Resend OTP",null,null,null,null,null,null,null,null,null,null)})();(function staticFields(){$.b4=null
 $.ix=null})();(function lazyInitializers(){var x=a.lazyFinal
 x($,"cNK","coL",()=>A.b6("^[A-Za-z]+(?:\\s+[A-Za-z]+)*$",!0,!1,!1))
 x($,"cMZ","cog",()=>A.b6("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",!0,!1,!1))
 x($,"cNL","coM",()=>A.b6("^09\\d{9}$",!0,!1,!1))})()};
-(a=>{a["HsFeZz9U/fDh7zSj9AImjMKgkUU="]=a.current})($__dart_deferred_initializers__);
+(a=>{a["vmzNOYV1fS4ciGbZGuj9748qWrA="]=a.current})($__dart_deferred_initializers__);
