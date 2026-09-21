@@ -415,17 +415,11 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
                     ),
                   ),
                 ),
-                SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: Column(
-                    children: [
-                      const Spacer(),
-                      const SizedBox(height: 24),
-                      CustomerSiteFooter(
-                        store: WebsiteContentStore.instance,
-                        contentEditable: widget.contentEditable,
-                      ),
-                    ],
+                const SliverToBoxAdapter(child: SizedBox(height: 24)),
+                SliverToBoxAdapter(
+                  child: CustomerSiteFooter(
+                    store: WebsiteContentStore.instance,
+                    contentEditable: widget.contentEditable,
                   ),
                 ),
               ],

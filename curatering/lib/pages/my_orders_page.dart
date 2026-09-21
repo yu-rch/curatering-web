@@ -1029,7 +1029,9 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
   }
 
   String _orderKey(Map<String, dynamic> order) {
-    for (final key in const ['id', 'order_id', 'order_no']) {
+    // Prefer public order ids (same as checkout payment) so balance
+    // submissions resolve reliably; fall back to internal UUID.
+    for (final key in const ['order_id', 'order_no', 'id']) {
       final value = order[key]?.toString().trim();
       if (value != null && value.isNotEmpty) return value;
     }

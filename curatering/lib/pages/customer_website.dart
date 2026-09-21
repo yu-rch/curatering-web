@@ -907,7 +907,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                     icon: Icons.shopping_bag_outlined,
                                     duration: const Duration(seconds: 2),
                                   );
-                                  _scaffoldKey.currentState?.openEndDrawer();
+                                  _openCartSidebar();
                                 });
                               }
                               : null,
@@ -1217,7 +1217,148 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
 
   void _openCartSidebar() {
     unawaited(MenuStore.instance.ensureImagesLoaded());
-    _scaffoldKey.currentState?.openEndDrawer();
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
+          child: DraggableScrollableSheet(
+            expand: false,
+            initialChildSize: 0.55,
+            minChildSize: 0.35,
+            maxChildSize: 0.92,
+            builder: (context, scrollController) {
+              return AnimatedBuilder(
+                animation: Listenable.merge([
+                  CartStore.instance,
+                  MenuStore.instance,
+                ]),
+                builder: (context, _) {
+                  final cartItems = CartStore.instance.items;
+                  final totalAmount = CartStore.instance.totalAmount;
+                  return Column(
+                    children: [
+                      const SizedBox(height: 8),
+                      Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade300,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 16, 8, 8),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.shopping_bag_outlined),
+                            const SizedBox(width: 8),
+                            const Expanded(
+                              child: Text(
+                                'My Tray',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.close),
+                              onPressed: () => Navigator.of(context).pop(),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Divider(height: 1),
+                      Expanded(
+                        child:
+                            cartItems.isEmpty
+                                ? Center(
+                                  child: Text(
+                                    'Your tray is empty',
+                                    style: TextStyle(
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                                )
+                                : ListView.builder(
+                                  controller: scrollController,
+                                  padding: const EdgeInsets.all(12),
+                                  itemCount: cartItems.length,
+                                  itemBuilder: (context, index) {
+                                    return _trayDishCapsule(cartItems[index]);
+                                  },
+                                ),
+                      ),
+                      if (cartItems.isNotEmpty)
+                        SafeArea(
+                          top: false,
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                            child: Column(
+                              children: [
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    const Text(
+                                      'Total',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                      ),
+                                    ),
+                                    Text(
+                                      '₱${totalAmount.toStringAsFixed(2)}',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 18,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: ElevatedButton(
+                                    onPressed: () async {
+                                      final nav = Navigator.of(
+                                        context,
+                                        rootNavigator: true,
+                                      );
+                                      if (nav.canPop()) nav.pop();
+                                      await WidgetsBinding.instance.endOfFrame;
+                                      if (!mounted) return;
+                                      await _navigateToCheckout(navigator: nav);
+                                    },
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color(0xFF1E1E1E),
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 14,
+                                      ),
+                                    ),
+                                    child: const Text('Proceed to checkout'),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  );
+                },
+              );
+            },
+          ),
+        );
+      },
+    );
   }
 
   void _openHomeMobileNavMenu() {
@@ -4702,241 +4843,6 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
             ),
           ),
         ],
-      ),
-      endDrawer: _buildCartSidebar(),
-      endDrawerEnableOpenDragGesture: false,
-    );
-  }
-
-  Widget _buildCartSidebar() {
-    final screenW = MediaQuery.sizeOf(context).width;
-    final drawerW = math.min(440.0, screenW * 0.92);
-
-    return Drawer(
-      width: drawerW,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.horizontal(left: Radius.circular(16)),
-      ),
-      child: ListenableBuilder(
-        listenable: Listenable.merge([
-          CartStore.instance,
-          MenuStore.instance,
-        ]),
-        builder: (context, _) {
-          final cartItems = CartStore.instance.items;
-          final totalAmount = CartStore.instance.totalAmount;
-          final itemCount = CartStore.instance.itemCount;
-
-          return Builder(
-            builder: (drawerContext) {
-              return SafeArea(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Material(
-                      color: const Color(0xFF1E1E1E),
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 12, 4, 12),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.shopping_bag_outlined,
-                              color: Colors.white,
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    'My Tray',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  Text(
-                                    itemCount == 0
-                                        ? 'Nothing added yet'
-                                        : '$itemCount ${itemCount == 1 ? 'item' : 'items'}',
-                                    style: TextStyle(
-                                      color: Colors.white.withValues(
-                                        alpha: 0.75,
-                                      ),
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            IconButton(
-                              tooltip: 'Close',
-                              icon: const Icon(
-                                Icons.close,
-                                color: Colors.white,
-                              ),
-                              onPressed: () => Navigator.pop(drawerContext),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      child:
-                          cartItems.isEmpty
-                              ? Padding(
-                                padding: const EdgeInsets.all(24),
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.shopping_bag_outlined,
-                                      size: 56,
-                                      color: Colors.grey.shade400,
-                                    ),
-                                    const SizedBox(height: 16),
-                                    Text(
-                                      'Your tray is empty',
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(
-                                        fontSize: 17,
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.grey.shade800,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      'Add dishes from the Restaurant page — '
-                                      'this list updates live while the drawer is open.',
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        height: 1.35,
-                                        color: Colors.grey.shade600,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 24),
-                                    FilledButton.icon(
-                                      onPressed: () {
-                                        Navigator.pop(drawerContext);
-                                        setState(() => _navIndex = 3);
-                                      },
-                                      icon: const Icon(Icons.restaurant_menu),
-                                      label: const Text('Go to Restaurant'),
-                                      style: FilledButton.styleFrom(
-                                        backgroundColor: const Color(
-                                          0xFF1E1E1E,
-                                        ),
-                                        foregroundColor: Colors.white,
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 20,
-                                          vertical: 14,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              )
-                              : ListView.separated(
-                                padding: const EdgeInsets.fromLTRB(
-                                  12,
-                                  12,
-                                  12,
-                                  8,
-                                ),
-                                itemCount: cartItems.length,
-                                separatorBuilder:
-                                    (_, __) => const SizedBox(height: 10),
-                                itemBuilder: (context, index) {
-                                  return _trayDishCapsule(cartItems[index]);
-                                },
-                              ),
-                    ),
-                    if (cartItems.isNotEmpty)
-                      Material(
-                        elevation: 8,
-                        color: Colors.white,
-                        child: SafeArea(
-                          top: false,
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    const Text(
-                                      'Total',
-                                      style: TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                    Text(
-                                      '₱${totalAmount.toStringAsFixed(2)}',
-                                      style: TextStyle(
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.w800,
-                                        color: Colors.amber.shade900,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 12),
-                                OutlinedButton(
-                                  onPressed: () => Navigator.pop(drawerContext),
-                                  child: const Text('Keep shopping'),
-                                ),
-                                const SizedBox(height: 8),
-                                FilledButton(
-                                  onPressed: () async {
-                                    final nav = Navigator.of(
-                                      drawerContext,
-                                      rootNavigator: true,
-                                    );
-                                    if (nav.canPop()) {
-                                      nav.pop();
-                                    }
-                                    await WidgetsBinding.instance.endOfFrame;
-                                    await Future<void>.delayed(
-                                      const Duration(milliseconds: 48),
-                                    );
-                                    if (!mounted) return;
-                                    await _navigateToCheckout(navigator: nav);
-                                  },
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: const Color(0xFF1E1E1E),
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 16,
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                  ),
-                                  child: const Text(
-                                    'Proceed to checkout',
-                                    style: TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              );
-            },
-          );
-        },
       ),
     );
   }

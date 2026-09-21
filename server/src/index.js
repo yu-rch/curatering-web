@@ -76,7 +76,7 @@ import {
   getTrayDraftItemsByCustomerId,
   clearTrayDraftForCustomer,
 } from "./tray_drafts_api.js";
-import { customerIdFromRequest } from "./customer_auth.js";
+import { customerIdFromRequest, resolveCustomerAccountCustomerId } from "./customer_auth.js";
 import { createPublicRateLimiter } from "./public_rate_limit.js";
 import {
   requireActiveSuperAdminFromDb,
@@ -12161,6 +12161,12 @@ async function registerRoutesAfterDbInit() {
       try {
         const { orderId } = req.params;
         const { paymentReference, paymentProof, guestContactEmail, userEmail } = req.body || {};
+        const paymentType =
+          String(req.body?.type ?? req.body?.paymentType ?? '')
+            .trim()
+            .toLowerCase() === 'balance'
+            ? 'balance'
+            : 'initial';
 
         if (!paymentReference && !paymentProof) {
           return res.status(400).json({
@@ -12183,8 +12189,33 @@ async function registerRoutesAfterDbInit() {
         const order = existing.rows[0];
 
         if (req.customer?.id) {
-          if (order.customer_id && String(order.customer_id) !== String(req.customer.id)) {
-            return res.status(403).json({ error: 'Order not found' });
+          const tokenId = String(req.customer.id);
+          const resolvedId = await resolveCustomerAccountCustomerId(tokenId);
+          const allowedIds = new Set(
+            [tokenId, resolvedId].filter((v) => v != null && String(v).trim() !== '').map(String),
+          );
+          const orderCid =
+            order.customer_id != null ? String(order.customer_id).trim() : '';
+          let allowed = !orderCid || allowedIds.has(orderCid);
+          if (!allowed) {
+            // Orders listed via email match must also be payable by that account.
+            try {
+              const emailRow = await pool.query(
+                `SELECT lower(COALESCE(email::text, '')) AS email
+                 FROM customer_accounts
+                 WHERE id::text = $1
+                 LIMIT 1`,
+                [tokenId],
+              );
+              const accountEmail = String(emailRow.rows[0]?.email || '').trim();
+              const orderEmail = String(order.user_email || '').trim().toLowerCase();
+              if (accountEmail && orderEmail && accountEmail === orderEmail) {
+                allowed = true;
+              }
+            } catch (_) {}
+          }
+          if (!allowed) {
+            return res.status(403).json({ error: 'Not authorized for this order' });
           }
         } else {
           const guestEmail = (userEmail ?? guestContactEmail)
@@ -12205,7 +12236,9 @@ async function registerRoutesAfterDbInit() {
         }
 
         const roCols = await ensureRestaurantOrdersCanonicalColumns();
-        const paymentSets = buildRestaurantOrderPaymentUpdateSets(roCols);
+        const paymentSets = buildRestaurantOrderPaymentUpdateSets(roCols, {
+          type: paymentType,
+        });
 
         const result = await pool.query(
           `UPDATE restaurant_orders
@@ -12227,10 +12260,16 @@ async function registerRoutesAfterDbInit() {
           if (email) {
             sendCustomerNotificationEmailAsync({
               to: email,
-              subject: 'Curatering: Payment submitted',
+              subject:
+                paymentType === 'balance'
+                  ? 'Curatering: Balance payment submitted'
+                  : 'Curatering: Payment submitted',
               text:
-                `Your payment for order ${updated.order_id} is awaiting cashier verification.\n\n` +
-                `- Curatering Team`,
+                paymentType === 'balance'
+                  ? `Your balance payment for order ${updated.order_id || updated.order_no || orderId} is awaiting cashier verification.\n\n` +
+                    `- Curatering Team`
+                  : `Your payment for order ${updated.order_id || updated.order_no || orderId} is awaiting cashier verification.\n\n` +
+                    `- Curatering Team`,
             });
           }
         } catch (emailErr) {

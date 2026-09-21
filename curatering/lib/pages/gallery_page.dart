@@ -376,21 +376,15 @@ class _GalleryPageState extends State<GalleryPage> {
                     ),
                   ),
                 ),
-                SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: Column(
-                    children: [
-                      const Spacer(),
-                      const SizedBox(height: 48),
-                      ListenableBuilder(
-                        listenable: w,
-                        builder:
-                            (context, _) => CustomerSiteFooter(
-                              store: w,
-                              contentEditable: widget.contentEditable,
-                            ),
-                      ),
-                    ],
+                const SliverToBoxAdapter(child: SizedBox(height: 48)),
+                SliverToBoxAdapter(
+                  child: ListenableBuilder(
+                    listenable: w,
+                    builder:
+                        (context, _) => CustomerSiteFooter(
+                          store: w,
+                          contentEditable: widget.contentEditable,
+                        ),
                   ),
                 ),
               ],

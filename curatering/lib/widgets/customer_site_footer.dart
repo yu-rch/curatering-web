@@ -208,8 +208,6 @@ class CustomerSiteFooter extends StatelessWidget {
                   ),
                   WebsiteRichText(
                     value: w.footerCopyright,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontSize: 11,
                       height: 1.4,

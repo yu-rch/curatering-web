@@ -557,22 +557,39 @@ export function stripTrayItemImages(items) {
   });
 }
 
-/** SET clauses for web checkout payment (reference → *_reference_initial, proof → payment_proof_initial). */
-export function buildRestaurantOrderPaymentUpdateSets(cols) {
+/** SET clauses for web checkout payment (reference → *_reference_initial, proof → payment_proof_initial).
+ *  Pass `{ type: 'balance' }` to write balance proof columns instead. */
+export function buildRestaurantOrderPaymentUpdateSets(cols, { type = 'initial' } = {}) {
+  const isBalance = String(type || '').toLowerCase() === 'balance';
   const sets = [
     'updated_at = now()',
   ];
-  if (cols.has('payment_reference_initial')) {
-    sets.push('payment_reference_initial = COALESCE($1, payment_reference_initial)');
-  }
-  if (cols.has('payment_proof_initial')) {
-    sets.push('payment_proof_initial = COALESCE($2, payment_proof_initial)');
-  }
-  if (cols.has('payment_uploaded_initial')) {
-    sets.push('payment_uploaded_initial = TRUE');
-  }
-  if (cols.has('order_status')) {
-    sets.push("order_status = 'pending_cashier'");
+  if (isBalance) {
+    if (cols.has('payment_reference_balance')) {
+      sets.push('payment_reference_balance = COALESCE($1, payment_reference_balance)');
+    }
+    if (cols.has('payment_proof_balance')) {
+      sets.push('payment_proof_balance = COALESCE($2, payment_proof_balance)');
+    }
+    if (cols.has('balance_proof_pending_review')) {
+      sets.push('balance_proof_pending_review = TRUE');
+    }
+    if (cols.has('order_status')) {
+      sets.push("order_status = 'pending_cashier'");
+    }
+  } else {
+    if (cols.has('payment_reference_initial')) {
+      sets.push('payment_reference_initial = COALESCE($1, payment_reference_initial)');
+    }
+    if (cols.has('payment_proof_initial')) {
+      sets.push('payment_proof_initial = COALESCE($2, payment_proof_initial)');
+    }
+    if (cols.has('payment_uploaded_initial')) {
+      sets.push('payment_uploaded_initial = TRUE');
+    }
+    if (cols.has('order_status')) {
+      sets.push("order_status = 'pending_cashier'");
+    }
   }
   return sets.join(', ');
 }
