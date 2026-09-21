@@ -372,11 +372,10 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
             ),
           ),
           Expanded(
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Padding(
+            child: CustomScrollView(
+              slivers: [
+                SliverToBoxAdapter(
+                  child: Padding(
                     padding: websitePagePadding(context, vertical: 16),
                     child: Center(
                       child: ConstrainedBox(
@@ -415,13 +414,21 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 24),
-                  CustomerSiteFooter(
-                    store: WebsiteContentStore.instance,
-                    contentEditable: widget.contentEditable,
+                ),
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: Column(
+                    children: [
+                      const Spacer(),
+                      const SizedBox(height: 24),
+                      CustomerSiteFooter(
+                        store: WebsiteContentStore.instance,
+                        contentEditable: widget.contentEditable,
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ],
@@ -439,10 +446,10 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
                 ? 2
                 : isTablet(context)
                 ? 3
-                : 5,
+                : 4,
         crossAxisSpacing: 12,
         mainAxisSpacing: 12,
-        childAspectRatio: 0.8,
+        childAspectRatio: isMobile(context) ? 0.72 : 0.85,
       ),
       itemCount: dishes.length,
       itemBuilder: (ctx, i) {
@@ -474,19 +481,22 @@ class _CateringMenuPageState extends State<CateringMenuPage> {
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
+                  padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
                         d.name.toUpperCase(),
                         textAlign: TextAlign.center,
+                        maxLines: 1,
+                        softWrap: false,
                         style: const TextStyle(
                           fontWeight: FontWeight.w600,
-                          fontSize: 12,
+                          fontSize: 13,
                         ),
                       ),
-                    ],
+                    ),
                   ),
                 ),
               ],

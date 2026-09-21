@@ -314,7 +314,7 @@ class _InquirePageState extends State<InquirePage> {
     }();
     _prefillFromCustomerProfile();
     _eventCity.addListener(_onVenueChanged);
-    _contactPerson.addListener(_syncCustomerFromContact);
+    _customerName.addListener(_syncContactFromCustomer);
     _guestCount.addListener(_onGuestCountChanged);
   }
 
@@ -328,7 +328,7 @@ class _InquirePageState extends State<InquirePage> {
     _scheduleConflictDebounce?.cancel();
     _venueDebounce?.cancel();
     _eventCity.removeListener(_onVenueChanged);
-    _contactPerson.removeListener(_syncCustomerFromContact);
+    _customerName.removeListener(_syncContactFromCustomer);
     _guestCount.removeListener(_onGuestCountChanged);
     _landingPaxController.dispose();
     _guestCount.dispose();
@@ -376,8 +376,10 @@ class _InquirePageState extends State<InquirePage> {
     } catch (_) {}
   }
 
-  void _syncCustomerFromContact() {
-    if (_customerSameAsContact) _customerName.text = _contactPerson.text;
+  void _syncContactFromCustomer() {
+    if (!_customerSameAsContact) return;
+    if (_contactPerson.text == _customerName.text) return;
+    _contactPerson.text = _customerName.text;
   }
 
   // Real-time inquiry type change when guest count is updated
@@ -1580,7 +1582,7 @@ class _InquirePageState extends State<InquirePage> {
                           _menuRecommendation = null;
                           _menuRecommendationError = null;
                           _menuSuggestionNote =
-                              'Have Macrina suggest me a menu.';
+                              "Have Macrina's suggest me a menu.";
                         });
                         _suggestMenu();
                       },
@@ -1602,9 +1604,9 @@ class _InquirePageState extends State<InquirePage> {
       return [
         {
           'kind': 'suggest',
-          'dishName': 'Have Macrina suggest me a menu',
+          'dishName': "Have Macrina's suggest me a menu",
           'dishNames': [
-            'Have Macrina suggest me a menu',
+            "Have Macrina's suggest me a menu",
           ],
         },
       ];
@@ -2739,7 +2741,7 @@ class _InquirePageState extends State<InquirePage> {
         ),
         // RIGHT: Estimated cost panel
         SizedBox(
-          width: 400,
+          width: 460,
           child: _buildEstimatedCostPanel(),
         ),
       ],
@@ -3066,16 +3068,33 @@ class _InquirePageState extends State<InquirePage> {
           const Divider(height: 24),
 
           // Package type with full description
-          _costPanelRow(
+          const Text(
             'Package',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: _darkHeader,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
             _packageDisplayName,
-            isBold: true,
+            maxLines: 2,
+            softWrap: true,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: _darkHeader,
+              height: 1.3,
+            ),
           ),
           if (_selectedPackageIndex >= 0 && _selectedPackageIndex < _locationPackages.length) ...[
             const SizedBox(height: 4),
             Text(
               _locationPackages[_selectedPackageIndex]['description'] as String,
-              style: TextStyle(fontSize: 11, color: Colors.grey.shade600, height: 1.3),
+              softWrap: true,
+              style: TextStyle(fontSize: 11, color: Colors.grey.shade600, height: 1.35),
             ),
           ],
           const SizedBox(height: 12),
@@ -3206,8 +3225,10 @@ class _InquirePageState extends State<InquirePage> {
           const SizedBox(height: 16),
           Text(
             'Additional charges apply if you have additional requests not included in the package.',
+            softWrap: true,
             style: TextStyle(
               fontSize: 11,
+              height: 1.4,
               color: Colors.grey.shade600,
               fontStyle: FontStyle.italic,
             ),
@@ -3221,14 +3242,15 @@ class _InquirePageState extends State<InquirePage> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 2),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Flexible(
-            flex: 3,
+          Expanded(
+            flex: 5,
             child: Text(
               label,
+              maxLines: 2,
               softWrap: true,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: isSubtle ? 11 : 13,
                 fontWeight: isBold ? FontWeight.w700 : FontWeight.w400,
@@ -3237,14 +3259,14 @@ class _InquirePageState extends State<InquirePage> {
             ),
           ),
           if (value.isNotEmpty) ...[
-            const SizedBox(width: 8),
-            Flexible(
-              flex: 2,
+            const SizedBox(width: 12),
+            Expanded(
+              flex: 6,
               child: Text(
                 value,
                 textAlign: TextAlign.end,
+                maxLines: 2,
                 softWrap: true,
-                maxLines: 3,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: 13,
@@ -3315,11 +3337,11 @@ class _InquirePageState extends State<InquirePage> {
                 setState(() {
                   _customerSameAsContact = v ?? false;
                   if (_customerSameAsContact) {
-                    _customerName.text = _contactPerson.text;
+                    _contactPerson.text = _customerName.text;
                   }
                 });
               },
-              title: const Text('Same as contact person'),
+              title: const Text('Same as Customer'),
               controlAffinity: ListTileControlAffinity.leading,
             ),
             const SizedBox(height: 8),
@@ -3986,7 +4008,7 @@ class _InquirePageState extends State<InquirePage> {
                   },
                 ),
                 ChoiceChip(
-                  label: const Text('Have Macrina suggest me a menu'),
+                  label: const Text("Have Macrina's suggest me a menu"),
                   selected: _menuChoicePicked && !_curateOwn,
                   selectedColor: _accentYellow,
                   labelStyle: TextStyle(
@@ -4004,7 +4026,7 @@ class _InquirePageState extends State<InquirePage> {
                       _selectedDishIds.clear();
                       _menuSelections.clear();
                       _menuSuggestionNote =
-                          'Have Macrina suggest me a menu.';
+                          "Have Macrina's suggest me a menu.";
                       _menuRecommendation = null;
                       _menuRecommendationError = null;
                       _menuWasAiRecommended = false;
@@ -4140,7 +4162,7 @@ class _InquirePageState extends State<InquirePage> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       const Text(
-                        'Have Macrina suggest me a menu',
+                        "Have Macrina's suggest me a menu",
                         style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.w700,

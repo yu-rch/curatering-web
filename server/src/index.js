@@ -11603,11 +11603,37 @@ async function registerRoutesAfterDbInit() {
             const cateringId = cols.has('catering_id')
               ? 'catering_id'
               : 'NULL::text';
+            const eventType = cols.has('event_type')
+              ? 'event_type'
+              : "NULL::text";
+            const formality = cols.has('formality_level')
+              ? 'formality_level'
+              : "NULL::text";
+            const guestCount = cols.has('guest_count')
+              ? 'guest_count'
+              : 'NULL::int';
+            const menu = cols.has('menu') ? 'menu' : "'[]'::jsonb";
+            const allergens = cols.has('allergens')
+              ? 'allergens'
+              : "NULL::text";
+            const scheduleSlots = cols.has('schedule_slots')
+              ? 'schedule_slots'
+              : "'[]'::jsonb";
+            const themeDesign = cols.has('theme_design')
+              ? 'theme_design'
+              : "'{}'::jsonb";
             return {
               sql: `SELECT id::text AS id, ${cateringId} AS catering_id, ${eventTitle} AS event_title,
                            status, ${totalCost} AS total_cost, created_at,
                            '${orderType}'::text AS order_type,
-                           ${cols.has('address') ? 'address' : "NULL::text AS address"}
+                           ${cols.has('address') ? 'address' : "NULL::text AS address"},
+                           ${eventType} AS event_type,
+                           ${formality} AS formality_level,
+                           ${guestCount} AS guest_count,
+                           ${menu} AS menu,
+                           ${allergens} AS allergens,
+                           ${scheduleSlots} AS schedule_slots,
+                           ${themeDesign} AS theme_design
                     FROM ${table}
                     WHERE (${where.join(' OR ')})`,
               params,
@@ -11641,20 +11667,41 @@ async function registerRoutesAfterDbInit() {
               (a, b) =>
                 new Date(b.created_at || 0) - new Date(a.created_at || 0),
             )
-            .map((row) => ({
-              id: row.id,
-              cateringId: row.catering_id || null,
-              eventTitle: row.event_title || null,
-              status: row.status,
-              totalCost: row.total_cost != null ? Number(row.total_cost) : 0,
-              createdAt:
-                row.created_at instanceof Date
-                  ? row.created_at.toISOString()
-                  : row.created_at,
-              orderType: row.order_type,
-              address: row.address || null,
-              kind: 'inquiry',
-            }));
+            .map((row) => serializeGuestInquiry(row));
+        };
+
+        const serializeGuestInquiry = (row) => {
+          const parseJson = (value, fallback) => {
+            if (value == null) return fallback;
+            if (typeof value === 'object') return value;
+            try {
+              return JSON.parse(String(value));
+            } catch {
+              return fallback;
+            }
+          };
+          return {
+            id: row.id,
+            cateringId: row.catering_id || null,
+            eventTitle: row.event_title || null,
+            status: row.status,
+            totalCost: row.total_cost != null ? Number(row.total_cost) : 0,
+            createdAt:
+              row.created_at instanceof Date
+                ? row.created_at.toISOString()
+                : row.created_at,
+            orderType: row.order_type,
+            address: row.address || null,
+            eventType: row.event_type || null,
+            formalityLevel: row.formality_level || null,
+            guestCount:
+              row.guest_count != null ? Number(row.guest_count) : null,
+            menu: parseJson(row.menu, []),
+            allergens: row.allergens || null,
+            scheduleSlots: parseJson(row.schedule_slots, []),
+            themeDesign: parseJson(row.theme_design, {}),
+            kind: 'inquiry',
+          };
         };
 
         // Specific order number: resolve restaurant (or inquiry) and verify contact.
@@ -11696,12 +11743,16 @@ async function registerRoutesAfterDbInit() {
           const inquiryResult = await pool
             .query(
               `SELECT id::text AS id, catering_id, event_title, status, total_cost, created_at,
-                      address, email_address, contact_number, 'event'::text AS order_type
+                      address, email_address, contact_number, 'event'::text AS order_type,
+                      event_type, formality_level, guest_count, menu, allergens,
+                      schedule_slots, theme_design
                FROM event_orders
                WHERE id::text = $1 OR catering_id::text = $1
                UNION ALL
                SELECT id::text AS id, catering_id, NULL::text AS event_title, status, total_cost, created_at,
-                      address, email_address, contact_number, 'catering'::text AS order_type
+                      address, email_address, contact_number, 'catering'::text AS order_type,
+                      NULL::text AS event_type, NULL::text AS formality_level, guest_count, menu, allergens,
+                      schedule_slots, theme_design
                FROM catering_orders
                WHERE id::text = $1 OR catering_id::text = $1
                LIMIT 1`,
@@ -11721,20 +11772,7 @@ async function registerRoutesAfterDbInit() {
                 error: 'Email or phone does not match this order',
               });
             }
-            const inquiry = {
-              id: row.id,
-              cateringId: row.catering_id || null,
-              eventTitle: row.event_title || null,
-              status: row.status,
-              totalCost: row.total_cost != null ? Number(row.total_cost) : 0,
-              createdAt:
-                row.created_at instanceof Date
-                  ? row.created_at.toISOString()
-                  : row.created_at,
-              orderType: row.order_type,
-              address: row.address || null,
-              kind: 'inquiry',
-            };
+            const inquiry = serializeGuestInquiry(row);
             inquiries = [inquiry];
             return res.json({
               order: null,

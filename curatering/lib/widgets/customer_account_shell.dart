@@ -9,10 +9,14 @@ class CustomerAccountShell extends StatelessWidget {
     super.key,
     required this.currentTab,
     required this.body,
+    this.trackingRoute = '/my-tracking',
   });
 
   final CustomerPageTab currentTab;
   final Widget body;
+
+  /// Guests use `/track-order`; signed-in customers use `/my-tracking`.
+  final String trackingRoute;
 
   void _open(BuildContext context, CustomerPageTab tab) {
     if (tab == currentTab) return;
@@ -27,7 +31,7 @@ class CustomerAccountShell extends StatelessWidget {
       CustomerPageTab.profile => '/my-profile',
       CustomerPageTab.orders => '/my-orders',
       CustomerPageTab.caterings => '/my-inquiries',
-      CustomerPageTab.tracking => '/my-tracking',
+      CustomerPageTab.tracking => trackingRoute,
       CustomerPageTab.home => '/',
     };
     Navigator.of(context).pushReplacementNamed(customerRoute(route));

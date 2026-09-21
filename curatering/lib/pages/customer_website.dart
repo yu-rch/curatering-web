@@ -425,7 +425,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
       _galleryDetailIndex = null;
       _navIndex = index;
     });
-    // Dish photos are heavy â€” fetch only when opening menu tabs.
+    // Dish photos are heavy — fetch only when opening menu tabs.
     if (index == 2 || index == 3) {
       unawaited(_ensureMenuLoaded());
     }
@@ -1010,7 +1010,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '$mealLabel Ã—${cartItem.quantity} @ â‚±${unitPrice.toStringAsFixed(2)} Â· â‚±${cartItem.lineSubtotal.toStringAsFixed(2)}',
+                        '$mealLabel ×${cartItem.quantity} @ ₱${unitPrice.toStringAsFixed(2)} · ₱${cartItem.lineSubtotal.toStringAsFixed(2)}',
                         style: TextStyle(
                           fontSize: 12,
                           color: Colors.grey.shade600,
@@ -1097,15 +1097,15 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     if (cartItem.selectedSauce?.trim().isNotEmpty == true) {
       addLine(
         compact
-            ? '${cartItem.selectedSauce!.toUpperCase()} Ã— ${cartItem.addOnQuantity}'
-            : 'Sauce: ${cartItem.selectedSauce} Ã— ${cartItem.addOnQuantity}',
+            ? '${cartItem.selectedSauce!.toUpperCase()} × ${cartItem.addOnQuantity}'
+            : 'Sauce: ${cartItem.selectedSauce} × ${cartItem.addOnQuantity}',
       );
     }
     if (cartItem.addonExtraSubtotal > 0) {
       addLine(
         compact
-            ? 'EXTRA ADD-ON: â‚±${cartItem.addonExtraSubtotal.toStringAsFixed(2)}'
-            : 'Extra add-on: â‚±${cartItem.addonExtraSubtotal.toStringAsFixed(2)}',
+            ? 'EXTRA ADD-ON: ₱${cartItem.addonExtraSubtotal.toStringAsFixed(2)}'
+            : 'Extra add-on: ₱${cartItem.addonExtraSubtotal.toStringAsFixed(2)}',
         color: Colors.orange.shade800,
       );
     }
@@ -1311,7 +1311,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
               onPressed: _openCartSidebar,
               icon: const Icon(Icons.shopping_bag_outlined),
               label: Text(
-                'YOUR TRAY Â· $itemCount ${itemCount == 1 ? 'ITEM' : 'ITEMS'} Â· â‚±${total.toStringAsFixed(2)}',
+                'YOUR TRAY · $itemCount ${itemCount == 1 ? 'ITEM' : 'ITEMS'} · ₱${total.toStringAsFixed(2)}',
               ),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF1E1E1E),
@@ -1935,7 +1935,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                             ),
                             const Spacer(),
                             Text(
-                              'â‚±${d.price}',
+                              '₱${d.price}',
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 color: Colors.amber.shade800,
@@ -3856,10 +3856,10 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                   ? 2
                                   : isTablet(context)
                                   ? 3
-                                  : 5,
+                                  : 4,
                           crossAxisSpacing: 12,
                           mainAxisSpacing: 12,
-                          childAspectRatio: 0.8,
+                          childAspectRatio: isMobile(context) ? 0.72 : 0.85,
                         ),
                         itemCount: cateringDishes.length,
                         itemBuilder: (ctx, i) {
@@ -3901,19 +3901,27 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                     ),
                                   ),
                                   Padding(
-                                    padding: const EdgeInsets.all(8.0),
-                                    child: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Text(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      10,
+                                      10,
+                                      10,
+                                      12,
+                                    ),
+                                    child: SizedBox(
+                                      width: double.infinity,
+                                      child: FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        child: Text(
                                           d.name.toUpperCase(),
                                           textAlign: TextAlign.center,
+                                          maxLines: 1,
+                                          softWrap: false,
                                           style: const TextStyle(
                                             fontWeight: FontWeight.w600,
-                                            fontSize: 12,
+                                            fontSize: 13,
                                           ),
                                         ),
-                                      ],
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -4242,7 +4250,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                       ),
                                       const SizedBox(height: 4),
                                       Text(
-                                        'â‚±${d.price}',
+                                        '₱${d.price}',
                                         style: TextStyle(
                                           color: Colors.amber.shade800,
                                           fontWeight: FontWeight.bold,
@@ -4303,7 +4311,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     final traySidebar = Padding(
       padding: const EdgeInsets.only(right: 24, top: 8, bottom: 8),
       child: SizedBox(
-        width: 280,
+        width: 300,
         height: panelH,
         child: Container(
               decoration: BoxDecoration(
@@ -4321,21 +4329,43 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Header
+                  // Header — match restaurant page tray
                   Container(
                     padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      border: Border(
-                        bottom: BorderSide(color: Colors.grey.shade200),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF1E1E1E),
+                      borderRadius: BorderRadius.vertical(
+                        top: Radius.circular(12),
                       ),
                     ),
-                    child: const Text(
-                      'MY TRAY',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                        letterSpacing: 1,
-                      ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.shopping_bag_outlined,
+                          color: Colors.white,
+                        ),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            'My Tray',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          cartItems.isEmpty
+                              ? '0 items'
+                              : '${CartStore.instance.itemCount} '
+                                  '${CartStore.instance.itemCount == 1 ? 'item' : 'items'}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   // Tray items
@@ -4349,14 +4379,22 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                   Icon(
                                     Icons.shopping_bag_outlined,
                                     size: 48,
-                                    color: Colors.grey.shade300,
+                                    color: Colors.grey.shade400,
                                   ),
-                                  const SizedBox(height: 12),
+                                  const SizedBox(height: 16),
                                   Text(
                                     'Your tray is empty',
                                     style: TextStyle(
+                                      fontSize: 16,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Add items from the restaurant menu',
+                                    style: TextStyle(
+                                      fontSize: 14,
                                       color: Colors.grey.shade500,
-                                      fontSize: 12,
                                     ),
                                   ),
                                 ],
@@ -4374,12 +4412,12 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                             ),
                   ),
                   // Footer with total and checkout
-                  if (cartItems.isNotEmpty)
-                    Container(
+                  Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        border: Border(
-                          top: BorderSide(color: Colors.grey.shade200),
+                        color: Colors.grey.shade50,
+                        borderRadius: const BorderRadius.vertical(
+                          bottom: Radius.circular(12),
                         ),
                       ),
                       child: Column(
@@ -4388,17 +4426,18 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               const Text(
-                                'TOTAL',
+                                'Total:',
                                 style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
                                 ),
                               ),
                               Text(
-                                'â‚±${totalAmount.toStringAsFixed(2)}',
+                                '₱${totalAmount.toStringAsFixed(2)}',
                                 style: const TextStyle(
-                                  fontSize: 12,
+                                  fontSize: 18,
                                   fontWeight: FontWeight.bold,
+                                  color: Color(0xFF1E1E1E),
                                 ),
                               ),
                             ],
@@ -4407,25 +4446,28 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                           SizedBox(
                             width: double.infinity,
                             child: ElevatedButton(
-                              onPressed: () {
-                                unawaited(_navigateToCheckout());
-                              },
+                              onPressed:
+                                  cartItems.isEmpty
+                                      ? null
+                                      : () {
+                                        unawaited(_navigateToCheckout());
+                                      },
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFFFFC024),
-                                foregroundColor: Colors.black,
+                                backgroundColor: const Color(0xFF1E1E1E),
+                                foregroundColor: Colors.white,
                                 padding: const EdgeInsets.symmetric(
-                                  vertical: 12,
+                                  vertical: 16,
                                 ),
                                 shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(20),
+                                  borderRadius: BorderRadius.circular(8),
                                 ),
                               ),
                               child: Text(
                                 _isCustomerLoggedIn
-                                    ? 'CHECKOUT'
+                                    ? 'PROCEED TO CHECKOUT'
                                     : 'LOG IN TO ORDER',
                                 style: const TextStyle(
-                                  fontSize: 12,
+                                  fontSize: 14,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
@@ -4437,7 +4479,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                 ],
               ),
             ),
-          ),
+      ),
     );
 
     return Row(
@@ -4706,7 +4748,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                     ),
                                     const SizedBox(height: 8),
                                     Text(
-                                      'Add dishes from the Restaurant page â€” '
+                                      'Add dishes from the Restaurant page — '
                                       'this list updates live while the drawer is open.',
                                       textAlign: TextAlign.center,
                                       style: TextStyle(
@@ -4776,7 +4818,7 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                                       ),
                                     ),
                                     Text(
-                                      'â‚±${totalAmount.toStringAsFixed(2)}',
+                                      '₱${totalAmount.toStringAsFixed(2)}',
                                       style: TextStyle(
                                         fontSize: 20,
                                         fontWeight: FontWeight.w800,
@@ -4857,8 +4899,8 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     );
     final earnCopy =
         cartTotal > 0 && estimatedCartPoints > 0
-            ? 'Earn $pointsRatePercent% on orders â‰¥ â‚±${minimumOrderForPoints.toStringAsFixed(2)} (e.g. ~$estimatedCartPoints pts on your tray)'
-            : 'Earn $pointsRatePercent% on orders â‰¥ â‚±${minimumOrderForPoints.toStringAsFixed(2)}';
+            ? 'Earn $pointsRatePercent% on orders ≥ ₱${minimumOrderForPoints.toStringAsFixed(2)} (e.g. ~$estimatedCartPoints pts on your tray)'
+            : 'Earn $pointsRatePercent% on orders ≥ ₱${minimumOrderForPoints.toStringAsFixed(2)}';
     final int currentPoints = _restaurantLoyaltyPoints;
     final availableRewards = store.rewardsConditions;
 
@@ -4901,8 +4943,8 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
                     const SizedBox(height: 4),
                     Text(
                       'Restaurant: $currentPoints pts'
-                      '${_cateringLoyaltyPoints > 0 ? ' Â· Catering: $_cateringLoyaltyPoints pts' : ''}'
-                      ' Â· $earnCopy',
+                      '${_cateringLoyaltyPoints > 0 ? ' · Catering: $_cateringLoyaltyPoints pts' : ''}'
+                      ' · $earnCopy',
                       style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.9),
                         fontSize: 13,

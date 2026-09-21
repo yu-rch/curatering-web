@@ -1,6 +1,6 @@
 ((a,b)=>{a[b]=a[b]||{}})(self,"$__dart_deferred_initializers__")
 $__dart_deferred_initializers__.current=function(a,b,c,$){var J,A,C,B={
-cdh(d,e){var x,w,v,u,t,s,r,q,p,o,n=new B.ayD(),m=new B.ayC(),l=new B.ayB(),k=d.h(0,"positive_prompt")
+cdo(d,e){var x,w,v,u,t,s,r,q,p,o,n=new B.ayD(),m=new B.ayC(),l=new B.ayB(),k=d.h(0,"positive_prompt")
 if(k==null)k=d.h(0,"prompt")
 x=C.e.l(A.h(k==null?e:k))
 if(x.length===0)throw A.p(A.bz("NLP prompt expansion returned no positive prompt."))
@@ -20,10 +20,10 @@ q=new B.ayA().$1(d.h(0,"steps"))
 p=l.$1(d.h(0,"controlnet"))
 o=d.h(0,"mode")
 o=o==null?null:J.u(o)
-return new B.a4Z(x,k,w,v,u,t,s,n,r,m,q,p,o,l.$1(d.h(0,"transformation_plan")))},
+return new B.a5_(x,k,w,v,u,t,s,n,r,m,q,p,o,l.$1(d.h(0,"transformation_plan")))},
 aOE(d){var x=y.w,w=y.b
-return y.B.b(d)?A.ax(d,x,w):A.H(x,w)},
-cg7(d){var x,w,v=B.aOE(d.h(0,"output")),u=B.aOE(v.h(0,"result"))
+return y.B.b(d)?A.av(d,x,w):A.H(x,w)},
+cge(d){var x,w,v=B.aOE(d.h(0,"output")),u=B.aOE(v.h(0,"result"))
 if(u.a!==0)return u
 x=B.aOE(v.h(0,"analysis"))
 if(x.a!==0)return x
@@ -31,36 +31,36 @@ if(v.a!==0)return v
 w=B.aOE(d.h(0,"result"))
 if(w.a!==0)return w
 return d},
-SB(d,e){return B.cws(d,e)},
-cws(d,e){var x=0,w=A.l(y.q),v,u=2,t=[],s,r,q,p,o,n,m,l,k,j,i,h,g
-var $async$SB=A.m(function(f,a0){if(f===1){t.push(a0)
+SC(d,e){return B.cwA(d,e)},
+cwA(d,e){var x=0,w=A.l(y.q),v,u=2,t=[],s,r,q,p,o,n,m,l,k,j,i,h,g
+var $async$SC=A.m(function(f,a0){if(f===1){t.push(a0)
 x=u}for(;;)switch(x){case 0:u=4
-if(A.xY().length===0)A.aq(A.bz("API_BASE_URL is empty; set --dart-define=API_BASE_URL=... so the RunPod proxy can be reached."))
+if(A.xZ().length===0)A.aq(A.bz("API_BASE_URL is empty; set --dart-define=API_BASE_URL=... so the RunPod proxy can be reached."))
 k=y.w
 s=A.eA(d,k,y.b)
-J.aw(s,"task_type","event_prompt_expansion")
+J.ax(s,"task_type","event_prompt_expansion")
 r=s
-s=A.bx(A.xY()+"/api/public/runpod/nlp/run",0,null)
+s=A.bx(A.xZ()+"/api/public/runpod/nlp/run",0,null)
 j=A.N(["Content-Type","application/json"],k,k)
 i=y.y
 x=7
-return A.d(A.et(s,C.a6.cp(A.N(["input",r],k,i),null),null,j).cA(C.qy),$async$SB)
+return A.d(A.et(s,C.a6.cp(A.N(["input",r],k,i),null),null,j).cA(C.qD),$async$SC)
 case 7:q=a0
-if(q.b!==200)A.c7w(q)
+if(q.b!==200)A.c7D(q)
 s=q
-p=i.a(C.a6.bq(A.cj(A.ci(s.e)).b7(s.w),null))
-o=A.aal(J.t(p,"status"))
-n=A.cg6(p)
-if(o==="COMPLETED"||J.t(p,"output")!=null){s=B.cdh(B.cg7(p),e)
+p=i.a(C.a6.bp(A.cj(A.ci(s.e)).b7(s.w),null))
+o=A.aam(J.t(p,"status"))
+n=A.cgd(p)
+if(o==="COMPLETED"||J.t(p,"output")!=null){s=B.cdo(B.cge(p),e)
 v=s
 x=1
 break}s=o
 if(s==="FAILED"||s==="CANCELLED"){s=A.bz(A.aOD(p))
 throw A.p(s)}if(n==null||n.length===0){s=A.bz("NLP prompt expansion did not return a job id.")
 throw A.p(s)}x=8
-return A.d(B.aam(n),$async$SB)
+return A.d(B.aan(n),$async$SC)
 case 8:m=a0
-s=B.cdh(B.cg7(m),e)
+s=B.cdo(B.cge(m),e)
 v=s
 x=1
 break
@@ -78,31 +78,31 @@ case 3:x=2
 break
 case 6:case 1:return A.j(v,w)
 case 2:return A.i(t.at(-1),w)}})
-return A.k($async$SB,w)},
-aam(d){return B.cwq(d)},
-cwq(d){var x=0,w=A.l(y.y),v,u=2,t=[],s,r,q,p,o,n,m,l,k,j,i,h,g,f,e
-var $async$aam=A.m(function(a0,a1){if(a0===1){t.push(a1)
+return A.k($async$SC,w)},
+aan(d){return B.cwy(d)},
+cwy(d){var x=0,w=A.l(y.y),v,u=2,t=[],s,r,q,p,o,n,m,l,k,j,i,h,g,f,e
+var $async$aan=A.m(function(a0,a1){if(a0===1){t.push(a1)
 x=u}for(;;)switch(x){case 0:g=0
 f=null
 m=y.g,l=y.b,k=y.y
 case 3:if(!(g<130)){x=4
 break}x=5
-return A.d(A.h2(C.qz,null,l),$async$aam)
+return A.d(A.h2(C.qE,null,l),$async$aan)
 case 5:++g
 u=7
 x=10
-return A.d(A.fH(A.bx(A.xY()+"/api/public/runpod/nlp/status/"+A.eR(2,d,C.be,!1),0,null),null).cA(C.fo),$async$aam)
+return A.d(A.fI(A.bx(A.xZ()+"/api/public/runpod/nlp/status/"+A.eR(2,d,C.be,!1),0,null),null).cA(C.fo),$async$aan)
 case 10:s=a1
 if(s.b===429){j=A.bz("Too many requests \u2014 wait a moment and try again.")
 throw A.p(j)}if(s.b===200){j=s
-r=k.a(C.a6.bq(A.cj(A.ci(j.e)).b7(j.w),null))
-q=A.aal(J.t(r,"status"))
+r=k.a(C.a6.bp(A.cj(A.ci(j.e)).b7(j.w),null))
+q=A.aam(J.t(r,"status"))
 if(q==="COMPLETED"){j=r
 v=j
 x=1
 break}j=q
 if(j==="FAILED"||j==="CANCELLED"){j=A.bz(A.aOD(r))
-throw A.p(j)}}else A.c7w(s)
+throw A.p(j)}}else A.c7D(s)
 u=2
 x=9
 break
@@ -111,7 +111,7 @@ e=t.pop()
 j=A.a4(e)
 if(m.b(j)){p=j
 o=J.u(p)
-if(J.jj(o,"Job failed")||J.jj(o,"AI generation exceeded")||J.jj(o,"Worker returned"))throw e
+if(J.jk(o,"Job failed")||J.jk(o,"AI generation exceeded")||J.jk(o,"Worker returned"))throw e
 f=p
 A.a1z("NLP polling error (attempt "+A.h(g)+"): "+A.h(p))}else{n=j
 f=n
@@ -127,8 +127,8 @@ case 4:if(m.b(f))throw A.p(f)
 throw A.p(A.bz("NLP task timed out after 650s waiting for the AI worker. Try again in a moment."))
 case 1:return A.j(v,w)
 case 2:return A.i(t.at(-1),w)}})
-return A.k($async$aam,w)},
-a4Z:function a4Z(d,e,f,g,h,i,j,k,l,m,n,o,p,q){var _=this
+return A.k($async$aan,w)},
+a5_:function a5_(d,e,f,g,h,i,j,k,l,m,n,o,p,q){var _=this
 _.a=d
 _.b=e
 _.c=f
@@ -153,9 +153,9 @@ J=c[1]
 A=c[0]
 C=c[2]
 B=a.updateHolder(c[16],B)
-D=c[39]
-B.a4Z.prototype={
-awb(){var x,w,v=this,u=A.H(y.w,y.b)
+D=c[41]
+B.a5_.prototype={
+awa(){var x,w,v=this,u=A.H(y.w,y.b)
 u.j(0,"positive_prompt",v.a)
 x=v.b
 if(x.length!==0)u.j(0,"negative_prompt",x)
@@ -210,29 +210,29 @@ B.ayD.prototype={
 $1(d){var x
 y.d.a(d)
 x=d==null?C.br:d
-x=J.c0(x,new B.ayE(),y.w).cb(0,new B.ayF())
+x=J.c_(x,new B.ayE(),y.w).ca(0,new B.ayF())
 x=A.v(x,x.$ti.i("q.E"))
 return x},
-$S:451}
+$S:452}
 B.ayE.prototype={
 $1(d){return C.e.l(A.h(d))},
-$S:12}
+$S:11}
 B.ayF.prototype={
 $1(d){return d.length!==0},
 $S:4}
 B.ayC.prototype={
 $1(d){if(typeof d=="number")return d
 return A.bA(A.h(d))},
-$S:367}
+$S:381}
 B.ayA.prototype={
 $1(d){if(typeof d=="number")return C.i.aJ(d)
 return A.cf(A.h(d),null)},
 $S:1178}
 B.ayB.prototype={
-$1(d){if(y.B.b(d))return A.ax(d,y.w,y.b)
+$1(d){if(y.B.b(d))return A.av(d,y.w,y.b)
 return null},
 $S:304};(function inheritance(){var x=a.inherit,w=a.inheritMany
-x(B.a4Z,A.a8)
+x(B.a5_,A.a8)
 w(A.ht,[B.ayD,B.ayE,B.ayF,B.ayC,B.ayA,B.ayB])})()
-var y={q:A.ak("a4Z"),g:A.ak("cw"),y:A.ak("V<e,@>"),B:A.ak("V<@,@>"),w:A.ak("e"),b:A.ak("@"),d:A.ak("Y<@>?")};(function constants(){D.If=new A.al(57531,"MaterialIcons",!1)})()};
-(a=>{a["yoFNEQ9TaXvuBkRPSj/RRLou2Ek="]=a.current})($__dart_deferred_initializers__);
+var y={q:A.ak("a5_"),g:A.ak("cw"),y:A.ak("U<e,@>"),B:A.ak("U<@,@>"),w:A.ak("e"),b:A.ak("@"),d:A.ak("Y<@>?")};(function constants(){D.In=new A.al(57531,"MaterialIcons",!1)})()};
+(a=>{a["2aGVZbZip+rsdIVlFh7Nud9HEpE="]=a.current})($__dart_deferred_initializers__);

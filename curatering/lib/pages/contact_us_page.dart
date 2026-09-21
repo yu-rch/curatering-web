@@ -70,14 +70,16 @@ class _ContactUsPageState extends State<ContactUsPage> {
 
   static const _mailFieldDecoration = InputDecoration(
     labelText: '',
-    labelStyle: TextStyle(color: Colors.white70),
-    hintStyle: TextStyle(color: Colors.white54),
+    labelStyle: TextStyle(color: Color(0xFF6B7280)),
+    hintStyle: TextStyle(color: Color(0xFF9CA3AF)),
+    filled: true,
+    fillColor: Colors.white,
     border: OutlineInputBorder(),
     enabledBorder: OutlineInputBorder(
-      borderSide: BorderSide(color: Colors.white38),
+      borderSide: BorderSide(color: Color(0xFFD1D5DB)),
     ),
     focusedBorder: OutlineInputBorder(
-      borderSide: BorderSide(color: Color(0xFFFFC024)),
+      borderSide: BorderSide(color: Color(0xFFFFC024), width: 1.5),
     ),
     isDense: true,
   );
@@ -458,7 +460,7 @@ class _ContactUsPageState extends State<ContactUsPage> {
               const SizedBox(height: 12),
               TextFormField(
                 controller: _mailNameController,
-                style: const TextStyle(color: Colors.white),
+                style: const TextStyle(color: Color(0xFF1E1E1E)),
                 cursorColor: const Color(0xFFFFC024),
                 decoration: _mailFieldDecoration.copyWith(labelText: 'Name'),
                 validator: (v) {
@@ -470,7 +472,7 @@ class _ContactUsPageState extends State<ContactUsPage> {
               const SizedBox(height: 8),
               TextFormField(
                 controller: _mailEmailController,
-                style: const TextStyle(color: Colors.white),
+                style: const TextStyle(color: Color(0xFF1E1E1E)),
                 cursorColor: const Color(0xFFFFC024),
                 decoration: _mailFieldDecoration.copyWith(
                   labelText: 'Email Address',
@@ -486,7 +488,7 @@ class _ContactUsPageState extends State<ContactUsPage> {
               const SizedBox(height: 8),
               TextFormField(
                 controller: _mailMessageController,
-                style: const TextStyle(color: Colors.white),
+                style: const TextStyle(color: Color(0xFF1E1E1E)),
                 cursorColor: const Color(0xFFFFC024),
                 decoration: _mailFieldDecoration.copyWith(labelText: 'Message'),
                 maxLines: 4,
@@ -634,26 +636,26 @@ class _ContactUsPageState extends State<ContactUsPage> {
                   children: [
                     Expanded(child: _feedbackNameField()),
                     const SizedBox(width: 10),
-                    Expanded(child: _feedbackEmailField()),
+                    Expanded(child: _feedbackRatingField()),
                   ],
                 )
               else ...[
                 _feedbackNameField(),
                 const SizedBox(height: 8),
-                _feedbackEmailField(),
+                _feedbackRatingField(),
               ],
               const SizedBox(height: 8),
               if (twoCol)
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(child: _feedbackRatingField()),
+                    Expanded(child: _feedbackEmailField()),
                     const SizedBox(width: 10),
                     Expanded(child: _feedbackMessageField()),
                   ],
                 )
               else ...[
-                _feedbackRatingField(),
+                _feedbackEmailField(),
                 const SizedBox(height: 8),
                 _feedbackMessageField(),
               ],

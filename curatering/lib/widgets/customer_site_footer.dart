@@ -102,13 +102,16 @@ class CustomerSiteFooter extends StatelessWidget {
 
   Widget _col(IconData icon, String text, {VoidCallback? onTap}) {
     final row = Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Icon(icon, size: 18, color: Colors.white),
         const SizedBox(width: 8),
         Expanded(
           child: Text(
             text,
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: 12,
               color: Colors.white,
@@ -121,7 +124,7 @@ class CustomerSiteFooter extends StatelessWidget {
       ],
     );
     return SizedBox(
-      width: 200,
+      width: 260,
       child:
           onTap == null
               ? row
@@ -131,13 +134,16 @@ class CustomerSiteFooter extends StatelessWidget {
 
   Widget _row(IconData icon, String text, {VoidCallback? onTap}) {
     final row = Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Icon(icon, size: 18, color: Colors.white),
         const SizedBox(width: 8),
         Expanded(
           child: Text(
             text,
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: 12,
               color: const Color(0xFFF5F7F9),
@@ -202,6 +208,8 @@ class CustomerSiteFooter extends StatelessWidget {
                   ),
                   WebsiteRichText(
                     value: w.footerCopyright,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontSize: 11,
                       height: 1.4,
@@ -288,10 +296,20 @@ class CustomerSiteFooter extends StatelessWidget {
             return Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                for (var i = 0; i < cols.length; i++) ...[
-                  if (i > 0) const SizedBox(width: 28),
-                  Expanded(child: cols[i]),
-                ],
+                Flexible(
+                  flex: 2,
+                  child: cols[0],
+                ),
+                const SizedBox(width: 20),
+                cols[1],
+                const SizedBox(width: 20),
+                cols[2],
+                const SizedBox(width: 24),
+                Flexible(flex: 3, child: cols[3]),
+                const SizedBox(width: 16),
+                Flexible(flex: 3, child: cols[4]),
+                const SizedBox(width: 16),
+                Flexible(flex: 2, child: cols[5]),
                 const SizedBox(width: 16),
                 Image.asset(
                   'lib/assets/main-2.png',

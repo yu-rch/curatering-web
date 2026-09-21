@@ -1070,6 +1070,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
     final mobile = isMobileWidth(context);
     final labelWidget = Text(
       'DELIVERY ADDRESS',
+      maxLines: 1,
+      softWrap: false,
       style: TextStyle(
         fontSize: 10,
         color: Colors.grey.shade700,
@@ -1168,7 +1170,13 @@ class _CheckoutPageState extends State<CheckoutPage> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SizedBox(width: 100, child: labelWidget),
+              SizedBox(
+                width: 168,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: labelWidget,
+                ),
+              ),
               Expanded(child: addressField),
             ],
           ),
@@ -1298,6 +1306,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
     final mobile = isMobileWidth(context);
     final labelWidget = Text(
       label,
+      maxLines: 1,
+      softWrap: false,
+      overflow: TextOverflow.visible,
       style: TextStyle(
         fontSize: 10,
         color: Colors.grey.shade700,
@@ -1386,7 +1397,13 @@ class _CheckoutPageState extends State<CheckoutPage> {
       crossAxisAlignment:
           maxLines > 1 ? CrossAxisAlignment.start : CrossAxisAlignment.center,
       children: [
-        SizedBox(width: 100, child: labelWidget),
+        SizedBox(
+          width: 168,
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: labelWidget,
+          ),
+        ),
         Expanded(child: fieldWidget),
       ],
     );
@@ -1400,9 +1417,11 @@ class _CheckoutPageState extends State<CheckoutPage> {
     return Row(
       children: [
         SizedBox(
-          width: 100,
+          width: 168,
           child: Text(
             label,
+            maxLines: 1,
+            softWrap: false,
             style: TextStyle(
               fontSize: 10,
               color: Colors.grey.shade700,

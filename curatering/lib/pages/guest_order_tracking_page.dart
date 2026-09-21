@@ -10,6 +10,8 @@ import '../config/site_routes.dart';
 import '../services/menu_store.dart';
 import '../utils/order_display_utils.dart';
 import '../utils/responsive_layout.dart';
+import '../widgets/customer_account_shell.dart';
+import '../widgets/customer_pages_top_bar.dart';
 import '../widgets/customer_website_topbar.dart';
 import 'customer_login.dart';
 import 'order_tracking_page.dart';
@@ -221,68 +223,74 @@ class _GuestOrderTrackingPageState extends State<GuestOrderTrackingPage>
   @override
   Widget build(BuildContext context) {
     final mobile = isMobileWidth(context);
+    final body = SingleChildScrollView(
+      padding: appPagePadding(context),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: mobile ? double.infinity : 920,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Track your order',
+                style: TextStyle(
+                  fontSize: mobile ? 28 : 36,
+                  fontWeight: FontWeight.w800,
+                  color: const Color(0xFF1E1E1E),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Enter the email or phone used at checkout. Order number is optional — without it, we list all matching ongoing orders.',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey.shade700,
+                ),
+              ),
+              if (!_loggedIn) ...[
+                const SizedBox(height: 16),
+                _SignupRewardsBanner(onSignUp: _openSignup),
+              ],
+              const SizedBox(height: 20),
+              _buildLookupCard(mobile),
+              if (_error != null) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.red.shade200),
+                  ),
+                  child: Text(
+                    _error!,
+                    style: TextStyle(color: Colors.red.shade800),
+                  ),
+                ),
+              ],
+              if (_hasResults) ...[
+                const SizedBox(height: 24),
+                _buildResultsTabs(),
+              ],
+              const SizedBox(height: 32),
+            ],
+          ),
+        ),
+      ),
+    );
+
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       body: Column(
         children: [
           const CustomerWebsiteTopBar(),
           Expanded(
-            child: SingleChildScrollView(
-              padding: appPagePadding(context),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth: mobile ? double.infinity : 920,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        'Track your order',
-                        style: TextStyle(
-                          fontSize: mobile ? 28 : 36,
-                          fontWeight: FontWeight.w800,
-                          color: const Color(0xFF1E1E1E),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Enter the email or phone used at checkout. Order number is optional — without it, we list all matching ongoing orders.',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey.shade700,
-                        ),
-                      ),
-                      if (!_loggedIn) ...[
-                        const SizedBox(height: 16),
-                        _SignupRewardsBanner(onSignUp: _openSignup),
-                      ],
-                      const SizedBox(height: 20),
-                      _buildLookupCard(mobile),
-                      if (_error != null) ...[
-                        const SizedBox(height: 16),
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.red.shade50,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: Colors.red.shade200),
-                          ),
-                          child: Text(
-                            _error!,
-                            style: TextStyle(color: Colors.red.shade800),
-                          ),
-                        ),
-                      ],
-                      if (_hasResults) ...[
-                        const SizedBox(height: 24),
-                        _buildResultsTabs(),
-                      ],
-                      const SizedBox(height: 32),
-                    ],
-                  ),
-                ),
-              ),
+            child: CustomerAccountShell(
+              currentTab: CustomerPageTab.tracking,
+              trackingRoute: '/track-order',
+              body: body,
             ),
           ),
         ],
@@ -558,8 +566,8 @@ class _GuestInquiryResultCard extends StatelessWidget {
                   insetPadding: const EdgeInsets.all(16),
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(
-                      maxWidth: 560,
-                      maxHeight: 640,
+                      maxWidth: 720,
+                      maxHeight: 720,
                     ),
                     child: _InquiryDetailsPopup(inquiry: inquiry),
                   ),
@@ -831,10 +839,37 @@ class _InquiryDetailsPopup extends StatelessWidget {
 
   final Map<String, dynamic> inquiry;
 
-  @override
-  Widget build(BuildContext context) {
-    final title =
-        '${inquiry['eventTitle'] ?? inquiry['event_title'] ?? 'Catering inquiry'}';
+  String _formatStatus(String? status) {
+    if (status == null || status.trim().isEmpty) return '—';
+    return status.replaceAll('_', ' ').toUpperCase();
+  }
+
+  String _formatSchedule(dynamic raw) {
+    final slots = <dynamic>[];
+    if (raw is List) {
+      slots.addAll(raw);
+    } else if (raw is String && raw.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is List) slots.addAll(decoded);
+      } catch (_) {}
+    }
+    if (slots.isEmpty) return '—';
+    return slots
+        .map((slot) {
+          if (slot is! Map) return '';
+          final date = '${slot['date'] ?? ''}'.trim();
+          final start = '${slot['startTime'] ?? slot['start_time'] ?? ''}'.trim();
+          final end = '${slot['endTime'] ?? slot['end_time'] ?? ''}'.trim();
+          if (date.isEmpty) return '';
+          if (start.isEmpty && end.isEmpty) return date;
+          return '$date $start–$end'.trim();
+        })
+        .where((s) => s.isNotEmpty)
+        .join('\n');
+  }
+
+  List<String> _menuLines() {
     final menuRaw = inquiry['menu'] ?? inquiry['menuItems'] ?? inquiry['dishes'];
     final menu = <String>[];
     if (menuRaw is List) {
@@ -845,10 +880,63 @@ class _InquiryDetailsPopup extends StatelessWidget {
           final name =
               '${item['dishName'] ?? item['dish_name'] ?? item['name'] ?? ''}'
                   .trim();
-          if (name.isNotEmpty) menu.add(name);
+          final price = '${item['price'] ?? ''}'.trim();
+          if (name.isNotEmpty) {
+            menu.add(price.isNotEmpty ? '$name · PHP $price' : name);
+          }
         }
       }
     }
+    return menu;
+  }
+
+  Map<String, dynamic> _themeMap() {
+    final raw = inquiry['themeDesign'] ?? inquiry['theme_design'];
+    if (raw is Map) return Map<String, dynamic>.from(raw);
+    if (raw is String && raw.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map) return Map<String, dynamic>.from(decoded);
+      } catch (_) {}
+    }
+    return {};
+  }
+
+  List<MapEntry<String, String>> _themePreferenceRows(Map<String, dynamic> td) {
+    final rows = <MapEntry<String, String>>[];
+    void add(String label, dynamic value) {
+      if (value == null) return;
+      if (value is List) {
+        final joined = value
+            .map((e) => e.toString().trim())
+            .where((e) => e.isNotEmpty)
+            .join(', ');
+        if (joined.isNotEmpty) rows.add(MapEntry(label, joined));
+        return;
+      }
+      final text = value.toString().trim();
+      if (text.isNotEmpty) rows.add(MapEntry(label, text));
+    }
+
+    add('Style', td['style'] ?? td['macrinaTheme']);
+    add('Mood & lighting', td['mood']);
+    add('Color palette', td['colorPalette'] ?? td['macrinaColorPalette']);
+    add('Decor', td['decorElements'] ?? td['decor']);
+    add(
+      'Notes',
+      td['customerNote'] ?? td['note'] ?? td['customInstructions'],
+    );
+    return rows;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final title =
+        '${inquiry['eventTitle'] ?? inquiry['event_title'] ?? 'Catering inquiry'}';
+    final menu = _menuLines();
+    final theme = _themeMap();
+    final themePrefs = _themePreferenceRows(theme);
+    final wide = MediaQuery.sizeOf(context).width >= 700;
 
     return Material(
       color: Colors.white,
@@ -860,7 +948,10 @@ class _InquiryDetailsPopup extends StatelessWidget {
             child: ListTile(
               title: Text(
                 title,
-                style: const TextStyle(color: Colors.white),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
               trailing: IconButton(
                 icon: const Icon(Icons.close, color: Colors.white),
@@ -872,7 +963,58 @@ class _InquiryDetailsPopup extends StatelessWidget {
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                _row('Status', '${inquiry['status'] ?? '—'}'),
+                Wrap(
+                  spacing: 24,
+                  runSpacing: 8,
+                  children: [
+                    SizedBox(
+                      width: wide ? 220 : double.infinity,
+                      child: _row(
+                        'Status',
+                        _formatStatus('${inquiry['status'] ?? ''}'),
+                      ),
+                    ),
+                    SizedBox(
+                      width: wide ? 220 : double.infinity,
+                      child: _row(
+                        'Total cost',
+                        'PHP ${NumberFormatHelper.pesos(inquiry['totalCost'] ?? inquiry['total_cost'] ?? 0)}',
+                      ),
+                    ),
+                    SizedBox(
+                      width: wide ? 220 : double.infinity,
+                      child: _row(
+                        'Event type',
+                        '${inquiry['eventType'] ?? inquiry['event_type'] ?? '—'}',
+                      ),
+                    ),
+                    SizedBox(
+                      width: wide ? 220 : double.infinity,
+                      child: _row(
+                        'Guests',
+                        '${inquiry['guestCount'] ?? inquiry['guest_count'] ?? '—'}',
+                      ),
+                    ),
+                    SizedBox(
+                      width: wide ? 220 : double.infinity,
+                      child: _row(
+                        'Formality',
+                        '${inquiry['formalityLevel'] ?? inquiry['formality_level'] ?? '—'}',
+                      ),
+                    ),
+                    SizedBox(
+                      width: wide ? 220 : double.infinity,
+                      child: _row(
+                        'Created',
+                        '${inquiry['createdAt'] ?? inquiry['created_at'] ?? '—'}'
+                            .toString()
+                            .split('T')
+                            .first,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
                 _row(
                   'Type',
                   '${inquiry['orderType'] ?? inquiry['order_type'] ?? '—'}',
@@ -882,12 +1024,17 @@ class _InquiryDetailsPopup extends StatelessWidget {
                   '${inquiry['address'] ?? inquiry['venue'] ?? '—'}',
                 ),
                 _row(
-                  'Guests',
-                  '${inquiry['guestCount'] ?? inquiry['guest_count'] ?? '—'}',
+                  'Schedule',
+                  _formatSchedule(
+                    inquiry['scheduleSlots'] ?? inquiry['schedule_slots'],
+                  ),
                 ),
                 _row(
-                  'Total',
-                  'PHP ${NumberFormatHelper.pesos(inquiry['totalCost'] ?? inquiry['total_cost'] ?? 0)}',
+                  'Allergens',
+                  (() {
+                    final a = '${inquiry['allergens'] ?? ''}'.trim();
+                    return a.isEmpty ? '—' : a;
+                  })(),
                 ),
                 if (menu.isNotEmpty) ...[
                   const SizedBox(height: 12),
@@ -900,16 +1047,45 @@ class _InquiryDetailsPopup extends StatelessWidget {
                     (name) => Padding(
                       padding: const EdgeInsets.only(bottom: 6),
                       child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Icon(Icons.restaurant, size: 16),
-                          const SizedBox(width: 8),
+                          const Text('• '),
                           Expanded(child: Text(name)),
                         ],
                       ),
                     ),
                   ),
                 ],
+                if (themePrefs.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Event theme design',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 8),
+                  ...themePrefs.map(
+                    (row) => Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: _row(row.key, row.value),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                Text(
+                  'Sign in to My Caterings to follow up or manage this inquiry. Guests can view details only.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                ),
               ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: OutlinedButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Close'),
+              ),
             ),
           ),
         ],
@@ -924,13 +1100,18 @@ class _InquiryDetailsPopup extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 90,
+            width: 110,
             child: Text(
               label,
               style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
             ),
           ),
-          Expanded(child: Text(value)),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+          ),
         ],
       ),
     );

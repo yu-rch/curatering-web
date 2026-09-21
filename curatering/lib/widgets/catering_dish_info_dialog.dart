@@ -50,12 +50,21 @@ void showCateringDishInfoDialog(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              dish.name,
-              style: const TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w700,
-                height: 1.25,
+            SizedBox(
+              width: double.infinity,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  dish.name.toUpperCase(),
+                  maxLines: 1,
+                  softWrap: false,
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    height: 1.25,
+                  ),
+                ),
               ),
             ),
             const SizedBox(height: 16),
@@ -82,25 +91,25 @@ void showCateringDishInfoDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         child: ConstrainedBox(
           constraints: BoxConstraints(
-            maxWidth: wide ? 900 : 480,
-            maxHeight: wide ? 480 : 640,
+            maxWidth: wide ? 1100 : 520,
+            maxHeight: wide ? 520 : 640,
           ),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (wide)
                   SizedBox(
-                    height: 360,
+                    height: 400,
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         // Photo on the left
-                        Expanded(flex: 5, child: photo(height: 360)),
-                        const SizedBox(width: 24),
+                        Expanded(flex: 5, child: photo(height: 400)),
+                        const SizedBox(width: 28),
                         // Descriptions / info on the right
-                        Expanded(flex: 6, child: details),
+                        Expanded(flex: 7, child: details),
                       ],
                     ),
                   )

@@ -3,7 +3,6 @@
 import 'catering_pricing_store.dart';
 
 const kMobileUiScreenIds = <String>[
-  'guest_landing',
   'customer_dashboard',
   'restaurant_menu',
   'inquire_packages',
@@ -18,7 +17,6 @@ const kMobileUiScreenIds = <String>[
 ];
 
 const kMobileUiScreenLabels = <String, String>{
-  'guest_landing': 'Guest landing',
   'customer_dashboard': 'Customer dashboard',
   'restaurant_menu': 'Restaurant menu',
   'inquire_packages': 'Inquire · packages',
