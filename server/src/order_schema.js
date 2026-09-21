@@ -350,6 +350,7 @@ const EVENT_CATERING_COLUMN_DEFS = [
   ['address_lat', 'DOUBLE PRECISION'],
   ['address_lng', 'DOUBLE PRECISION'],
   ['seating_plan', "JSONB NOT NULL DEFAULT '{}'::jsonb"],
+  ['post_analysis', "JSONB NOT NULL DEFAULT '{}'::jsonb"],
   ['event_id', 'TEXT'],
   ['pax_buffer', 'INT DEFAULT 0'],
   ['estimated_cost', 'DECIMAL(10,2) DEFAULT 0.00'],

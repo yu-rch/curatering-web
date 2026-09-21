@@ -879,6 +879,15 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
           ),
           const SizedBox(height: 8),
 
+          TablePaginationBar(
+            currentPage: page,
+            totalItems: orders.length,
+            pageSize: _ordersPageSize,
+            onPageChanged: (next) =>
+                setState(() => _confirmationPage = next),
+          ),
+          const SizedBox(height: 8),
+
           // Orders Table
           Container(
             decoration: BoxDecoration(
@@ -919,13 +928,6 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                 }),
               ],
             ),
-          ),
-          TablePaginationBar(
-            currentPage: page,
-            totalItems: orders.length,
-            pageSize: _ordersPageSize,
-            onPageChanged: (next) =>
-                setState(() => _confirmationPage = next),
           ),
           const SizedBox(height: 8),
         ],
@@ -1018,6 +1020,13 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
               ],
             ),
             const SizedBox(height: 8),
+            TablePaginationBar(
+              currentPage: page,
+              totalItems: orders.length,
+              pageSize: _ordersPageSize,
+              onPageChanged: (next) => setState(() => _processingPage = next),
+            ),
+            const SizedBox(height: 8),
             Container(
               decoration: BoxDecoration(
                 color: AntdTokens.cardBg,
@@ -1065,12 +1074,6 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                   }),
                 ],
               ),
-            ),
-            TablePaginationBar(
-              currentPage: page,
-              totalItems: orders.length,
-              pageSize: _ordersPageSize,
-              onPageChanged: (next) => setState(() => _processingPage = next),
             ),
             const SizedBox(height: 8),
           ],
@@ -1180,6 +1183,13 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
               ],
             ),
             const SizedBox(height: 8),
+            TablePaginationBar(
+              currentPage: page,
+              totalItems: orders.length,
+              pageSize: _ordersPageSize,
+              onPageChanged: (next) => setState(() => _completedPage = next),
+            ),
+            const SizedBox(height: 8),
             Container(
               decoration: BoxDecoration(
                 color: AntdTokens.cardBg,
@@ -1227,12 +1237,6 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                   }),
                 ],
               ),
-            ),
-            TablePaginationBar(
-              currentPage: page,
-              totalItems: orders.length,
-              pageSize: _ordersPageSize,
-              onPageChanged: (next) => setState(() => _completedPage = next),
             ),
             const SizedBox(height: 8),
           ],

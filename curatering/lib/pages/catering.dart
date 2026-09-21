@@ -4295,32 +4295,38 @@ class _ManageEventsState extends State<ManageEvents>
         });
       }
 
-      await _refreshOrders();
-      final selectedId = _selectedManageEventsOrder?.id ?? order.id;
-      EventOrderDto? refreshed;
-      for (final o in [
-        ..._onlineInquiryOrders,
-        ..._processingOrdersDto,
-        ..._postAnalysisOrdersDto,
-        ..._completedOrdersDto,
-        ..._cancelledOrdersDto,
-      ]) {
-        if (o.id == selectedId) {
-          refreshed = o;
-          break;
+      // Refresh is best-effort — payment already succeeded.
+      try {
+        await _refreshOrders();
+        final selectedId = _selectedManageEventsOrder?.id ?? order.id;
+        EventOrderDto? refreshed;
+        for (final o in [
+          ..._onlineInquiryOrders,
+          ..._processingOrdersDto,
+          ..._postAnalysisOrdersDto,
+          ..._completedOrdersDto,
+          ..._cancelledOrdersDto,
+        ]) {
+          if (o.id == selectedId) {
+            refreshed = o;
+            break;
+          }
         }
-      }
-      if (refreshed != null) {
-        await _selectManageEventsOrder(refreshed);
-      } else if (_selectedManageEventsOrder != null) {
-        await _selectManageEventsOrder(_selectedManageEventsOrder!);
-      }
+        if (refreshed != null) {
+          await _selectManageEventsOrder(refreshed);
+        } else if (_selectedManageEventsOrder != null) {
+          await _selectManageEventsOrder(_selectedManageEventsOrder!);
+        }
+      } catch (_) {}
       return true;
     } catch (e) {
       if (mounted) {
+        final message = e is ApiError && e.message.trim().isNotEmpty
+            ? e.message.trim()
+            : 'Failed to confirm payment.';
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to confirm payment.'),
+          SnackBar(
+            content: Text(message),
             backgroundColor: Colors.red,
           ),
         );

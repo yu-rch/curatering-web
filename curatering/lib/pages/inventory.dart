@@ -932,6 +932,8 @@ class _InventoryState extends State<Inventory> {
             maxTableHeight: MediaQuery.sizeOf(context).height * 0.62,
             pdfExcludedColumnIndexes: const {8},
             fullWidth: true,
+            forceVerticalScroll: true,
+            minTableWidth: 1100,
             headingRowHeight: 42,
             dataRowMinHeight: 44,
             dataRowMaxHeight: 56,

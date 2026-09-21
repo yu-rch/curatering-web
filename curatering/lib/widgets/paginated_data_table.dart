@@ -267,11 +267,16 @@ class _PagedDataTableState extends State<PagedDataTable> {
         return ColoredBox(
           color: AntdTokens.cardBg,
           child: ClipRect(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minWidth: minTableWidth),
-                child: table,
+            child: Scrollbar(
+              thumbVisibility: true,
+              notificationPredicate: (notification) =>
+                  notification.metrics.axis == Axis.horizontal,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minWidth: minTableWidth),
+                  child: table,
+                ),
               ),
             ),
           ),

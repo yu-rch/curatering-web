@@ -1069,6 +1069,64 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
               ],
             ),
           ),
+          if (cartItem.selectedSauce?.trim().isNotEmpty == true ||
+              cartItem.addOns.isNotEmpty) ...[
+            Divider(height: 1, color: Colors.grey.shade200),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Add-on qty',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.remove_circle_outline, size: 22),
+                    onPressed: () {
+                      final current = cartItem.addOnQuantity > 0
+                          ? cartItem.addOnQuantity
+                          : (cartItem.addOns.isNotEmpty
+                              ? cartItem.addOns.length
+                              : 1);
+                      CartStore.instance.updateAddOnQuantity(
+                        cartItem,
+                        current - 1,
+                      );
+                    },
+                  ),
+                  Text(
+                    '${cartItem.addOnQuantity > 0 ? cartItem.addOnQuantity : (cartItem.addOns.isNotEmpty ? cartItem.addOns.length : 1)}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15,
+                    ),
+                  ),
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.add_circle_outline, size: 22),
+                    onPressed: () {
+                      final current = cartItem.addOnQuantity > 0
+                          ? cartItem.addOnQuantity
+                          : (cartItem.addOns.isNotEmpty
+                              ? cartItem.addOns.length
+                              : 1);
+                      CartStore.instance.updateAddOnQuantity(
+                        cartItem,
+                        current + 1,
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1095,10 +1153,11 @@ class _CustomerWebsiteScreenState extends State<CustomerWebsiteScreen> {
     }
 
     if (cartItem.selectedSauce?.trim().isNotEmpty == true) {
+      final qty = cartItem.addOnQuantity > 0 ? cartItem.addOnQuantity : 1;
       addLine(
         compact
-            ? '${cartItem.selectedSauce!.toUpperCase()} × ${cartItem.addOnQuantity}'
-            : 'Sauce: ${cartItem.selectedSauce} × ${cartItem.addOnQuantity}',
+            ? '${cartItem.selectedSauce!.toUpperCase()} × $qty'
+            : 'Add-on: ${cartItem.selectedSauce} × $qty · ${qty <= 1 ? 'included' : '${qty - 1} extra'}',
       );
     }
     if (cartItem.addonExtraSubtotal > 0) {

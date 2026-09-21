@@ -501,6 +501,8 @@ class _TransactionsState extends State<Transactions> {
                           child: PagedDataTable(
                             title: 'Completed Order History',
                             fullWidth: true,
+                            forceVerticalScroll: true,
+                            minTableWidth: 1200,
                             columns: const [
                               DataColumn(label: Text('Order No.')),
                               DataColumn(label: Text('Customer ID')),

@@ -934,7 +934,14 @@ function getFeedbackAnalysisInput(body) {
 async function ensureFeedbackAnalyticsSchema() {
   if (!feedbackAnalyticsSchemaPromise) {
     feedbackAnalyticsSchemaPromise = (async () => {
-      await pool.query(`CREATE EXTENSION IF NOT EXISTS pgcrypto`);
+      try {
+        await pool.query(`CREATE EXTENSION IF NOT EXISTS pgcrypto`);
+      } catch (err) {
+        console.warn(
+          "[feedback analytics] pgcrypto extension skipped:",
+          err?.message || err,
+        );
+      }
       await pool.query(`
         CREATE TABLE IF NOT EXISTS feedback (
           id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -6074,8 +6081,22 @@ app.get(
   async (req, res) => {
     try {
       const roCols = await ensureRestaurantOrdersCanonicalColumns();
-      await ensureFeedbackAnalyticsSchema();
-      await ensureCateringEventOrdersCanonicalColumns();
+      try {
+        await ensureFeedbackAnalyticsSchema();
+      } catch (err) {
+        console.warn(
+          "[customer-feedback] schema ensure skipped:",
+          err?.message || err,
+        );
+      }
+      try {
+        await ensureCateringEventOrdersCanonicalColumns();
+      } catch (err) {
+        console.warn(
+          "[customer-feedback] catering schema ensure skipped:",
+          err?.message || err,
+        );
+      }
       const orderIdSql = restaurantOrderIdExpr(roCols);
       const { search } = req.query || {};
       const params = [];
@@ -6090,22 +6111,32 @@ app.get(
         params.push(`%${search}%`);
       }
 
-      const result = await pool.query(
-        `SELECT
-          ro.id,
-          (${orderIdSql}) AS "orderNo",
-          COALESCE(ca.full_name, ro.full_name, 'Guest') AS "customerName",
-          COALESCE(ca.email, ro.user_email, '') AS "customerEmail",
-          ro.feedback_stars AS stars,
-          COALESCE(ro.feedback_remarks, '') AS remarks,
-          ro.feedback_submitted_at AS "submittedAt"
-        FROM restaurant_orders ro
-        LEFT JOIN customer_accounts ca ON ${customerAccountIdJoinSql('ca', 'ro')}
-        ${whereSql}
-        ORDER BY ro.feedback_submitted_at DESC NULLS LAST, ro.updated_at DESC
-        LIMIT 1000`,
-        params,
-      );
+      let restaurantRows = [];
+      try {
+        const result = await pool.query(
+          `SELECT
+            ro.id,
+            (${orderIdSql}) AS "orderNo",
+            COALESCE(ca.full_name, ro.full_name, 'Guest') AS "customerName",
+            COALESCE(ca.email, ro.user_email, '') AS "customerEmail",
+            ro.feedback_stars AS stars,
+            COALESCE(ro.feedback_remarks, '') AS remarks,
+            ro.feedback_submitted_at AS "submittedAt"
+          FROM restaurant_orders ro
+          LEFT JOIN customer_accounts ca ON ${customerAccountIdJoinSql('ca', 'ro')}
+          ${whereSql}
+          ORDER BY ro.feedback_submitted_at DESC NULLS LAST, ro.updated_at DESC
+          LIMIT 1000`,
+          params,
+        );
+        restaurantRows = result.rows;
+      } catch (err) {
+        console.warn(
+          "[customer-feedback] restaurant query failed:",
+          err?.message || err,
+        );
+      }
+
       const cateringParams = [];
       let cateringWhereSql = "feedback_stars IS NOT NULL";
       if (search) {
@@ -6118,34 +6149,46 @@ app.get(
         )`;
         cateringParams.push(`%${search}%`);
       }
-      const cateringFeedback = await pool.query(
-        `SELECT
-          id,
-          COALESCE(NULLIF(catering_id, ''), id::text) AS "orderNo",
-          COALESCE(customer_name, contact_person, 'Guest') AS "customerName",
-          COALESCE(email_address, '') AS "customerEmail",
-          feedback_stars AS stars,
-          COALESCE(feedback_remarks, '') AS remarks,
-          feedback_submitted_at AS "submittedAt",
-          'catering' AS source
-        FROM catering_orders
-        WHERE ${cateringWhereSql}
-        UNION ALL
-        SELECT
-          id,
-          COALESCE(NULLIF(catering_id, ''), id::text) AS "orderNo",
-          COALESCE(customer_name, contact_person, 'Guest') AS "customerName",
-          COALESCE(email_address, '') AS "customerEmail",
-          feedback_stars AS stars,
-          COALESCE(feedback_remarks, '') AS remarks,
-          feedback_submitted_at AS "submittedAt",
-          'catering_event' AS source
-        FROM event_orders
-        WHERE ${cateringWhereSql}
-        ORDER BY "submittedAt" DESC NULLS LAST
-        LIMIT 1000`,
-        cateringParams,
-      );
+      let cateringRows = [];
+      try {
+        const cateringFeedback = await pool.query(
+          `SELECT * FROM (
+            SELECT
+              id::text AS id,
+              COALESCE(NULLIF(catering_id, ''), id::text) AS "orderNo",
+              COALESCE(customer_name, contact_person, 'Guest') AS "customerName",
+              COALESCE(email_address, '') AS "customerEmail",
+              feedback_stars AS stars,
+              COALESCE(feedback_remarks, '') AS remarks,
+              feedback_submitted_at AS "submittedAt",
+              'catering' AS source
+            FROM catering_orders
+            WHERE ${cateringWhereSql}
+            UNION ALL
+            SELECT
+              id::text AS id,
+              COALESCE(NULLIF(catering_id, ''), id::text) AS "orderNo",
+              COALESCE(customer_name, contact_person, 'Guest') AS "customerName",
+              COALESCE(email_address, '') AS "customerEmail",
+              feedback_stars AS stars,
+              COALESCE(feedback_remarks, '') AS remarks,
+              feedback_submitted_at AS "submittedAt",
+              'catering_event' AS source
+            FROM event_orders
+            WHERE ${cateringWhereSql}
+          ) feedback_rows
+          ORDER BY "submittedAt" DESC NULLS LAST
+          LIMIT 1000`,
+          cateringParams,
+        );
+        cateringRows = cateringFeedback.rows;
+      } catch (err) {
+        console.warn(
+          "[customer-feedback] catering query failed:",
+          err?.message || err,
+        );
+      }
+
       const genericParams = [];
       let genericWhereSql = "WHERE message IS NOT NULL";
       if (search) {
@@ -6156,25 +6199,34 @@ app.get(
         )`;
         genericParams.push(`%${search}%`);
       }
-      const generic = await pool.query(
-        `SELECT
-          id,
-          COALESCE(customer_name, 'Website visitor') AS "customerName",
-          COALESCE(customer_email, '') AS "customerEmail",
-          COALESCE(rating, 0) AS stars,
-          COALESCE(message, '') AS remarks,
-          created_at AS "submittedAt",
-          COALESCE(source, 'web') AS source
-        FROM feedback
-        ${genericWhereSql}
-        ORDER BY created_at DESC
-        LIMIT 1000`,
-        genericParams,
-      );
+      let genericRows = [];
+      try {
+        const generic = await pool.query(
+          `SELECT
+            id,
+            COALESCE(customer_name, 'Website visitor') AS "customerName",
+            COALESCE(customer_email, '') AS "customerEmail",
+            COALESCE(rating, 0) AS stars,
+            COALESCE(message, '') AS remarks,
+            created_at AS "submittedAt",
+            COALESCE(source, 'web') AS source
+          FROM feedback
+          ${genericWhereSql}
+          ORDER BY created_at DESC
+          LIMIT 1000`,
+          genericParams,
+        );
+        genericRows = generic.rows;
+      } catch (err) {
+        console.warn(
+          "[customer-feedback] contact-us query failed:",
+          err?.message || err,
+        );
+      }
 
       return res.json({
         feedback: [
-          ...result.rows.map((r) => ({
+          ...restaurantRows.map((r) => ({
             id: String(r.id),
             orderNo: r.orderNo != null ? String(r.orderNo) : "",
             customerName: r.customerName || "Guest",
@@ -6183,7 +6235,7 @@ app.get(
             remarks: r.remarks || "",
             submittedAt: r.submittedAt ? r.submittedAt.toISOString() : null,
           })),
-          ...cateringFeedback.rows.map((r) => ({
+          ...cateringRows.map((r) => ({
             id: String(r.id),
             orderNo: r.orderNo != null ? `Catering ${String(r.orderNo)}` : "Catering",
             customerName: r.customerName || "Guest",
@@ -6193,7 +6245,7 @@ app.get(
             submittedAt: r.submittedAt ? r.submittedAt.toISOString() : null,
             source: r.source || "catering",
           })),
-          ...generic.rows.map((r) => ({
+          ...genericRows.map((r) => ({
             id: String(r.id),
             orderNo: "Contact Us",
             customerName: r.customerName || "Website visitor",
@@ -6207,7 +6259,10 @@ app.get(
       });
     } catch (error) {
       console.error("Error listing customer feedback:", error);
-      return res.status(500).json({ error: "Failed to load customer feedback" });
+      return res.status(500).json({
+        error: "Failed to load customer feedback",
+        details: error?.message || String(error),
+      });
     }
   },
 );
@@ -9934,37 +9989,68 @@ async function registerRoutesAfterDbInit() {
         } else if (status === 'paid' && paymentType === 'full_payment') {
           updateQuery += `,
             status = CASE
+              WHEN status IN ('for_full_payment', 'for_post_analysis') THEN 'completed'
               WHEN status IN ('on_going', 'ongoing', 'for_processing') THEN 'for_full_payment'
               ELSE status
             END`;
         }
 
+        const tableCols = await getTableColumnNames(tableName);
+
         if (referenceNumber && referenceNumber.trim()) {
           const refColumn = paymentType === 'down_payment' ? 'down_payment_reference' : 'full_payment_reference';
-          updateQuery += `, ${refColumn} = $${queryParams.length + 1}`;
-          queryParams.push(cleanReference);
+          if (tableCols.has(refColumn)) {
+            updateQuery += `, ${refColumn} = $${queryParams.length + 1}`;
+            queryParams.push(cleanReference);
+          }
         }
 
-        if (paymentMethodRaw) {
+        if (paymentMethodRaw && tableCols.has('payment_method')) {
           updateQuery += `, payment_method = $${queryParams.length + 1}`;
           queryParams.push(paymentMethodRaw);
         }
 
         const amountNum = Number(amount);
-        if (Number.isFinite(amountNum) && amountNum >= 0) {
+        if (
+          Number.isFinite(amountNum) &&
+          amountNum >= 0 &&
+          tableCols.has(amountColumn)
+        ) {
           updateQuery += `, ${amountColumn} = $${queryParams.length + 1}`;
           queryParams.push(amountNum);
         }
 
         if (paymentProofRaw) {
           // Persist proof into post_analysis so staff UIs can show it without a dedicated column.
-          const proofKey =
-            paymentType === "down_payment"
-              ? "down_payment_proof"
-              : "full_payment_proof";
-          updateQuery += `,
-            post_analysis = COALESCE(post_analysis, '{}'::jsonb) || jsonb_build_object($${queryParams.length + 1}::text, $${queryParams.length + 2}::text)`;
-          queryParams.push(proofKey, paymentProofRaw);
+          if (!tableCols.has('post_analysis')) {
+            try {
+              await pool.query(
+                `ALTER TABLE ${tableName}
+                 ADD COLUMN IF NOT EXISTS post_analysis JSONB NOT NULL DEFAULT '{}'::jsonb`,
+              );
+              tableCols.add('post_analysis');
+            } catch (err) {
+              console.warn(
+                `[payment-status] ${tableName}.post_analysis:`,
+                err?.message || err,
+              );
+            }
+          }
+          if (tableCols.has('post_analysis')) {
+            const proofKey =
+              paymentType === "down_payment"
+                ? "down_payment_proof"
+                : "full_payment_proof";
+            updateQuery += `,
+              post_analysis = COALESCE(post_analysis, '{}'::jsonb) || jsonb_build_object($${queryParams.length + 1}::text, $${queryParams.length + 2}::text)`;
+            queryParams.push(proofKey, paymentProofRaw);
+          }
+        }
+
+        if (!tableCols.has(statusColumn)) {
+          return res.status(500).json({
+            error: `Missing column ${statusColumn} on ${tableName}`,
+          });
         }
 
         updateQuery += ` WHERE id = $${queryParams.length + 1} RETURNING *`;
@@ -9975,7 +10061,10 @@ async function registerRoutesAfterDbInit() {
         res.json({ ok: true, order: result.rows[0] });
       } catch (error) {
         console.error('Error updating payment status:', error);
-        res.status(500).json({ error: 'Failed to update payment status' });
+        res.status(500).json({
+          error: 'Failed to update payment status',
+          details: error?.message || String(error),
+        });
       }
     });
 

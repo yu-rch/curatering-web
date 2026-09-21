@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../models/customer_feedback.dart';
+import '../services/api_client.dart';
 import '../services/super_admin_api.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/antd_buttons.dart';
@@ -52,8 +53,13 @@ class _CustomerFeedbackPageState extends State<CustomerFeedbackPage> {
         search: _searchQuery.trim().isEmpty ? null : _searchQuery.trim(),
       );
       if (mounted) setState(() => _items = data);
-    } catch (_) {
-      if (mounted) setState(() => _error = 'Failed to load customer feedback.');
+    } catch (e) {
+      if (mounted) {
+        final message = e is ApiError && e.message.trim().isNotEmpty
+            ? e.message.trim()
+            : 'Failed to load customer feedback.';
+        setState(() => _error = message);
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }

@@ -835,6 +835,20 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
     final mealLabel =
         mealRaw.isEmpty ? 'Item' : mealTypeDisplayLabel(mealRaw);
     final imageB64 = _trayDishImageBase64(item);
+    final hasAddOn =
+        item.selectedSauce?.trim().isNotEmpty == true || item.addOns.isNotEmpty;
+    final addOnQty =
+        item.addOnQuantity > 0
+            ? item.addOnQuantity
+            : (item.addOns.isNotEmpty ? item.addOns.length : 1);
+    final addOnLabel =
+        item.selectedSauce?.trim().isNotEmpty == true
+            ? item.selectedSauce!.trim()
+            : item.addOns.join(', ');
+    final addOnLine =
+        hasAddOn
+            ? 'Add-on: $addOnLabel × $addOnQty · ${addOnQty <= 1 ? 'included' : '${addOnQty - 1} extra'} · ₱${item.lineSubtotal.toStringAsFixed(2)}'
+            : null;
 
     return InkWell(
       onTap: () => _showCustomizeCartItem(item),
@@ -898,25 +912,20 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '$mealLabel ×${item.quantity} @ ₱${unitPrice.toStringAsFixed(2)} · ₱${item.lineSubtotal.toStringAsFixed(2)}',
+                          '$mealLabel ×${item.quantity} @ ₱${unitPrice.toStringAsFixed(2)}',
                           style: TextStyle(
                             fontSize: 12,
                             color: Colors.grey.shade600,
                             height: 1.3,
                           ),
                         ),
-                        if (item.selectedSauce?.trim().isNotEmpty == true ||
-                            item.addOns.isNotEmpty ||
+                        if (addOnLine != null ||
                             item.specialInstructions?.trim().isNotEmpty ==
                                 true) ...[
                           const SizedBox(height: 4),
                           Text(
                             [
-                              if (item.addOns.isNotEmpty)
-                                'Add-ons: ${item.addOns.join(', ')}'
-                              else if (item.selectedSauce?.trim().isNotEmpty ==
-                                  true)
-                                'Sauce: ${item.selectedSauce}',
+                              if (addOnLine != null) addOnLine,
                               if (item.addonExtraSubtotal > 0)
                                 'Extra add-on fee: ₱${item.addonExtraSubtotal.toStringAsFixed(2)}',
                               if (item.specialInstructions?.trim().isNotEmpty ==
@@ -988,6 +997,67 @@ class _RestaurantOrderPageState extends State<RestaurantOrderPage> {
                 ],
               ),
             ),
+            if (hasAddOn) ...[
+              Divider(height: 1, color: Colors.grey.shade200),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Add-on qty',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(
+                        Icons.remove_circle_outline,
+                        size: 22,
+                        color: Colors.grey.shade800,
+                      ),
+                      onPressed: () => CartStore.instance.updateAddOnQuantity(
+                        item,
+                        addOnQty - 1,
+                      ),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 36,
+                        minHeight: 36,
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      child: Text(
+                        '$addOnQty',
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(
+                        Icons.add_circle_outline,
+                        size: 22,
+                        color: Colors.grey.shade800,
+                      ),
+                      onPressed: () => CartStore.instance.updateAddOnQuantity(
+                        item,
+                        addOnQty + 1,
+                      ),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 36,
+                        minHeight: 36,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
       ),

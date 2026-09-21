@@ -1938,6 +1938,8 @@ class _MenuState extends State<Menu> {
         title: isCatering ? 'Catering Menu Dishes' : 'Restaurant Menu Dishes',
         enableSearch: false,
         fullWidth: true,
+        forceVerticalScroll: true,
+        minTableWidth: isCatering ? 900 : 1100,
         maxTableHeight: MediaQuery.sizeOf(context).height,
         dataRowMinHeight: 54,
         dataRowMaxHeight: 72,

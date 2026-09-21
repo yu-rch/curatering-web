@@ -372,6 +372,42 @@ class CartStore extends ChangeNotifier {
     );
   }
 
+  /// Updates only add-on / sauce portion count without wiping other fields.
+  void updateAddOnQuantity(CartItem target, int newQuantity) {
+    final existingIndex = _items.indexWhere((item) => identical(item, target));
+    if (existingIndex < 0) return;
+    final item = _items[existingIndex];
+    final hasAddOn =
+        item.selectedSauce?.trim().isNotEmpty == true || item.addOns.isNotEmpty;
+    if (!hasAddOn && newQuantity <= 0) return;
+
+    final previousItem = item.snapshot();
+    if (newQuantity <= 0) {
+      item.selectedSauce = null;
+      item.addOnQuantity = 0;
+      item.addOns = const [];
+    } else {
+      final sauce =
+          item.selectedSauce?.trim().isNotEmpty == true
+              ? item.selectedSauce!.trim()
+              : (item.addOns.isNotEmpty ? item.addOns.first.trim() : null);
+      if (sauce == null || sauce.isEmpty) return;
+      // Prefer sauce + quantity pricing so steppers control portions.
+      item.selectedSauce = sauce;
+      item.addOnQuantity = newQuantity;
+      item.addOns = const [];
+    }
+    final updatedItem = item.snapshot();
+    _saveCart();
+    notifyListeners();
+    unawaited(
+      CartSyncService.instance.updateItemOnServer(
+        previousItem: previousItem,
+        updatedItem: updatedItem,
+      ),
+    );
+  }
+
   void clearCart({bool skipServerSync = false}) {
     _items.clear();
     _saveCart();
