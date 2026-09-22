@@ -17,6 +17,31 @@ export function isNonEmptyWebsiteContent(content) {
   );
 }
 
+/** Strip removed mobile CMS screens so the app never renders the old chooser home. */
+export function sanitizeWebsiteMobileUi(content) {
+  if (!isNonEmptyWebsiteContent(content)) return content;
+  const mobileUi = content.mobileUi;
+  if (!mobileUi || typeof mobileUi !== "object" || Array.isArray(mobileUi)) {
+    return content;
+  }
+  const screens = mobileUi.screens;
+  if (!screens || typeof screens !== "object" || Array.isArray(screens)) {
+    return content;
+  }
+  if (!Object.prototype.hasOwnProperty.call(screens, "guest_landing")) {
+    return content;
+  }
+  const nextScreens = { ...screens };
+  delete nextScreens.guest_landing;
+  return {
+    ...content,
+    mobileUi: {
+      ...mobileUi,
+      screens: nextScreens,
+    },
+  };
+}
+
 export async function ensureWebsiteCmsSchema(pool) {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS website_content (
@@ -279,6 +304,7 @@ export function createWebsiteCmsHandlers({
     if (!isNonEmptyWebsiteContent(content)) {
       throw new Error("website content must be a non-empty object");
     }
+    content = sanitizeWebsiteMobileUi(content);
     await pool.query(
       `
       INSERT INTO website_content (id, content, draft_content, created_at, updated_at, published_at, published_by, draft_updated_at)
@@ -318,6 +344,7 @@ export function createWebsiteCmsHandlers({
     if (!isNonEmptyWebsiteContent(content)) {
       throw new Error("website content must be a non-empty object");
     }
+    content = sanitizeWebsiteMobileUi(content);
     await pool.query(
       `
       INSERT INTO website_content (id, content, draft_content, created_at, updated_at, draft_updated_at)
@@ -348,7 +375,9 @@ export function createWebsiteCmsHandlers({
   async function readPublished() {
     await migrateWebsiteContentIfNeeded();
     const row = await getCanonicalRow();
-    if (row && isNonEmptyWebsiteContent(row.content)) return row.content;
+    if (row && isNonEmptyWebsiteContent(row.content)) {
+      return sanitizeWebsiteMobileUi(row.content);
+    }
     return {};
   }
 
@@ -358,7 +387,7 @@ export function createWebsiteCmsHandlers({
     const row = await getCanonicalRow();
     if (row && isNonEmptyWebsiteContent(row.draft_content)) {
       return {
-        content: row.draft_content,
+        content: sanitizeWebsiteMobileUi(row.draft_content),
         draftUpdatedAt: row.draft_updated_at,
         publishedAt: row.published_at,
         publishedBy: row.published_by,
@@ -366,7 +395,7 @@ export function createWebsiteCmsHandlers({
     }
     if (row && isNonEmptyWebsiteContent(row.content)) {
       return {
-        content: row.content,
+        content: sanitizeWebsiteMobileUi(row.content),
         draftUpdatedAt: row.draft_updated_at || row.updated_at,
         publishedAt: row.published_at,
         publishedBy: row.published_by,

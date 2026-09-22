@@ -332,8 +332,10 @@ class MobileUiConfig {
   Map<String, dynamic> toJson() => {
         'version': version,
         'brand': brand.toJson(),
+        // Only known screens — never re-publish removed screens like guest_landing.
         'screens': {
-          for (final e in screens.entries) e.key: e.value.toJson(),
+          for (final id in kMobileUiScreenIds)
+            id: (screens[id] ?? MobileUiScreen(id: id)).toJson(),
         },
       };
 
@@ -366,30 +368,11 @@ class MobileUiConfig {
 MobileUiConfig defaultMobileUiConfig() {
   return MobileUiConfig(
     screens: {
-      'guest_landing': MobileUiScreen(
-        id: 'guest_landing',
-        blocks: [
-          MobileUiBlock(id: 'gl_hero', type: 'hero', title: "Macrina's Kitchen", body: 'Choose how you would like to continue.'),
-          MobileUiBlock.create('tile_grid'),
-          MobileUiBlock.create('nav_tabs'),
-        ],
-      ),
+      // guest_landing removed — mobile uses bottom nav; do not show a chooser home.
       'customer_dashboard': MobileUiScreen(
         id: 'customer_dashboard',
         blocks: [
-          MobileUiBlock(id: 'cd_hero', type: 'hero', title: 'What would you like to do?', body: ''),
-          MobileUiBlock(
-            id: 'cd_tiles',
-            type: 'tile_grid',
-            tiles: [
-              MobileUiTile(id: 'a', title: "Macrina's Kitchen", subtitle: 'Order Now', route: 'menu'),
-              MobileUiTile(id: 'b', title: "Macrina's Catering", subtitle: 'Inquire now', route: 'inquire'),
-              MobileUiTile(id: 'c', title: 'Your Tray', subtitle: '', route: 'tray'),
-              MobileUiTile(id: 'd', title: 'My Orders', subtitle: '', route: 'orders'),
-              MobileUiTile(id: 'e', title: 'My Catering Inquiries', subtitle: '', route: 'inquiries'),
-              MobileUiTile(id: 'f', title: 'My Profile', subtitle: '', route: 'settings'),
-            ],
-          ),
+          MobileUiBlock(id: 'cd_slot', type: 'native_slot', slot: 'menu_body', title: 'Menu'),
         ],
       ),
       'restaurant_menu': MobileUiScreen(
