@@ -371,20 +371,27 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
     return _normalizeStatus('${order['status'] ?? ''}');
   }
 
-  /// Follow-up only after staff acceptance; never for cancelled / unaccepted.
-  bool _wasOrderAccepted(Map<String, dynamic> order) {
-    final status = _normalizeStatus(_displayStatusFor(order));
-    return status == 'in_preparation' ||
-        status == 'out_for_delivery' ||
-        status == 'delivered';
+  bool _isClosedOrderStatus(String status) {
+    final s = _normalizeStatus(status);
+    return s == 'delivered' ||
+        s == 'cancelled' ||
+        s.contains('deliver') ||
+        s.contains('complete') ||
+        s.contains('cancel');
   }
 
   bool _canShowFollowUp(Map<String, dynamic> order) {
-    final displayStatus = _displayStatusFor(order);
-    final status = _normalizeStatus(displayStatus);
-    if (status == 'cancelled' || status == 'delivered') return false;
-    if (!_wasOrderAccepted(order)) return false;
-    return _isActiveOrder(displayStatus);
+    // Hide for any completed/delivered/cancelled signal on the order.
+    final signals = <String>[
+      _displayStatusFor(order),
+      '${order['order_status'] ?? ''}',
+      '${order['status'] ?? ''}',
+      '${order['display_status'] ?? ''}',
+    ];
+    if (signals.any(_isClosedOrderStatus)) return false;
+
+    final status = _normalizeStatus(_displayStatusFor(order));
+    return status == 'in_preparation' || status == 'out_for_delivery';
   }
 
   void _applyUpdatedOrder(dynamic rawUpdated) {
@@ -1007,24 +1014,28 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
   }
 
   bool _isActiveOrder(dynamic status) {
-    final s = status.toString().toLowerCase();
+    final s = _normalizeStatus(status.toString());
     return s != 'delivered' && s != 'cancelled';
   }
 
   bool _hasFeedbackSubmitted(Map<String, dynamic> order) {
-    return order['feedback_submitted'] == true ||
-        order['feedbackSubmitted'] == true ||
-        order['feedback_stars'] != null ||
-        order['feedbackStars'] != null ||
-        order['feedback_submitted_at'] != null ||
-        order['feedbackSubmittedAt'] != null;
+    if (order['feedback_submitted'] == true ||
+        order['feedbackSubmitted'] == true) {
+      return true;
+    }
+    if (order['feedback_submitted_at'] != null ||
+        order['feedbackSubmittedAt'] != null) {
+      return true;
+    }
+    final starsRaw = order['feedback_stars'] ?? order['feedbackStars'];
+    if (starsRaw == null) return false;
+    if (starsRaw is num) return starsRaw >= 1;
+    final parsed = num.tryParse(starsRaw.toString().trim());
+    return parsed != null && parsed >= 1;
   }
 
   bool _canReviewRestaurantOrder(Map<String, dynamic> order) {
-    final status =
-        (order['status'] ?? order['order_status'] ?? '')
-            .toString()
-            .toLowerCase();
+    final status = _normalizeStatus(_displayStatusFor(order));
     return status == 'delivered' && !_hasFeedbackSubmitted(order);
   }
 

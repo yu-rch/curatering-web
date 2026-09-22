@@ -293,17 +293,16 @@ class _MyOrderTrackingPageState extends State<MyOrderTrackingPage> {
     return 'Awaiting Payment Confirmation';
   }
 
-  bool _wasOrderAccepted(Map<String, dynamic> order) {
-    final status = _orderStatusFor(order);
-    return status == 'in_preparation' ||
-        status == 'out_for_delivery' ||
-        status == 'delivered';
-  }
-
   bool _canShowFollowUp(Map<String, dynamic> order) {
     final status = _orderStatusFor(order);
-    if (status == 'cancelled' || status == 'delivered') return false;
-    return _wasOrderAccepted(order);
+    if (status == 'cancelled' ||
+        status == 'delivered' ||
+        status.contains('deliver') ||
+        status.contains('complete') ||
+        status.contains('cancel')) {
+      return false;
+    }
+    return status == 'in_preparation' || status == 'out_for_delivery';
   }
 
   Color _getStatusColor(String status) {

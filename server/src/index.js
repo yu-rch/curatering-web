@@ -11526,13 +11526,47 @@ async function registerRoutesAfterDbInit() {
           raw,
         );
       if (isUuid) {
-        return { sql: `id = $${paramIndex}::uuid`, value: raw };
+        // id::text works whether the column is UUID or TEXT.
+        return { sql: `id::text = $${paramIndex}`, value: raw };
       }
       const roCols = await ensureRestaurantOrdersCanonicalColumns();
       return {
         sql: restaurantOrderLookupWhereSql(roCols, paramIndex),
         value: raw,
       };
+    }
+
+    /** Ownership for restaurant orders: JWT id, resolved customer_id, or matching email. */
+    async function customerOwnsRestaurantOrder(order, tokenCustomerId) {
+      if (!tokenCustomerId) return false;
+      const tokenId = String(tokenCustomerId).trim();
+      if (!tokenId) return false;
+      const resolvedId = await resolveCustomerAccountCustomerId(tokenId);
+      const allowedIds = new Set(
+        [tokenId, resolvedId]
+          .filter((v) => v != null && String(v).trim() !== "")
+          .map((v) => String(v).trim()),
+      );
+      const orderCid =
+        order?.customer_id != null ? String(order.customer_id).trim() : "";
+      if (!orderCid || allowedIds.has(orderCid)) return true;
+      try {
+        const emailRow = await pool.query(
+          `SELECT lower(COALESCE(email::text, '')) AS email
+           FROM customer_accounts
+           WHERE id::text = $1
+           LIMIT 1`,
+          [tokenId],
+        );
+        const accountEmail = String(emailRow.rows[0]?.email || "").trim();
+        const orderEmail = String(order?.user_email || "")
+          .trim()
+          .toLowerCase();
+        if (accountEmail && orderEmail && accountEmail === orderEmail) {
+          return true;
+        }
+      } catch (_) {}
+      return false;
     }
 
     const customerAuthRequired = (req, res, next) => {
@@ -12189,32 +12223,7 @@ async function registerRoutesAfterDbInit() {
         const order = existing.rows[0];
 
         if (req.customer?.id) {
-          const tokenId = String(req.customer.id);
-          const resolvedId = await resolveCustomerAccountCustomerId(tokenId);
-          const allowedIds = new Set(
-            [tokenId, resolvedId].filter((v) => v != null && String(v).trim() !== '').map(String),
-          );
-          const orderCid =
-            order.customer_id != null ? String(order.customer_id).trim() : '';
-          let allowed = !orderCid || allowedIds.has(orderCid);
-          if (!allowed) {
-            // Orders listed via email match must also be payable by that account.
-            try {
-              const emailRow = await pool.query(
-                `SELECT lower(COALESCE(email::text, '')) AS email
-                 FROM customer_accounts
-                 WHERE id::text = $1
-                 LIMIT 1`,
-                [tokenId],
-              );
-              const accountEmail = String(emailRow.rows[0]?.email || '').trim();
-              const orderEmail = String(order.user_email || '').trim().toLowerCase();
-              if (accountEmail && orderEmail && accountEmail === orderEmail) {
-                allowed = true;
-              }
-            } catch (_) {}
-          }
-          if (!allowed) {
+          if (!(await customerOwnsRestaurantOrder(order, req.customer.id))) {
             return res.status(403).json({ error: 'Not authorized for this order' });
           }
         } else {
@@ -12325,15 +12334,19 @@ async function registerRoutesAfterDbInit() {
         const existing = await pool.query(
           `SELECT *
            FROM restaurant_orders
-           WHERE ${lookup.sql} AND customer_id::text = $2
+           WHERE ${lookup.sql}
            LIMIT 1`,
-          [lookup.value, req.customer.id],
+          [lookup.value],
         );
         if (existing.rowCount === 0) {
           return res.status(404).json({ error: 'Order not found' });
         }
 
         const order = existing.rows[0];
+        if (!(await customerOwnsRestaurantOrder(order, req.customer.id))) {
+          return res.status(403).json({ error: 'Not authorized for this order' });
+        }
+
         const status = String(order.order_status || '').toUpperCase();
         if (status === 'DELIVERED' || status === 'CANCELLED') {
           return res.status(400).json({ error: 'Follow-up is only available for active orders' });
@@ -12416,7 +12429,7 @@ async function registerRoutesAfterDbInit() {
           }
 
           const existing = await pool.query(
-            `SELECT id, customer_id, order_status, feedback_stars
+            `SELECT *
              FROM restaurant_orders WHERE ${lookup.sql} LIMIT 1`,
             [lookup.value],
           );
@@ -12424,13 +12437,13 @@ async function registerRoutesAfterDbInit() {
             return res.status(404).json({ error: 'Order not found' });
           }
           const order = existing.rows[0];
-          if (String(order.customer_id) !== String(req.customer.id)) {
-            return res.status(403).json({ error: 'Order not found' });
+          if (!(await customerOwnsRestaurantOrder(order, req.customer.id))) {
+            return res.status(403).json({ error: 'Not authorized for this order' });
           }
           if (String(order.order_status).toUpperCase() !== 'DELIVERED') {
             return res.status(400).json({ error: 'Feedback is only available for delivered orders' });
           }
-          if (order.feedback_stars != null) {
+          if (order.feedback_stars != null && Number(order.feedback_stars) >= 1) {
             return res.status(409).json({ error: 'Feedback was already submitted for this order' });
           }
 
