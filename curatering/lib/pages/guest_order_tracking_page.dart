@@ -54,6 +54,9 @@ class _GuestOrderTrackingPageState extends State<GuestOrderTrackingPage>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(() {
+      if (mounted && !_tabController.indexIsChanging) setState(() {});
+    });
     _hydrateFromQuery();
     _refreshAuth();
     unawaited(MenuStore.instance.loadDishesWithImages(silent: true));
@@ -290,6 +293,19 @@ class _GuestOrderTrackingPageState extends State<GuestOrderTrackingPage>
             child: CustomerAccountShell(
               currentTab: CustomerPageTab.tracking,
               trackingRoute: '/track-order',
+              guestTrackingMode: !_loggedIn,
+              guestTrackingSection:
+                  _tabController.index == 0
+                      ? GuestTrackingSection.inquiries
+                      : GuestTrackingSection.restaurant,
+              onGuestTrackingSection: (section) {
+                final index =
+                    section == GuestTrackingSection.inquiries ? 0 : 1;
+                if (_tabController.index != index) {
+                  _tabController.animateTo(index);
+                }
+                setState(() {});
+              },
               body: body,
             ),
           ),

@@ -2712,6 +2712,14 @@ class _DashboardState extends State<Dashboard> {
                                   ),
                                   label: Text('Super Admin Dashboard'),
                                 ),
+                              IconButton(
+                                tooltip: 'Refresh',
+                                onPressed:
+                                    _isLoading
+                                        ? null
+                                        : () => _refreshDashboard(force: true),
+                                icon: const Icon(Icons.refresh),
+                              ),
                               OutlinedButton.icon(
                                 onPressed:
                                     _isPrintingPdf || s == null
@@ -2732,14 +2740,6 @@ class _DashboardState extends State<Dashboard> {
                                       ? 'Preparing PDF'
                                       : 'Print PDF',
                                 ),
-                              ),
-                              IconButton(
-                                tooltip: 'Refresh',
-                                onPressed:
-                                    _isLoading
-                                        ? null
-                                        : () => _refreshDashboard(force: true),
-                                icon: const Icon(Icons.refresh),
                               ),
                             ],
                           ),

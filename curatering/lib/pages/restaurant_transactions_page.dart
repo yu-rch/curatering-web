@@ -58,6 +58,9 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    _tabController.addListener(() {
+      if (mounted && !_tabController.indexIsChanging) setState(() {});
+    });
     _loadOrders();
   }
 
@@ -789,7 +792,59 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                           });
                         },
                       ),
-                      if (_searchQuery.isNotEmpty || _orderTypeFilter != 'all')
+                      if (_tabController.index == 1)
+                        AntdSelect<String>(
+                          label: 'Status',
+                          width: 200,
+                          value: _processingStatusFilter,
+                          items: const [
+                            DropdownMenuItem(
+                              value: 'all',
+                              child: Text('All statuses'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'in_preparation',
+                              child: Text('In preparation'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'out_for_delivery',
+                              child: Text('Out for delivery'),
+                            ),
+                          ],
+                          onChanged: (v) {
+                            if (v == null) return;
+                            setState(() {
+                              _processingStatusFilter = v;
+                              _processingPage = 0;
+                            });
+                          },
+                        ),
+                      if (_tabController.index == 2) ...[
+                        _managerDateChip(
+                          label: 'From',
+                          value: _dateFrom,
+                          onPick: () => _pickManagerDate(isFrom: true),
+                          onClear: () => setState(() {
+                            _dateFrom = null;
+                            _completedPage = 0;
+                          }),
+                        ),
+                        _managerDateChip(
+                          label: 'To',
+                          value: _dateTo,
+                          onPick: () => _pickManagerDate(isFrom: false),
+                          onClear: () => setState(() {
+                            _dateTo = null;
+                            _completedPage = 0;
+                          }),
+                        ),
+                      ],
+                      if (_searchQuery.isNotEmpty ||
+                          _orderTypeFilter != 'all' ||
+                          (_tabController.index == 1 &&
+                              _processingStatusFilter != 'all') ||
+                          (_tabController.index == 2 &&
+                              (_dateFrom != null || _dateTo != null)))
                         AntdSecondaryButton(
                           label: 'Clear filters',
                           icon: Icons.filter_alt_off,
@@ -797,6 +852,9 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
                             _searchCtrl.clear();
                             _searchQuery = '';
                             _orderTypeFilter = 'all';
+                            _processingStatusFilter = 'all';
+                            _dateFrom = null;
+                            _dateTo = null;
                             _resetOrderPages();
                           }),
                         ),
@@ -948,33 +1006,6 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Align(
-            alignment: Alignment.centerLeft,
-            child: AntdSelect<String>(
-              label: 'Status',
-              width: 200,
-              value: _processingStatusFilter,
-              items: const [
-                DropdownMenuItem(value: 'all', child: Text('All statuses')),
-                DropdownMenuItem(
-                  value: 'in_preparation',
-                  child: Text('In preparation'),
-                ),
-                DropdownMenuItem(
-                  value: 'out_for_delivery',
-                  child: Text('Out for delivery'),
-                ),
-              ],
-              onChanged: (v) {
-                if (v == null) return;
-                setState(() {
-                  _processingStatusFilter = v;
-                  _processingPage = 0;
-                });
-              },
-            ),
-          ),
-          const SizedBox(height: 8),
           if (orders.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 48),
@@ -1095,42 +1126,6 @@ class _RestaurantTransactionsPageState extends State<RestaurantTransactionsPage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              _managerDateChip(
-                label: 'From',
-                value: _dateFrom,
-                onPick: () => _pickManagerDate(isFrom: true),
-                onClear: () => setState(() {
-                  _dateFrom = null;
-                  _completedPage = 0;
-                }),
-              ),
-              _managerDateChip(
-                label: 'To',
-                value: _dateTo,
-                onPick: () => _pickManagerDate(isFrom: false),
-                onClear: () => setState(() {
-                  _dateTo = null;
-                  _completedPage = 0;
-                }),
-              ),
-              if (_dateFrom != null || _dateTo != null)
-                AntdSecondaryButton(
-                  label: 'Clear dates',
-                  icon: Icons.filter_alt_off,
-                  onPressed: () => setState(() {
-                    _dateFrom = null;
-                    _dateTo = null;
-                    _completedPage = 0;
-                  }),
-                ),
-            ],
-          ),
-          const SizedBox(height: 8),
           if (orders.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 48),
